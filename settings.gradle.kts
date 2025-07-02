@@ -19,12 +19,17 @@ if (System.getenv("CI") != "true") {
 } else {
     // Running in CI (GitHub Actions)
 
-    val chunkSize = System.getenv("CI_CHUNK_SIZE").toInt()
-    val chunk = System.getenv("CI_CHUNK_NUM").toInt()
+    val chunkSize = System.getenv("CI_CHUNK_SIZE")?.toIntOrNull()
+    val chunk = System.getenv("CI_CHUNK_NUM")?.toIntOrNull()
 
-    // Loads individual extensions
-    File(rootDir, "src").getChunk(chunk, chunkSize)?.forEach {
-        loadIndividualExtension(it.parentFile.name, it.name)
+    if (chunkSize != null && chunk != null) {
+        // Loads individual extensions in chunks for CI parallelization
+        File(rootDir, "src").getChunk(chunk, chunkSize)?.forEach {
+            loadIndividualExtension(it.parentFile.name, it.name)
+        }
+    } else {
+        // Fallback: load all extensions if CI vars are missing
+        loadAllIndividualExtensions()
     }
 }
 
@@ -35,6 +40,7 @@ fun loadAllIndividualExtensions() {
         }
     }
 }
+
 fun loadIndividualExtension(lang: String, name: String) {
     include("src:$lang:$name")
 }
@@ -48,7 +54,7 @@ fun File.getChunk(chunk: Int, chunkSize: Int): List<File>? {
         ?.flatten()
         ?.sortedBy { it.name }
         ?.chunked(chunkSize)
-        ?.get(chunk)
+        ?.getOrNull(chunk)
 }
 
 fun File.eachDir(block: (File) -> Unit) {
