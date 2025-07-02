@@ -8,7 +8,11 @@ ext {
 apply from: "$rootDir/common.gradle"
 
 dependencies {
+    // Internal libraries required by AniYomi
     implementation(project(':lib:unpacker'))
     implementation(project(':lib:playlist-utils'))
     implementation(project(':lib:javcoverfetcher'))
+
+    // External dependency required by some extensions (especially those using Injekt)
+    implementation("com.github.inorichi.injekt:injekt-core:65b0440")
 }
