@@ -13,6 +13,6 @@ dependencies {
     implementation(project(':lib:playlist-utils'))
     implementation(project(':lib:javcoverfetcher'))
 
-    // External dependency required by some extensions (especially those using Injekt)
-    implementation("com.github.inorichi.injekt:injekt-core:65b0440")
+    // ✅ Use stable Injekt version
+    implementation("com.github.inorichi:injekt:v1.3")
 }
