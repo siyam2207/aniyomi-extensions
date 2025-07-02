@@ -1,9 +1,9 @@
 dependencyResolutionManagement {
     repositories {
         gradlePluginPortal()
-        mavenCentral()
         google()
-        maven(url = "https://jitpack.io") // ✅ Needed for GitHub-hosted libs like injekt-core
+        mavenCentral()
+        maven(url = "https://jitpack.io") // Required for Injekt
     }
 }
 
@@ -12,6 +12,6 @@ pluginManagement {
         gradlePluginPortal()
         google()
         mavenCentral()
-        maven(url = "https://jitpack.io") // ✅ Important for plugin resolution from GitHub
+        maven(url = "https://jitpack.io") // Also useful here
     }
 }
