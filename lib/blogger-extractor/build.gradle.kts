@@ -3,5 +3,5 @@ plugins {
 }
 
 dependencies {
-    implementation("com.github.inorichi.injekt:injekt-core:65b0440")
+    implementation("com.github.inorichi.injekt:injekt-core:master-SNAPSHOT")
 }
