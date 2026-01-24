@@ -208,7 +208,7 @@ jobs:
           cd repo
           git config user.name "Siyam"
           git config user.email "siyambackupfile@gmail.com"
-          git remote set-url origin https://github.com/yuzono/anime-repo.git
+          git remote set-url origin https://github.com/siyam2207/anime-repo.git
           git fetch origin
           git reset origin/repo
           git add -A
@@ -217,4 +217,4 @@ jobs:
 
       - name: Purge cached index on jsDelivr
         run: |
-          curl https://purge.jsdelivr.net/gh/yuzono/anime-repo@repo/index.min.json
+          curl https://purge.jsdelivr.net/gh/siyam2207/anime-repo@repo/index.min.json
