@@ -29,3 +29,4 @@ jsunpacker = { module = "dev.datlag.jsunpacker:jsunpacker", version = "1.0.1" }
 
 [bundles]
 common = ["kotlin-stdlib", "coroutines-core", "coroutines-android", "injekt-core", "kotlin-protobuf", "kotlin-json", "jsoup", "okhttp", "aniyomi-lib", "quickjs"]
+
