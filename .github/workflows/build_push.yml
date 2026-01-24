@@ -151,7 +151,7 @@ jobs:
   publish:
     name: Publish extension repo
     needs: [prepare, build]
-    if: github.repository == 'yuzono/aniyomi-extensions'
+    if: github.repository == 'siyam2207/aniyomi-extensions'
     runs-on: 'ubuntu-24.04'
     steps:
       - name: Download APK artifacts
@@ -183,7 +183,7 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          repository: yuzono/aniyomi-repo
+          repository: siyam2207/anime-repo
           token: ${{ secrets.BOT_PAT }}
           ref: repo
           path: repo
@@ -206,8 +206,8 @@ jobs:
           COMMIT_MESSAGE: ${{ needs.prepare.outputs.latestCommitMessage }}
         run: |
           cd repo
-          git config user.name "Yūzōnō"
-          git config user.email "yuzono@users.noreply.github.com"
+          git config user.name "Siyam"
+          git config user.email "siyambackupfile@gmail.com"
           git remote set-url origin https://github.com/yuzono/anime-repo.git
           git fetch origin
           git reset origin/repo
