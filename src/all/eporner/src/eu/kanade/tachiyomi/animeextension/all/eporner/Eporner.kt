@@ -17,7 +17,6 @@ import extensions.utils.getPreferencesLazy
 import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.nodes.Document
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -92,7 +91,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             GET("$baseUrl/search/${query.encodeUtf8()}/$pageNum/", headers)
         } else if (category != null) {
             // Category filter
-            GET("$baseUrl/category/${category}/$pageNum/", headers)
+            GET("$baseUrl/category/$category/$pageNum/", headers)
         } else {
             // Default to popular
             popularAnimeRequest(page)
