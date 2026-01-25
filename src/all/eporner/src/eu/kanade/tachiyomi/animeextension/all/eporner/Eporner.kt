@@ -64,7 +64,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
 
         // Check for next page - eporner has pagination links
-        val hasNextPage = document.select("#pagination a").any { 
+        val hasNextPage = document.select("#pagination a").any {
             it.text().contains("Next", ignoreCase = true) || it.text() == "»"
         }
 
@@ -116,7 +116,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             // Video info section
             val infoSection = document.selectFirst(".infobar")
-            
+
             // Categories/tags
             genre = document.select("a[href^=/cat/]")
                 .joinToString { it.text() }
@@ -150,7 +150,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 val document = response.asJsoup()
                 val dateText = document.selectFirst(".infobar .duration")?.text()
                     ?.substringAfter("Added: ")?.substringBefore(" -")
-                
+
                 dateText?.let {
                     try {
                         // Try to parse date like "2 days ago", "3 weeks ago", or actual date
@@ -193,7 +193,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
         // Method 3: Look for HLS in scripts
         val scriptText = document.select("script").toString()
-        
+
         // Look for MP4 URLs in scripts
         val mp4Regex = Regex("""["']?(https?://[^"']+\.(?:mp4|webm)[^"']*)["']?""")
         mp4Regex.findAll(scriptText).forEach { match ->
