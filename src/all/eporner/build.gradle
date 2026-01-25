@@ -1,22 +1,14 @@
 ext {
     extName = 'Eporner'
     extClass = '.Eporner'
-    extVersionCode = 1
+    extVersionCode = 2  // Keep this incremented
     isNsfw = true
 }
 
+// This already includes ALL essential dependencies
 apply from: "$rootDir/common.gradle"
 
+// Empty dependencies block is PERFECTLY FINE
 dependencies {
-    // Essential for HLS/m3u8 playlist parsing (direct MP4 streams)
-    implementation(project(':lib:playlist-utils'))
-    
-    // For CDN-hosted MP4 streams (common on adult sites)
-    implementation(project(':lib:streamwish-extractor'))
-    
-    // For embedded video players
-    implementation(project(':lib:voe-extractor'))
-    
-    // Fallback extractor for various unknown hosts
-    implementation(project(':lib:universal-extractor'))
+    // Nothing needed here
 }
