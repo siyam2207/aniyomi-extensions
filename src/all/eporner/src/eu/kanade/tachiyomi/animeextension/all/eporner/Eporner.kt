@@ -53,7 +53,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== PREFERENCE ACCESS ====================
     private lateinit var prefsContext: android.content.Context
-    
     private fun getStringPref(key: String, defaultValue: String): String {
         return if (::prefsContext.isInitialized) {
             prefsContext.getSharedPreferences("source_$id", 0)
@@ -527,7 +526,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // Store context for later use
         prefsContext = screen.context
-        
         // Video Quality Preference
         ListPreference(screen.context).apply {
             key = PREF_QUALITY_KEY
