@@ -1,8 +1,11 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import eu.kanade.tachiyomi.animesource.AnimeHttpSource
-import eu.kanade.tachiyomi.animesource.model.*
 import eu.kanade.tachiyomi.animesource.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.AnimeHttpSource
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.Request
@@ -21,7 +24,7 @@ class Eporner : AnimeHttpSource() {
         GET("$baseUrl/hd-porn/$page/")
 
     override fun popularAnimeParse(response: Response): AnimesPage {
-        val document = response.asJsoup()
+        response.asJsoup()
         return AnimesPage(emptyList(), false)
     }
 
@@ -31,7 +34,7 @@ class Eporner : AnimeHttpSource() {
         GET("$baseUrl/hd-porn/$page/?o=latest")
 
     override fun latestUpdatesParse(response: Response): AnimesPage {
-        val document = response.asJsoup()
+        response.asJsoup()
         return AnimesPage(emptyList(), false)
     }
 
@@ -40,24 +43,22 @@ class Eporner : AnimeHttpSource() {
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: AnimeFilterList
-    ): Request {
-        return GET("$baseUrl/search/$query/$page/")
-    }
+        filters: AnimeFilterList,
+    ): Request =
+        GET("$baseUrl/search/$query/$page/")
 
     override fun searchAnimeParse(response: Response): AnimesPage {
-        val document = response.asJsoup()
+        response.asJsoup()
         return AnimesPage(emptyList(), false)
     }
 
     // ============================== Details ===============================
 
-    override fun animeDetailsParse(response: Response): SAnime {
-        return SAnime.create().apply {
+    override fun animeDetailsParse(response: Response): SAnime =
+        SAnime.create().apply {
             title = "Eporner Video"
             description = ""
         }
-    }
 
     // ============================== Episodes ==============================
 
@@ -67,7 +68,7 @@ class Eporner : AnimeHttpSource() {
                 name = "Episode"
                 episode_number = 1f
                 url = response.request.url.toString()
-            }
+            },
         )
 
     // ============================== Video ================================
