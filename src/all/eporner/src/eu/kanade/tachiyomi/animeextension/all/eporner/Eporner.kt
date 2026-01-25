@@ -480,7 +480,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
         }
-        
         queryParams.add("page=$page")
         return if (queryParams.isNotEmpty()) {
             "$baseUrl/filter/?${queryParams.joinToString("&")}"
