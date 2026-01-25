@@ -1,23 +1,30 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import android.content.Context
-import androidx.preference.*
+import androidx.preference.ListPreference
+import androidx.preference.Preference
+import androidx.preference.PreferenceManager
+import androidx.preference.PreferenceScreen
+import androidx.preference.SwitchPreferenceCompat
+import eu.kanade.tachiyomi.animeextension.all.eporner.Eporner.Companion.toHttpUrl
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.*
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.lib.unpacker.Unpacker
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.POST
-import eu.kanade.tachiyomi.util.asJsoup
-import eu.kanade.tachiyomi.util.parallelCatchingFlatMapBlocking
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
+import okhttp3.Headers
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
@@ -243,7 +250,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 episode_number = 1F
                 setUrlWithoutDomain(response.request.url.toString())
                 date_upload = parseUploadDate(response.asJsoup())
-            }
+            },
         )
     }
 
@@ -493,7 +500,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 "Full HD (1080p)",
                 "HD (720p)",
                 "SD (480p)",
-                "Low (360p)"
+                "Low (360p)",
             )
             entryValues = arrayOf("auto", "2160", "1440", "1080", "720", "480", "360")
             setDefaultValue(PREF_QUALITY_DEFAULT)
@@ -513,7 +520,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 "Top Rated",
                 "Most Recent",
                 "Longest",
-                "Most Favorited"
+                "Most Favorited",
             )
             entryValues = arrayOf("most-viewed", "top-rated", "latest", "longest", "most-favorited")
             setDefaultValue(PREF_SORT_DEFAULT)
@@ -556,7 +563,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 "Disabled (Best Quality)",
                 "Wi-Fi Only (Full Quality)",
                 "Enabled (720p Max)",
-                "Extreme (480p Max)"
+                "Extreme (480p Max)",
             )
             entryValues = arrayOf("disabled", "wifi", "enabled", "extreme")
             setDefaultValue(PREF_DATA_SAVING_DEFAULT)
@@ -610,7 +617,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 val formats = listOf(
                     SimpleDateFormat("yyyy-MM-dd", Locale.US),
                     SimpleDateFormat("MMM dd, yyyy", Locale.US),
-                    SimpleDateFormat("dd MMM yyyy", Locale.US)
+                    SimpleDateFormat("dd MMM yyyy", Locale.US),
                 )
                 
                 for (format in formats) {
@@ -688,7 +695,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
 open class UriPartFilter(
     name: String,
-    private val vals: Array<Pair<String, String>>
+    private val vals: Array<Pair<String, String>>,
 ) : AnimeFilter.Select<String>(name, vals.map { it.first }.toTypedArray()) {
     fun toUriPart() = vals[state].second
 }
@@ -700,13 +707,13 @@ class SortFilter : UriPartFilter(
         Pair("Top Rated", "top-rated"),
         Pair("Most Recent", "latest"),
         Pair("Longest", "longest"),
-        Pair("Most Favorited", "most-favorited")
-    )
+        Pair("Most Favorited", "most-favorited"),
+    ),
 )
 
 class CategoryFilter(
     name: String,
-    private val slug: String
+    private val slug: String,
 ) : AnimeFilter.CheckBox(name) {
     fun toUriPart() = slug
 }
@@ -718,8 +725,8 @@ class QualityFilter : UriPartFilter(
         Pair("4K", "4k"),
         Pair("HD", "hd"),
         Pair("SD", "sd"),
-        Pair("Low", "low")
-    )
+        Pair("Low", "low"),
+    ),
 )
 
 class DurationFilter : UriPartFilter(
@@ -729,8 +736,8 @@ class DurationFilter : UriPartFilter(
         Pair("Short (<10min)", "short"),
         Pair("Medium (10-20min)", "medium"),
         Pair("Long (20-30min)", "long"),
-        Pair("Very Long (30+min)", "very-long")
-    )
+        Pair("Very Long (30+min)", "very-long"),
+    ),
 )
 
 class DateFilter : UriPartFilter(
@@ -740,8 +747,8 @@ class DateFilter : UriPartFilter(
         Pair("Today", "today"),
         Pair("This Week", "week"),
         Pair("This Month", "month"),
-        Pair("This Year", "year")
-    )
+        Pair("This Year", "year"),
+    ),
 )
 
 class HDOnlyFilter : AnimeFilter.CheckBox("HD Only")
