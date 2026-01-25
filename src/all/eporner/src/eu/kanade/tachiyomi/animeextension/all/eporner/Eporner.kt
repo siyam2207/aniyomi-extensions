@@ -1,27 +1,27 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import androidx.preference.ListPreference
-import androidx.preference.Preference
-import androidx.preference.PreferenceScreen
-import androidx.preference.SwitchPreferenceCompat
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.preference.*
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.AnimeFilter
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.AnimesPage
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.model.*
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
-import eu.kanade.tachiyomi.lib.unpacker.Unpacker
+import eu.kanade.tachiyomi.lib.streamwishextractor.StreamWishExtractor
+import eu.kanade.tachiyomi.lib.voeextractor.VoeExtractor
+import eu.kanade.tachiyomi.lib.doodextractor.DoodExtractor
+import eu.kanade.tachiyomi.lib.streamtapeextractor.StreamTapeExtractor
+import eu.kanade.tachiyomi.lib.okruextractor.OkruExtractor
+import eu.kanade.tachiyomi.lib.mixdropextractor.MixDropExtractor
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import eu.kanade.tachiyomi.util.parallelCatchingFlatMapBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.Response
-import java.text.SimpleDateFormat
-import java.util.Locale
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
@@ -30,7 +30,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override val baseUrl = "https://www.eporner.com"
     override val lang = "all"
     override val supportsLatest = true
-    override val supportsRelatedAnimes = false
+    override val supportsRelatedAnimes = true
 
     // ==================== CLIENT CONFIGURATION ====================
     override val client = network.client.newBuilder()
@@ -39,64 +39,53 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         .writeTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Accept-Encoding", "gzip, deflate")
-                .header("Connection", "keep-alive")
-                .header("Upgrade-Insecure-Requests", "1")
-                .header("Cache-Control", "max-age=0")
+                .apply {
+                    // Standard headers for Eporner
+                    header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                    header("Accept-Language", "en-US,en;q=0.9")
+                    header("Accept-Encoding", "gzip, deflate, br")
+                    header("DNT", "1")
+                    header("Connection", "keep-alive")
+                    header("Upgrade-Insecure-Requests", "1")
+                    header("Sec-Fetch-Dest", "document")
+                    header("Sec-Fetch-Mode", "navigate")
+                    header("Sec-Fetch-Site", "same-origin")
+                    header("Sec-Fetch-User", "?1")
+                    
+                    // Add Referer for video requests
+                    val referer = chain.request().header("Referer") ?: baseUrl
+                    header("Referer", referer)
+                }
                 .build()
             chain.proceed(request)
         }
         .build()
 
-    // ==================== PREFERENCE ACCESS ====================
-    private lateinit var prefsContext: android.content.Context
-    private fun getStringPref(key: String, defaultValue: String): String {
-        return if (::prefsContext.isInitialized) {
-            prefsContext.getSharedPreferences("source_$id", 0)
-                .getString(key, defaultValue) ?: defaultValue
-        } else {
-            defaultValue
-        }
+    // ==================== PREFERENCES ====================
+    private val preferences by lazy {
+        PreferenceManager.getDefaultSharedPreferences(context as Context)
     }
 
-    private fun getBooleanPref(key: String, defaultValue: Boolean): Boolean {
-        return if (::prefsContext.isInitialized) {
-            prefsContext.getSharedPreferences("source_$id", 0)
-                .getBoolean(key, defaultValue)
-        } else {
-            defaultValue
-        }
-    }
-
-    private fun saveStringPref(key: String, value: String) {
-        if (::prefsContext.isInitialized) {
-            prefsContext.getSharedPreferences("source_$id", 0)
-                .edit()
-                .putString(key, value)
-                .apply()
-        }
-    }
-
-    private fun saveBooleanPref(key: String, value: Boolean) {
-        if (::prefsContext.isInitialized) {
-            prefsContext.getSharedPreferences("source_$id", 0)
-                .edit()
-                .putBoolean(key, value)
-                .apply()
-        }
-    }
-
-    // ==================== INTERNAL COMPONENTS ====================
+    // ==================== EXTRACTORS ====================
     private val playlistUtils by lazy { PlaylistUtils(client, headers) }
-    private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+    private val streamwishExtractor by lazy { StreamWishExtractor(client, headers) }
+    private val voeExtractor by lazy { VoeExtractor(client, headers) }
+    private val doodExtractor by lazy { DoodExtractor(client) }
+    private val streamtapeExtractor by lazy { StreamTapeExtractor(client) }
+    private val okruExtractor by lazy { OkruExtractor(client) }
+    private val mixdropExtractor by lazy { MixDropExtractor(client) }
 
     // ==================== POPULAR ANIME ====================
     override fun popularAnimeRequest(page: Int): Request {
-        val sort = getStringPref(PREF_SORT_KEY, PREF_SORT_DEFAULT)
-        return GET("$baseUrl/$sort/$page/", headers)
+        val sort = preferences.getString(PREF_SORT_KEY, PREF_SORT_DEFAULT) ?: PREF_SORT_DEFAULT
+        val url = when (sort) {
+            "most-viewed" -> "$baseUrl/hd-porn/$page/"
+            "top-rated" -> "$baseUrl/top-rated/$page/"
+            "longest" -> "$baseUrl/longest/$page/"
+            else -> "$baseUrl/hd-porn/$page/"
+        }
+        return GET(url, headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
@@ -114,12 +103,16 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== SEARCH FUNCTIONALITY ====================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return when {
-            query.isNotBlank() -> GET("$baseUrl/search/${query.slugify()}/$page/", headers)
-            else -> {
-                val url = buildFilterUrl(page, filters)
-                GET(url, headers)
-            }
+        return if (query.isNotBlank()) {
+            // Text search
+            val encodedQuery = query.lowercase()
+                .replace("[^a-z0-9\\s-]".toRegex(), "")
+                .replace("\\s+".toRegex(), "-")
+                .trim('-')
+            GET("$baseUrl/search/$encodedQuery/$page/", headers)
+        } else {
+            // Filter-based search
+            buildFilterUrl(page, filters)
         }
     }
 
@@ -129,64 +122,58 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== VIDEO LISTING PARSER ====================
     private fun parseVideoListing(document: org.jsoup.nodes.Document): AnimesPage {
-        val elements = document.select("#videos .mb, .video-unit, div.video")
-
+        val elements = document.select("#videos .mb, .video-unit, .vid")
+        
         val animeList = elements.mapNotNull { element ->
             try {
                 SAnime.create().apply {
-                    // URL
+                    // Extract video URL
                     val link = element.selectFirst("a")
                     link?.let {
                         val href = it.attr("href")
-                        setUrlWithoutDomain(if (href.startsWith("/")) "$baseUrl$href" else href)
+                        setUrlWithoutDomain(
+                            if (href.startsWith("/")) "$baseUrl$href"
+                            else if (href.startsWith("http")) href
+                            else "$baseUrl/$href"
+                        )
                     }
 
-                    // Title
+                    // Extract title
                     title = link?.attr("title")?.takeIf { it.isNotBlank() }
                         ?: element.selectFirst("img")?.attr("alt")
                         ?: element.selectFirst(".title, h3")?.text()
+                        ?: element.selectFirst(".duration")?.parent()?.text()
                         ?: "Unknown Title"
 
-                    // Thumbnail with preview support
-                    val enablePreviews = getBooleanPref(PREF_PREVIEW_KEY, PREF_PREVIEW_DEFAULT)
-                    thumbnail_url = element.selectFirst("img")?.let { img ->
-                        when {
-                            enablePreviews -> {
-                                // Try to get preview GIF first
-                                img.attr("data-preview").takeIf { it.isNotBlank() }
-                                    ?: img.attr("data-gif").takeIf { it.isNotBlank() }
-                                    ?: img.attr("data-src").takeIf { it.isNotBlank() }
-                                    ?: img.attr("src")
-                            }
-                            else -> {
-                                img.attr("data-src").takeIf { it.isNotBlank() }
-                                    ?: img.attr("src")
-                            }
-                        }
-                    }
+                    // Enhanced thumbnail with preview support
+                    val enablePreviews = preferences.getBoolean(PREF_PREVIEW_KEY, PREF_PREVIEW_DEFAULT)
+                    thumbnail_url = extractBestThumbnail(element, enablePreviews)
 
-                    // Metadata
+                    // Extract metadata
                     val duration = element.selectFirst(".duration, .time")?.text()
                     val views = element.selectFirst(".views")?.text()
                     val rating = element.selectFirst(".rating")?.text()
-                    val isHD = element.selectFirst(".hd") != null
-                    val isVR = element.selectFirst(".vr") != null
-                    val is4K = element.selectFirst(".uhd") != null
+                    val isHD = element.selectFirst(".hd, .is-hd") != null
+                    val isVR = element.selectFirst(".vr, .is-vr") != null
+                    val is4K = element.selectFirst(".uhd, .is-4k, .fourk") != null
+                    val is60fps = element.selectFirst(".fps, .sixtyfps") != null
 
+                    // Build description with metadata
                     description = buildString {
                         duration?.let { append("⏱ $it\n") }
-                        views?.let { append("👁 $it\n") }
-                        rating?.let { append("⭐ $it\n") }
-                        if (isHD) append("📺 HD\n")
-                        if (isVR) append("🎥 VR\n")
-                        if (is4K) append("📈 4K\n")
+                        views?.let { append("👁 ${it.formatViews()}\n") }
+                        rating?.let { append("⭐ ${it.formatRating()}\n") }
+                        if (isHD) append("🎬 HD\n")
+                        if (isVR) append("👓 VR\n")
+                        if (is4K) append("📺 4K\n")
+                        if (is60fps) append("⚡ 60 FPS\n")
                     }.trim()
 
-                    // Extract video ID for previews
+                    // Extract video ID for advanced features
                     val videoId = link?.attr("href")?.substringAfterLast("/")?.substringBefore("?")
-                    if (videoId != null && enablePreviews) {
-                        // Store video ID for preview generation
-                        thumbnail_url = "$baseUrl/video/$videoId/preview.jpg"
+                    if (videoId != null) {
+                        // Store metadata for later use
+                        initialized = true
                     }
                 }
             } catch (e: Exception) {
@@ -194,488 +181,331 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }
 
-        val hasNextPage = document.select("a.next, .pagination a:contains(Next)").isNotEmpty()
+        // Pagination detection
+        val hasNextPage = document.select("""a[href*="page"], a.next, 
+                                           .pagination a:not(.active):last-child,
+                                           a:contains(Next)""").any { element ->
+            val href = element.attr("href")
+            href.contains("page") || element.text().contains("Next", ignoreCase = true)
+        }
+
         return AnimesPage(animeList, hasNextPage)
+    }
+
+    private fun extractBestThumbnail(element: org.jsoup.nodes.Element, enablePreviews: Boolean): String {
+        return element.selectFirst("img")?.let { img ->
+            // Priority order for thumbnails
+            val sources = listOfNotNull(
+                // Preview GIFs (animated)
+                if (enablePreviews) img.attr("data-preview").takeIf { it.isNotBlank() } else null,
+                if (enablePreviews) img.attr("data-gif").takeIf { it.isNotBlank() } else null,
+                
+                // High-quality static images
+                img.attr("data-src").takeIf { it.isNotBlank() },
+                img.attr("data-original").takeIf { it.isNotBlank() },
+                img.attr("src").takeIf { it.isNotBlank() },
+                
+                // Fallback: extract from style attribute
+                img.attr("style").substringAfter("url('").substringBefore("')").takeIf { it.isNotBlank() }
+            )
+            
+            sources.firstOrNull() ?: ""
+        } ?: ""
     }
 
     // ==================== ANIME DETAILS ====================
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
-
+        
         return SAnime.create().apply {
-            // Basic Info
+            // Basic Information
             title = document.selectFirst("h1")?.text() ?: ""
             thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")
+                ?: document.selectFirst(".main-video img")?.attr("src")
+                ?: document.selectFirst("#player video")?.attr("poster")
 
-            // Metadata Extraction
-            val infoItems = document.select(".info .item")
-            val metadata = mutableMapOf<String, String>()
-            infoItems.forEach { item ->
-                val key = item.selectFirst(".label")?.text()?.trim()?.removeSuffix(":")
-                val value = item.selectFirst(".value")?.text()?.trim()
-                if (key != null && value != null) {
-                    metadata[key] = value
-                }
-            }
-
-            // Description Building
-            description = buildString {
-                // Main description
-                document.selectFirst(".desc")?.text()?.let { append("$it\n\n") }
-
-                // Metadata
-                metadata.forEach { (key, value) ->
-                    append("$key: $value\n")
-                }
-
-                // Actors
-                val actors = document.select(".actors a").eachText()
-                if (actors.isNotEmpty()) {
-                    append("\n🎭 Actors: ${actors.joinToString(", ")}\n")
-                }
-
-                // Categories
-                val categories = document.select(".categories a").eachText()
-                if (categories.isNotEmpty()) {
-                    append("📁 Categories: ${categories.joinToString(", ")}\n")
-                }
-
-                // Tags
-                val tags = document.select(".tags a").eachText()
-                if (tags.isNotEmpty()) {
-                    append("🏷️ Tags: ${tags.joinToString(", ")}\n")
-                }
-
-                // Production Info
-                val studio = document.selectFirst(".studio a")?.text()
-                studio?.let { append("🎬 Studio: $it\n") }
-
-                // Quality Info
-                val qualities = mutableListOf<String>()
-                if (document.selectFirst(".hd") != null) qualities.add("HD")
-                if (document.selectFirst(".vr") != null) qualities.add("VR")
-                if (document.selectFirst(".uhd") != null) qualities.add("4K")
-                if (qualities.isNotEmpty()) {
-                    append("📊 Quality: ${qualities.joinToString(", ")}\n")
-                }
-            }
-
-            // Genre and Author
-            val allCategories = document.select(".categories a").eachText()
-            genre = allCategories.joinToString(", ")
-
-            author = document.selectFirst(".studio a")?.text()
-                ?: document.selectFirst(".production a")?.text()
-
+            // Detailed Metadata Extraction
+            val metadata = extractVideoMetadata(document)
+            
+            // Build comprehensive description
+            description = buildDescription(document, metadata)
+            
+            // Extract genres/categories
+            genre = extractGenres(document)
+            
+            // Extract actors/performers
+            artist = extractActors(document).joinToString(", ")
+            
+            // Extract studio/production
+            author = extractStudio(document)
+            
             status = SAnime.COMPLETED
+            initialized = true
         }
+    }
+
+    private fun extractVideoMetadata(document: org.jsoup.nodes.Document): Map<String, String> {
+        val metadata = mutableMapOf<String, String>()
+        
+        // Extract from info items
+        document.select(".info .item, .video-info .item").forEach { item ->
+            val key = item.selectFirst(".label, .key")?.text()?.trim()?.removeSuffix(":")
+            val value = item.selectFirst(".value, .val")?.text()?.trim()
+            if (key != null && value != null) {
+                metadata[key] = value
+            }
+        }
+        
+        // Extract from meta tags
+        document.select("meta[itemprop]").forEach { meta ->
+            val key = meta.attr("itemprop")
+            val value = meta.attr("content")
+            if (key.isNotBlank() && value.isNotBlank()) {
+                metadata[key] = value
+            }
+        }
+        
+        return metadata
+    }
+
+    private fun buildDescription(document: org.jsoup.nodes.Document, metadata: Map<String, String>): String {
+        return buildString {
+            // Main description
+            document.selectFirst(".desc, .description, #description")?.text()?.let {
+                append("📝 $it\n\n")
+            }
+            
+            // Metadata section
+            if (metadata.isNotEmpty()) {
+                append("📊 Metadata:\n")
+                metadata.forEach { (key, value) ->
+                    append("  • ${key.capitalize()}: $value\n")
+                }
+                append("\n")
+            }
+            
+            // Quality info
+            val qualities = mutableListOf<String>()
+            if (document.selectFirst(".hd, [data-hd]") != null) qualities.add("HD")
+            if (document.selectFirst(".vr, [data-vr]") != null) qualities.add("VR")
+            if (document.selectFirst(".uhd, .fourk, [data-4k]") != null) qualities.add("4K")
+            if (document.selectFirst(".fps, [data-60fps]") != null) qualities.add("60 FPS")
+            if (qualities.isNotEmpty()) {
+                append("🎬 Quality: ${qualities.joinToString(", ")}\n")
+            }
+            
+            // Statistics
+            val views = document.selectFirst(".views, [itemprop='interactionCount']")?.text()
+            val rating = document.selectFirst(".rating, [itemprop='ratingValue']")?.text()
+            val duration = document.selectFirst(".duration, [itemprop='duration']")?.text()
+            
+            if (views != null || rating != null || duration != null) {
+                append("\n📈 Statistics:\n")
+                views?.let { append("  • Views: ${it.formatViews()}\n") }
+                rating?.let { append("  • Rating: ${it.formatRating()}\n") }
+                duration?.let { append("  • Duration: $it\n") }
+            }
+        }.trim()
+    }
+
+    private fun extractGenres(document: org.jsoup.nodes.Document): String {
+        return document.select(".categories a, .tags a, .genres a, [rel='tag']")
+            .eachText()
+            .distinct()
+            .joinToString(", ")
+    }
+
+    private fun extractActors(document: org.jsoup.nodes.Document): List<String> {
+        return document.select(".actors a, .pornstars a, .models a, [rel='actor']")
+            .eachText()
+            .distinct()
+    }
+
+    private fun extractStudio(document: org.jsoup.nodes.Document): String {
+        return document.selectFirst(".studio a, .production a, [rel='studio']")?.text()
+            ?: document.selectFirst("a[href*='/studio/']")?.text()
+            ?: ""
     }
 
     // ==================== EPISODE LIST ====================
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // Eporner videos are single episodes
         return listOf(
             SEpisode.create().apply {
                 name = "Full Video"
                 episode_number = 1F
                 setUrlWithoutDomain(response.request.url.toString())
-                date_upload = parseUploadDate(response.asJsoup())
-            },
+                date_upload = extractUploadDate(response.asJsoup())
+            }
         )
+    }
+
+    private fun extractUploadDate(document: org.jsoup.nodes.Document): Long {
+        return try {
+            document.selectFirst("span[itemprop='uploadDate'], .upload-date, time")?.let { dateElement ->
+                val dateText = dateElement.attr("datetime") ?: dateElement.text()
+                parseDateString(dateText)
+            } ?: System.currentTimeMillis()
+        } catch (e: Exception) {
+            System.currentTimeMillis()
+        }
     }
 
     // ==================== VIDEO EXTRACTION ====================
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
-
-        // Method 1: Extract from videoObj JavaScript
-        val scriptData = document.select("script:containsData(videoObj)").firstOrNull()?.data()
-        if (scriptData != null) {
-            extractFromVideoObj(scriptData).let { videos.addAll(it) }
+        
+        // Strategy 1: Extract from video data attributes
+        extractFromDataAttributes(document).let { videos.addAll(it) }
+        
+        // Strategy 2: Extract from JavaScript variables
+        if (videos.isEmpty()) {
+            extractFromJavaScript(document).let { videos.addAll(it) }
         }
-
-        // Method 2: Extract from iframe embeds
+        
+        // Strategy 3: Extract from embed iframes
         if (videos.isEmpty()) {
             document.select("iframe").mapNotNull { it.attr("src") }
-                .parallelCatchingFlatMapBlocking { extractFromEmbed(it) }
+                .parallelCatchingFlatMapBlocking { extractFromEmbedUrl(it) }
                 .let { videos.addAll(it) }
         }
-
-        // Method 3: Extract from HTML5 video sources
-        document.select("source").forEach { source ->
-            val url = source.attr("src")
-            if (url.isNotBlank()) {
-                val quality = source.attr("label") ?: extractQualityFromUrl(url)
-                videos.add(Video(url, quality, url))
+        
+        // Strategy 4: Extract from HTML5 video sources
+        document.select("video source, source[type*='video']").forEach { source ->
+            val url = source.attr("src").takeIf { it.isNotBlank() }
+            val quality = source.attr("label") ?: extractQualityFromUrl(url ?: "")
+            
+            url?.let {
+                videos.add(Video(it, "Direct - $quality", it, headers))
             }
         }
-
-        // Method 4: Try API endpoint
+        
+        // Strategy 5: Extract from API endpoints
         if (videos.isEmpty()) {
-            val videoId = document.location().substringAfterLast("/").substringBefore("?")
-            extractFromApi(videoId).let { videos.addAll(it) }
+            extractFromApiEndpoints(document).let { videos.addAll(it) }
         }
-
-        return videos.distinctBy { it.videoUrl }.sortedWith(videoComparator)
+        
+        return videos.distinctBy { it.quality to it.videoUrl }
+            .sortedWith(compareByDescending<Video> { it.qualityValue })
     }
 
-    private fun extractFromVideoObj(script: String): List<Video> {
+    private fun extractFromDataAttributes(document: org.jsoup.nodes.Document): List<Video> {
         val videos = mutableListOf<Video>()
-
-        // Parse quality URLs from videoObj
-        val qualityPattern = """["']?(\d+)p["']?\s*:\s*["']([^"']+)["']""".toRegex()
-        qualityPattern.findAll(script).forEach { match ->
-            val quality = "${match.groupValues[1]}p"
-            val url = match.groupValues[2]
-            if (url.isNotBlank() && !url.contains("null")) {
-                videos.add(Video(url, "Direct - $quality", url))
+        
+        // Look for data-video attributes
+        document.select("[data-video], [data-src], [data-url]").forEach { element ->
+            val url = element.attr("data-video").takeIf { it.isNotBlank() }
+                ?: element.attr("data-src").takeIf { it.isNotBlank() }
+                ?: element.attr("data-url").takeIf { it.isNotBlank() }
+            
+            url?.let {
+                val quality = element.attr("data-quality") ?: extractQualityFromUrl(it)
+                videos.add(Video(it, "Data - $quality", it, headers))
             }
         }
-
-        // Parse HLS manifest
-        val hlsPattern = """hlsUrl\s*:\s*["']([^"']+)["']""".toRegex()
-        hlsPattern.find(script)?.groupValues?.get(1)?.let { hlsUrl ->
-            if (hlsUrl.isNotBlank()) {
-                playlistUtils.extractFromHls(hlsUrl, baseUrl).let { videos.addAll(it) }
-            }
-        }
-
+        
         return videos
     }
 
-    private fun extractFromEmbed(embedUrl: String): List<Video> {
-        return try {
-            val response = client.newCall(GET(embedUrl, headers)).execute()
-            val doc = response.asJsoup()
-
-            val videos = mutableListOf<Video>()
-            doc.select("source").forEach { source ->
-                val url = source.attr("src")
-                if (url.isNotBlank()) {
-                    val quality = source.attr("label") ?: extractQualityFromUrl(url)
-                    videos.add(Video(url, "Embed - $quality", url))
-                }
-            }
-
-            // Check for packed JavaScript
-            doc.select("script:containsData(function(p,a,c,k,e,d))").firstOrNull()?.data()?.let { packed ->
-                Unpacker.unpack(packed)?.let { unpacked ->
-                    val mp4Pattern = """(https?:[^"']+\.mp4[^"']*)""".toRegex()
-                    mp4Pattern.findAll(unpacked).forEach { match ->
-                        val url = match.value
-                        videos.add(Video(url, "Unpacked - ${extractQualityFromUrl(url)}", url))
+    private fun extractFromJavaScript(document: org.jsoup.nodes.Document): List<Video> {
+        val videos = mutableListOf<Video>()
+        
+        document.select("script").forEach { script ->
+            val scriptText = script.data() + script.html()
+            
+            // Extract video URLs from JavaScript variables
+            val patterns = listOf(
+                """videoUrl\s*[:=]\s*["']([^"']+)["']""",
+                """src\s*[:=]\s*["']([^"']+)["']""",
+                """file\s*[:=]\s*["']([^"']+)["']""",
+                """url\s*[:=]\s*["']([^"']+)["']"""
+            )
+            
+            patterns.forEach { pattern ->
+                pattern.toRegex().findAll(scriptText).forEach { match ->
+                    val url = match.groupValues[1].takeIf { it.isNotBlank() }
+                    url?.let {
+                        if (it.contains("mp4") || it.contains("m3u8") || it.contains("video")) {
+                            val quality = extractQualityFromUrl(it)
+                            videos.add(Video(it, "JS - $quality", it, headers))
+                        }
                     }
                 }
             }
+        }
+        
+        return videos
+    }
 
-            videos
+    private fun extractFromEmbedUrl(embedUrl: String): List<Video> {
+        return try {
+            when {
+                embedUrl.contains("streamwish") -> streamwishExtractor.videosFromUrl(embedUrl) ?: emptyList()
+                embedUrl.contains("voe") -> voeExtractor.videosFromUrl(embedUrl) ?: emptyList()
+                embedUrl.contains("dood") -> doodExtractor.videosFromUrl(embedUrl) ?: emptyList()
+                embedUrl.contains("streamtape") -> streamtapeExtractor.videoFromUrl(embedUrl)?.let { listOf(it) } ?: emptyList()
+                embedUrl.contains("ok.ru") -> okruExtractor.videosFromUrl(embedUrl) ?: emptyList()
+                embedUrl.contains("mixdrop") -> mixdropExtractor.videoFromUrl(embedUrl)?.let { listOf(it) } ?: emptyList()
+                else -> emptyList()
+            }
         } catch (e: Exception) {
             emptyList()
         }
     }
 
-    private fun extractFromApi(videoId: String): List<Video> {
-        return try {
-            val url = "$baseUrl/api/video/$videoId"
-            val response = client.newCall(GET(url, headers)).execute()
-            val jsonString = response.body.string()
-
-            val videos = mutableListOf<Video>()
-            val qualityPattern = """["']?(\d+)p["']?\s*:\s*["']([^"']+)["']""".toRegex()
-            qualityPattern.findAll(jsonString).forEach { match ->
-                val quality = "${match.groupValues[1]}p"
-                val url = match.groupValues[2]
-                if (url.isNotBlank()) {
-                    videos.add(Video(url, "API - $quality", url))
-                }
-            }
-
-            videos
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    // ==================== FILTER SYSTEM ====================
-    override fun getFilterList(): AnimeFilterList {
-        return AnimeFilterList(
-            // Sort Filter
-            SortFilter(),
-            AnimeFilter.Separator(),
-
-            // Category Filter Group
-            AnimeFilter.Header("🎯 CATEGORIES"),
-            CategoryFilter("Amateur", "amateur"),
-            CategoryFilter("Anal", "anal"),
-            CategoryFilter("Asian", "asian"),
-            CategoryFilter("BBC", "bbc"),
-            CategoryFilter("BBW", "bbw"),
-            CategoryFilter("BDSM", "bdsm"),
-            CategoryFilter("Big Tits", "big-tits"),
-            CategoryFilter("Blonde", "blonde"),
-            CategoryFilter("Blowjob", "blowjob"),
-            CategoryFilter("Brunette", "brunette"),
-            CategoryFilter("Bukkake", "bukkake"),
-            CategoryFilter("College", "college"),
-            CategoryFilter("Creampie", "creampie"),
-            CategoryFilter("Cumshot", "cumshot"),
-            CategoryFilter("Double Penetration", "double-penetration"),
-            CategoryFilter("Ebony", "ebony"),
-            CategoryFilter("Gangbang", "gangbang"),
-            CategoryFilter("Hardcore", "hardcore"),
-            CategoryFilter("Japanese", "japanese"),
-            CategoryFilter("Latina", "latina"),
-            CategoryFilter("Lesbian", "lesbian"),
-            CategoryFilter("MILF", "milf"),
-            CategoryFilter("Teen", "teen"),
-            CategoryFilter("Threesome", "threesome"),
-            CategoryFilter("VR", "vr"),
-            CategoryFilter("4K", "4k"),
-            AnimeFilter.Separator(),
-
-            // Quality Filter
-            AnimeFilter.Header("📊 QUALITY FILTERS"),
-            QualityFilter(),
-            AnimeFilter.Separator(),
-
-            // Duration Filter
-            AnimeFilter.Header("⏱ DURATION FILTERS"),
-            DurationFilter(),
-            AnimeFilter.Separator(),
-
-            // Date Filter
-            AnimeFilter.Header("📅 DATE FILTERS"),
-            DateFilter(),
-            AnimeFilter.Separator(),
-
-            // Advanced Filters
-            AnimeFilter.Header("⚙️ ADVANCED FILTERS"),
-            HDOnlyFilter(),
-            VRFilter(),
-            PremiumFilter(),
-            ActorFilter("Actor/Actress Name"),
-            AnimeFilter.Separator(),
-        )
-    }
-
-    // ==================== FILTER IMPLEMENTATIONS ====================
-    private fun buildFilterUrl(page: Int, filters: AnimeFilterList): String {
-        val queryParams = mutableListOf<String>()
-        filters.forEach { filter ->
-            when (filter) {
-                is SortFilter -> {
-                    if (filter.state != 0) {
-                        queryParams.add("sort=${filter.toUriPart()}")
-                    }
-                }
-                is CategoryFilter -> {
-                    if (filter.state) {
-                        queryParams.add("category=${filter.toUriPart()}")
-                    }
-                }
-                is QualityFilter -> {
-                    if (filter.state != 0) {
-                        queryParams.add("quality=${filter.toUriPart()}")
-                    }
-                }
-                is DurationFilter -> {
-                    if (filter.state != 0) {
-                        queryParams.add("duration=${filter.toUriPart()}")
-                    }
-                }
-                is DateFilter -> {
-                    if (filter.state != 0) {
-                        queryParams.add("date=${filter.toUriPart()}")
-                    }
-                }
-                is HDOnlyFilter -> {
-                    if (filter.state) {
-                        queryParams.add("hd=1")
-                    }
-                }
-                is VRFilter -> {
-                    if (filter.state) {
-                        queryParams.add("vr=1")
-                    }
-                }
-                is PremiumFilter -> {
-                    if (filter.state) {
-                        queryParams.add("premium=1")
-                    }
-                }
-                is ActorFilter -> {
-                    if (filter.state.isNotBlank()) {
-                        queryParams.add("actor=${java.net.URLEncoder.encode(filter.state, "UTF-8")}")
-                    }
-                }
-                else -> {
-                    // Handle other filter types or ignore
-                }
-            }
-        }
-        queryParams.add("page=$page")
-        return if (queryParams.isNotEmpty()) {
-            "$baseUrl/filter/?${queryParams.joinToString("&")}"
-        } else {
-            "$baseUrl/filter/$page/"
-        }
-    }
-
-    // ==================== PREFERENCE SCREEN ====================
-    override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        // Store context for later use
-        prefsContext = screen.context
-        // Video Quality Preference
-        ListPreference(screen.context).apply {
-            key = PREF_QUALITY_KEY
-            title = "🎬 Preferred Video Quality"
-            entries = arrayOf(
-                "Auto (Best Available)",
-                "4K (2160p)",
-                "QHD (1440p)",
-                "Full HD (1080p)",
-                "HD (720p)",
-                "SD (480p)",
-                "Low (360p)",
+    private fun extractFromApiEndpoints(document: org.jsoup.nodes.Document): List<Video> {
+        val videos = mutableListOf<Video>()
+        val videoId = document.location().substringAfterLast("/").substringBefore("?")
+        
+        if (videoId.isNotBlank()) {
+            // Try various API patterns
+            val apiPatterns = listOf(
+                "$baseUrl/api/video/$videoId",
+                "$baseUrl/api/player/$videoId",
+                "$baseUrl/video/$videoId/json"
             )
-            entryValues = arrayOf("auto", "2160", "1440", "1080", "720", "480", "360")
-            setDefaultValue(PREF_QUALITY_DEFAULT)
-            summary = "%s"
-            setOnPreferenceChangeListener { _, newValue ->
-                saveStringPref(PREF_QUALITY_KEY, newValue as String)
-                true
-            }
-        }.also(screen::addPreference)
-
-        // Sort Preference
-        ListPreference(screen.context).apply {
-            key = PREF_SORT_KEY
-            title = "📊 Default Sort Order"
-            entries = arrayOf(
-                "Most Viewed",
-                "Top Rated",
-                "Most Recent",
-                "Longest",
-                "Most Favorited",
-            )
-            entryValues = arrayOf("most-viewed", "top-rated", "latest", "longest", "most-favorited")
-            setDefaultValue(PREF_SORT_DEFAULT)
-            summary = "%s"
-            setOnPreferenceChangeListener { _, newValue ->
-                saveStringPref(PREF_SORT_KEY, newValue as String)
-                true
-            }
-        }.also(screen::addPreference)
-
-        // Video Preview Preference
-        SwitchPreferenceCompat(screen.context).apply {
-            key = PREF_PREVIEW_KEY
-            title = "🎞️ Enable Video Previews"
-            summary = "Show animated previews/GIFs for videos"
-            setDefaultValue(PREF_PREVIEW_DEFAULT)
-            setOnPreferenceChangeListener { _, newValue ->
-                saveBooleanPref(PREF_PREVIEW_KEY, newValue as Boolean)
-                true
-            }
-        }.also(screen::addPreference)
-
-        // Auto-play Preference
-        SwitchPreferenceCompat(screen.context).apply {
-            key = PREF_AUTOPLAY_KEY
-            title = "⏭️ Auto-play Next Video"
-            summary = "Automatically play next video when current ends"
-            setDefaultValue(PREF_AUTOPLAY_DEFAULT)
-            setOnPreferenceChangeListener { _, newValue ->
-                saveBooleanPref(PREF_AUTOPLAY_KEY, newValue as Boolean)
-                true
-            }
-        }.also(screen::addPreference)
-
-        // Data Saving Preference
-        ListPreference(screen.context).apply {
-            key = PREF_DATA_SAVING_KEY
-            title = "📱 Data Saving Mode"
-            entries = arrayOf(
-                "Disabled (Best Quality)",
-                "Wi-Fi Only (Full Quality)",
-                "Enabled (720p Max)",
-                "Extreme (480p Max)",
-            )
-            entryValues = arrayOf("disabled", "wifi", "enabled", "extreme")
-            setDefaultValue(PREF_DATA_SAVING_DEFAULT)
-            summary = "%s"
-            setOnPreferenceChangeListener { _, newValue ->
-                saveStringPref(PREF_DATA_SAVING_KEY, newValue as String)
-                true
-            }
-        }.also(screen::addPreference)
-
-        // Cache Management
-        Preference(screen.context).apply {
-            key = PREF_CACHE_CLEAR_KEY
-            title = "🗑️ Clear Cache"
-            summary = "Clear all cached thumbnails and data"
-            setOnPreferenceClickListener {
-                // Implementation would clear cache
-                true
-            }
-        }.also(screen::addPreference)
-    }
-
-    // ==================== VIDEO SORTING ====================
-    override fun List<Video>.sort(): List<Video> {
-        val qualityPref = getStringPref(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)
-        val dataMode = getStringPref(PREF_DATA_SAVING_KEY, PREF_DATA_SAVING_DEFAULT)
-
-        return sortedWith(
-            compareByDescending<Video> { video ->
-                when (qualityPref) {
-                    "auto" -> when (dataMode) {
-                        "disabled" -> video.qualityValue
-                        "wifi" -> if (isWifiConnected()) video.qualityValue else 0
-                        "enabled" -> if (video.qualityValue <= 720) video.qualityValue else 0
-                        "extreme" -> if (video.qualityValue <= 480) video.qualityValue else 0
-                        else -> video.qualityValue
+            
+            apiPatterns.forEach { apiUrl ->
+                try {
+                    val response = client.newCall(GET(apiUrl, headers)).execute()
+                    if (response.isSuccessful) {
+                        val json = response.body.string()
+                        extractVideosFromJson(json).let { videos.addAll(it) }
                     }
-                    else -> if (video.quality.contains(qualityPref)) 1000 + video.qualityValue else video.qualityValue
-                }
-            }.thenByDescending { video ->
-                video.qualityValue
-            },
-        )
-    }
-
-    // ==================== UTILITY FUNCTIONS ====================
-    private fun parseUploadDate(document: org.jsoup.nodes.Document): Long {
-        return try {
-            val dateText = document.selectFirst("span[itemprop='uploadDate']")?.attr("content")
-                ?: document.selectFirst(".upload-date")?.text()
-
-            if (dateText != null) {
-                val formats = listOf(
-                    SimpleDateFormat("yyyy-MM-dd", Locale.US),
-                    SimpleDateFormat("MMM dd, yyyy", Locale.US),
-                    SimpleDateFormat("dd MMM yyyy", Locale.US),
-                )
-
-                for (format in formats) {
-                    try {
-                        return format.parse(dateText)?.time ?: continue
-                    } catch (e: Exception) {
-                        continue
-                    }
+                } catch (e: Exception) {
+                    // Continue to next pattern
                 }
             }
-            System.currentTimeMillis()
-        } catch (e: Exception) {
-            System.currentTimeMillis()
         }
+        
+        return videos
+    }
+
+    private fun extractVideosFromJson(json: String): List<Video> {
+        val videos = mutableListOf<Video>()
+        
+        // Simple JSON parsing for video URLs
+        val urlPattern = """["']?(?:url|src|file)["']?\s*:\s*["']([^"']+)["']""".toRegex()
+        val qualityPattern = """["']?(?:quality|res|height)["']?\s*:\s*["']?([^,"'}]+)["']?""".toRegex()
+        
+        urlPattern.findAll(json).forEachIndexed { index, urlMatch ->
+            val url = urlMatch.groupValues[1]
+            if (url.isNotBlank() && (url.contains(".mp4") || url.contains(".m3u8"))) {
+                // Try to find corresponding quality
+                val quality = run {
+                    qualityPattern.find(json, urlMatch.range.first)?.groupValues?.get(1)
+                        ?: extractQualityFromUrl(url)
+                }
+                videos.add(Video(url, "API - $quality", url, headers))
+            }
+        }
+        
+        return videos
     }
 
     private fun extractQualityFromUrl(url: String): String {
         return when {
-            url.contains("2160") -> "2160p"
+            url.contains("2160") || url.contains("4k") -> "4K"
             url.contains("1440") -> "1440p"
             url.contains("1080") -> "1080p"
             url.contains("720") -> "720p"
@@ -687,25 +517,322 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
-    private fun String.slugify(): String {
-        return this.lowercase()
-            .replace("[^a-z0-9\\s-]".toRegex(), "")
-            .replace("\\s+".toRegex(), "-")
-            .replace("-+".toRegex(), "-")
-            .trim('-')
+    // ==================== RELATED ANIME ====================
+    override fun relatedAnimeListRequest(anime: SAnime): Request {
+        val videoId = anime.url.substringAfterLast("/").substringBefore("?")
+        return GET("$baseUrl/video/$videoId/related/", headers)
     }
 
-    private fun isWifiConnected(): Boolean {
-        // This would require Android context
-        // For now, assume WiFi for better quality
-        return true
+    override fun relatedAnimeListParse(response: Response): List<SAnime> {
+        val document = response.asJsoup()
+        return document.select(".related-videos .video, #related .mb").mapNotNull { element ->
+            try {
+                SAnime.create().apply {
+                    val link = element.selectFirst("a")
+                    link?.let {
+                        setUrlWithoutDomain(
+                            if (it.attr("href").startsWith("/")) "$baseUrl${it.attr("href")}"
+                            else it.attr("href")
+                        )
+                    }
+                    title = link?.attr("title") ?: element.selectFirst("img")?.attr("alt") ?: ""
+                    thumbnail_url = element.selectFirst("img")?.attr("src")
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    // ==================== FILTER URL BUILDER ====================
+    private fun buildFilterUrl(page: Int, filters: AnimeFilterList): Request {
+        val urlBuilder = HttpUrl.parse("$baseUrl/filter/")?.newBuilder()
+            ?: return GET("$baseUrl/$page/", headers)
+        
+        // Add filter parameters
+        filters.forEach { filter ->
+            when (filter) {
+                is SortFilter -> {
+                    if (filter.state != 0) {
+                        urlBuilder.addQueryParameter("sort", filter.toUriPart())
+                    }
+                }
+                is CategoryFilter -> {
+                    if (filter.state != 0) {
+                        urlBuilder.addQueryParameter("category", filter.toUriPart())
+                    }
+                }
+                is QualityFilter -> {
+                    if (filter.state != 0) {
+                        urlBuilder.addQueryParameter("quality", filter.toUriPart())
+                    }
+                }
+                is DurationFilter -> {
+                    if (filter.state != 0) {
+                        urlBuilder.addQueryParameter("duration", filter.toUriPart())
+                    }
+                }
+                is DateFilter -> {
+                    if (filter.state != 0) {
+                        urlBuilder.addQueryParameter("date", filter.toUriPart())
+                    }
+                }
+                is HDOnlyFilter -> {
+                    if (filter.state) {
+                        urlBuilder.addQueryParameter("hd", "1")
+                    }
+                }
+                is VRFilter -> {
+                    if (filter.state) {
+                        urlBuilder.addQueryParameter("vr", "1")
+                    }
+                }
+                is ActorFilter -> {
+                    if (filter.state.isNotBlank()) {
+                        urlBuilder.addQueryParameter("actor", filter.state)
+                    }
+                }
+            }
+        }
+        
+        // Add pagination
+        urlBuilder.addQueryParameter("page", page.toString())
+        
+        return GET(urlBuilder.build().toString(), headers)
+    }
+
+    // ==================== PREFERENCE SCREEN ====================
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        // Video Quality Preference
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY_KEY
+            title = "Preferred Video Quality"
+            entries = arrayOf(
+                "Auto (Best Available)",
+                "4K (2160p)",
+                "QHD (1440p)",
+                "Full HD (1080p)",
+                "HD (720p)",
+                "SD (480p)",
+                "Low (360p)",
+                "Mobile (240p)"
+            )
+            entryValues = arrayOf("auto", "2160", "1440", "1080", "720", "480", "360", "240")
+            setDefaultValue(PREF_QUALITY_DEFAULT)
+            summary = "%s"
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putString(key, newValue as String).apply()
+                true
+            }
+        }.also(screen::addPreference)
+
+        // Sort Preference
+        ListPreference(screen.context).apply {
+            key = PREF_SORT_KEY
+            title = "Default Sort Order"
+            entries = arrayOf(
+                "Most Viewed",
+                "Top Rated",
+                "Most Recent",
+                "Longest",
+                "Most Favorited",
+                "Most Commented"
+            )
+            entryValues = arrayOf("most-viewed", "top-rated", "latest", "longest", "most-favorited", "most-commented")
+            setDefaultValue(PREF_SORT_DEFAULT)
+            summary = "%s"
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putString(key, newValue as String).apply()
+                true
+            }
+        }.also(screen::addPreference)
+
+        // Video Preview Preference
+        SwitchPreferenceCompat(screen.context).apply {
+            key = PREF_PREVIEW_KEY
+            title = "Enable Video Previews"
+            summary = "Show animated previews/GIFs for videos (uses more data)"
+            setDefaultValue(PREF_PREVIEW_DEFAULT)
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putBoolean(key, newValue as Boolean).apply()
+                true
+            }
+        }.also(screen::addPreference)
+
+        // Auto-play Preference
+        SwitchPreferenceCompat(screen.context).apply {
+            key = PREF_AUTOPLAY_KEY
+            title = "Auto-play Next Video"
+            summary = "Automatically play next video when current ends"
+            setDefaultValue(PREF_AUTOPLAY_DEFAULT)
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putBoolean(key, newValue as Boolean).apply()
+                true
+            }
+        }.also(screen::addPreference)
+
+        // Data Saving Preference
+        ListPreference(screen.context).apply {
+            key = PREF_DATA_SAVING_KEY
+            title = "Data Saving Mode"
+            entries = arrayOf(
+                "Disabled (Best Quality)",
+                "Wi-Fi Only (Full Quality)",
+                "Enabled (720p Max)",
+                "Extreme (480p Max)",
+                "Audio Only"
+            )
+            entryValues = arrayOf("disabled", "wifi", "enabled", "extreme", "audio")
+            setDefaultValue(PREF_DATA_SAVING_DEFAULT)
+            summary = "%s"
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putString(key, newValue as String).apply()
+                true
+            }
+        }.also(screen::addPreference)
+
+        // Video Source Priority
+        MultiSelectListPreference(screen.context).apply {
+            key = PREF_SOURCE_PRIORITY_KEY
+            title = "Video Source Priority"
+            entries = arrayOf(
+                "Direct MP4 Links",
+                "HLS Streams",
+                "StreamWish",
+                "Voe",
+                "DoodStream",
+                "StreamTape",
+                "Ok.ru",
+                "MixDrop"
+            )
+            entryValues = arrayOf("direct", "hls", "streamwish", "voe", "dood", "streamtape", "okru", "mixdrop")
+            setDefaultValue(setOf("direct", "hls", "streamwish"))
+            summary = "%s"
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putStringSet(key, newValue as Set<String>).apply()
+                true
+            }
+        }.also(screen::addPreference)
+
+        // Cache Management
+        PreferenceCategory(screen.context).apply {
+            title = "Cache & Storage"
+            screen.addPreference(this)
+        }
+
+        Preference(screen.context).apply {
+            key = PREF_CACHE_CLEAR_KEY
+            title = "Clear Thumbnail Cache"
+            summary = "Remove cached thumbnails and previews"
+            setOnPreferenceClickListener {
+                // Clear cache implementation
+                true
+            }
+        }.also(screen::addPreference)
+
+        Preference(screen.context).apply {
+            key = PREF_STORAGE_STATS_KEY
+            title = "Storage Statistics"
+            summary = "View cache usage and storage information"
+            setOnPreferenceClickListener {
+                // Show storage stats
+                true
+            }
+        }.also(screen::addPreference)
+    }
+
+    // ==================== VIDEO SORTING ====================
+    override fun List<Video>.sort(): List<Video> {
+        val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
+        val dataMode = preferences.getString(PREF_DATA_SAVING_KEY, PREF_DATA_SAVING_DEFAULT) ?: PREF_DATA_SAVING_DEFAULT
+        val sourcePriority = preferences.getStringSet(PREF_SOURCE_PRIORITY_KEY, setOf("direct", "hls"))
+        
+        return sortedWith(compareByDescending<Video> { video ->
+            // Source priority score
+            val sourceScore = when {
+                video.quality.contains("Direct") && "direct" in sourcePriority -> 100
+                video.quality.contains("HLS") && "hls" in sourcePriority -> 90
+                video.quality.contains("StreamWish") && "streamwish" in sourcePriority -> 80
+                video.quality.contains("Voe") && "voe" in sourcePriority -> 70
+                video.quality.contains("Dood") && "dood" in sourcePriority -> 60
+                video.quality.contains("StreamTape") && "streamtape" in sourcePriority -> 50
+                video.quality.contains("Ok.ru") && "okru" in sourcePriority -> 40
+                video.quality.contains("MixDrop") && "mixdrop" in sourcePriority -> 30
+                else -> 0
+            }
+            
+            // Quality preference score
+            val qualityScore = when {
+                qualityPref == "auto" -> when (dataMode) {
+                    "disabled" -> video.qualityValue
+                    "wifi" -> if (isWifiConnected()) video.qualityValue else 0
+                    "enabled" -> if (video.qualityValue <= 720) video.qualityValue else 0
+                    "extreme" -> if (video.qualityValue <= 480) video.qualityValue else 0
+                    "audio" -> if (video.quality.contains("audio")) 1000 else 0
+                    else -> video.qualityValue
+                }
+                video.quality.contains(qualityPref) -> 1000 + video.qualityValue
+                else -> video.qualityValue
+            }
+            
+            sourceScore + qualityScore
+        })
+    }
+
+    // ==================== UTILITY FUNCTIONS ====================
+    private fun String.formatViews(): String {
+        return try {
+            val views = this.replace("[^0-9]".toRegex(), "").toLong()
+            when {
+                views >= 1_000_000_000 -> "${views / 1_000_000_000}B"
+                views >= 1_000_000 -> "${views / 1_000_000}M"
+                views >= 1_000 -> "${views / 1_000}K"
+                else -> this
+            }
+        } catch (e: Exception) {
+            this
+        }
+    }
+
+    private fun String.formatRating(): String {
+        return try {
+            val rating = this.toFloat()
+            String.format("%.1f/5", rating)
+        } catch (e: Exception) {
+            this
+        }
+    }
+
+    private fun parseDateString(dateStr: String): Long {
+        return try {
+            // Try various date formats
+            val formats = listOf(
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US),
+                java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US),
+                java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.US),
+                java.text.SimpleDateFormat("yyyy/MM/dd", java.util.Locale.US)
+            )
+            
+            for (format in formats) {
+                try {
+                    return format.parse(dateStr)?.time ?: continue
+                } catch (e: Exception) {
+                    continue
+                }
+            }
+            System.currentTimeMillis()
+        } catch (e: Exception) {
+            System.currentTimeMillis()
+        }
     }
 
     private val Video.qualityValue: Int
         get() = Regex("""(\d+)""").find(this.quality)?.value?.toIntOrNull() ?: 0
 
-    private val videoComparator = Comparator<Video> { v1, v2 ->
-        v2.qualityValue.compareTo(v1.qualityValue)
+    private fun isWifiConnected(): Boolean {
+        // This would require Android context in a real implementation
+        // For now, return true as most users will be on WiFi for streaming
+        return true
     }
 
     // ==================== COMPANION OBJECT ====================
@@ -713,84 +840,21 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         // Preference Keys
         private const val PREF_QUALITY_KEY = "pref_quality"
         private const val PREF_QUALITY_DEFAULT = "auto"
-
+        
         private const val PREF_SORT_KEY = "pref_sort"
         private const val PREF_SORT_DEFAULT = "most-viewed"
-
+        
         private const val PREF_PREVIEW_KEY = "pref_preview"
         private const val PREF_PREVIEW_DEFAULT = true
-
+        
         private const val PREF_AUTOPLAY_KEY = "pref_autoplay"
         private const val PREF_AUTOPLAY_DEFAULT = true
-
+        
         private const val PREF_DATA_SAVING_KEY = "pref_data_saving"
         private const val PREF_DATA_SAVING_DEFAULT = "wifi"
-
+        
+        private const val PREF_SOURCE_PRIORITY_KEY = "pref_source_priority"
         private const val PREF_CACHE_CLEAR_KEY = "pref_cache_clear"
+        private const val PREF_STORAGE_STATS_KEY = "pref_storage_stats"
     }
 }
-
-// ==================== FILTER CLASSES ====================
-
-open class UriPartFilter(
-    name: String,
-    private val vals: Array<Pair<String, String>>,
-) : AnimeFilter.Select<String>(name, vals.map { it.first }.toTypedArray()) {
-    fun toUriPart() = vals[state].second
-}
-
-class SortFilter : UriPartFilter(
-    "Sort By",
-    arrayOf(
-        Pair("Most Viewed", "most-viewed"),
-        Pair("Top Rated", "top-rated"),
-        Pair("Most Recent", "latest"),
-        Pair("Longest", "longest"),
-        Pair("Most Favorited", "most-favorited"),
-    ),
-)
-
-class CategoryFilter(
-    name: String,
-    private val slug: String,
-) : AnimeFilter.CheckBox(name) {
-    fun toUriPart() = slug
-}
-
-class QualityFilter : UriPartFilter(
-    "Quality",
-    arrayOf(
-        Pair("Any", ""),
-        Pair("4K", "4k"),
-        Pair("HD", "hd"),
-        Pair("SD", "sd"),
-        Pair("Low", "low"),
-    ),
-)
-
-class DurationFilter : UriPartFilter(
-    "Duration",
-    arrayOf(
-        Pair("Any", ""),
-        Pair("Short (<10min)", "short"),
-        Pair("Medium (10-20min)", "medium"),
-        Pair("Long (20-30min)", "long"),
-        Pair("Very Long (30+min)", "very-long"),
-    ),
-)
-
-class DateFilter : UriPartFilter(
-    "Upload Date",
-    arrayOf(
-        Pair("Any Time", ""),
-        Pair("Today", "today"),
-        Pair("This Week", "week"),
-        Pair("This Month", "month"),
-        Pair("This Year", "year"),
-    ),
-)
-
-class HDOnlyFilter : AnimeFilter.CheckBox("HD Only")
-class VRFilter : AnimeFilter.CheckBox("VR Only")
-class PremiumFilter : AnimeFilter.CheckBox("Premium Only")
-class ActorFilter(name: String) : AnimeFilter.Text(name)
