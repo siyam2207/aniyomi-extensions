@@ -51,13 +51,50 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
         .build()
 
+    // ==================== PREFERENCE ACCESS ====================
+    private fun getStringPref(key: String, defaultValue: String): String {
+        return try {
+            val prefs = context.getSharedPreferences("source_$id", 0)
+            prefs.getString(key, defaultValue) ?: defaultValue
+        } catch (e: Exception) {
+            defaultValue
+        }
+    }
+
+    private fun getBooleanPref(key: String, defaultValue: Boolean): Boolean {
+        return try {
+            val prefs = context.getSharedPreferences("source_$id", 0)
+            prefs.getBoolean(key, defaultValue)
+        } catch (e: Exception) {
+            defaultValue
+        }
+    }
+
+    private fun saveStringPref(key: String, value: String) {
+        try {
+            val prefs = context.getSharedPreferences("source_$id", 0)
+            prefs.edit().putString(key, value).apply()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
+    private fun saveBooleanPref(key: String, value: Boolean) {
+        try {
+            val prefs = context.getSharedPreferences("source_$id", 0)
+            prefs.edit().putBoolean(key, value).apply()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
     // ==================== INTERNAL COMPONENTS ====================
     private val playlistUtils by lazy { PlaylistUtils(client, headers) }
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     // ==================== POPULAR ANIME ====================
     override fun popularAnimeRequest(page: Int): Request {
-        val sort = preferences.getString(PREF_SORT_KEY, PREF_SORT_DEFAULT) ?: PREF_SORT_DEFAULT
+        val sort = getStringPref(PREF_SORT_KEY, PREF_SORT_DEFAULT)
         return GET("$baseUrl/$sort/$page/", headers)
     }
 
@@ -110,7 +147,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         ?: "Unknown Title"
 
                     // Thumbnail with preview support
-                    val enablePreviews = preferences.getBoolean(PREF_PREVIEW_KEY, PREF_PREVIEW_DEFAULT)
+                    val enablePreviews = getBooleanPref(PREF_PREVIEW_KEY, PREF_PREVIEW_DEFAULT)
                     thumbnail_url = element.selectFirst("img")?.let { img ->
                         when {
                             enablePreviews -> {
@@ -503,7 +540,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_QUALITY_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putString(PREF_QUALITY_KEY, newValue as String).apply()
+                saveStringPref(PREF_QUALITY_KEY, newValue as String)
                 true
             }
         }.also(screen::addPreference)
@@ -523,7 +560,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_SORT_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putString(PREF_SORT_KEY, newValue as String).apply()
+                saveStringPref(PREF_SORT_KEY, newValue as String)
                 true
             }
         }.also(screen::addPreference)
@@ -535,7 +572,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             summary = "Show animated previews/GIFs for videos"
             setDefaultValue(PREF_PREVIEW_DEFAULT)
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putBoolean(PREF_PREVIEW_KEY, newValue as Boolean).apply()
+                saveBooleanPref(PREF_PREVIEW_KEY, newValue as Boolean)
                 true
             }
         }.also(screen::addPreference)
@@ -547,7 +584,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             summary = "Automatically play next video when current ends"
             setDefaultValue(PREF_AUTOPLAY_DEFAULT)
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putBoolean(PREF_AUTOPLAY_KEY, newValue as Boolean).apply()
+                saveBooleanPref(PREF_AUTOPLAY_KEY, newValue as Boolean)
                 true
             }
         }.also(screen::addPreference)
@@ -566,7 +603,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_DATA_SAVING_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putString(PREF_DATA_SAVING_KEY, newValue as String).apply()
+                saveStringPref(PREF_DATA_SAVING_KEY, newValue as String)
                 true
             }
         }.also(screen::addPreference)
@@ -585,8 +622,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== VIDEO SORTING ====================
     override fun List<Video>.sort(): List<Video> {
-        val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
-        val dataMode = preferences.getString(PREF_DATA_SAVING_KEY, PREF_DATA_SAVING_DEFAULT) ?: PREF_DATA_SAVING_DEFAULT
+        val qualityPref = getStringPref(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)
+        val dataMode = getStringPref(PREF_DATA_SAVING_KEY, PREF_DATA_SAVING_DEFAULT)
 
         return sortedWith(
             compareByDescending<Video> { video ->
