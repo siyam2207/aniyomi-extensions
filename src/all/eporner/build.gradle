@@ -1,0 +1,12 @@
+ext {
+    extName = "Eporner"
+    pkgNameSuffix = "eporner"
+    extClass = "Eporner"
+    extVersionCode = 1
+    libVersion = "1.0"
+}
+
+dependencies {
+    compileOnly "org.jsoup:jsoup:1.14.3"
+    compileOnly "eu.kanade.tachiyomi:extensions-lib:16-rc4"
+}
