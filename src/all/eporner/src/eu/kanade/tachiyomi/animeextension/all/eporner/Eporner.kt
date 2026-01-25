@@ -1,359 +1,187 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import android.util.Log
-import androidx.preference.ListPreference
-import androidx.preference.PreferenceScreen
-import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.AnimeFilter
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
-import eu.kanade.tachiyomi.util.parseAs
-import extensions.utils.getPreferencesLazy // <-- CRITICAL: This import was missing
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import kotlinx.serialization.json.Json
 import okhttp3.Request
 import okhttp3.Response
 import uy.kohesive.injekt.injectLazy
-import java.text.SimpleDateFormat
-import java.util.Locale
 
-class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
+class Eporner : AnimeHttpSource() {
     override val name = "Eporner"
     override val baseUrl = "https://www.eporner.com"
-    private val apiBaseUrl = "$baseUrl/api/v2"
+    private val apiUrl = "https://www.eporner.com/api/v2"
     override val lang = "all"
     override val supportsLatest = true
 
-    private val json by injectLazy<kotlinx.serialization.json.Json>()
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-    private val preferences by getPreferencesLazy() // <-- CRITICAL: This property was missing
+    private val json: Json by injectLazy()
+    private val tag = "EpornerExtension"
 
-    // ==============================
-    // 1. POPULAR ANIME
-    // ==============================
+    // ==================== Popular Anime ====================
     override fun popularAnimeRequest(page: Int): Request {
-        val url = "$apiBaseUrl/video/search/".toHttpUrl().newBuilder()
-            .addQueryParameter("per_page", "30")
-            .addQueryParameter("page", page.toString())
-            .addQueryParameter("order", "top-weekly")
-            .addQueryParameter("thumbsize", "medium")
-            .addQueryParameter("format", "json")
-            .build()
+        val url = "$apiUrl/video/search/?query=all&page=$page&order=most-popular&thumbsize=big&format=json"
         return GET(url, headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
-        return parseVideoSearchResponse(response)
+        return try {
+            val apiResponse = json.decodeFromString<ApiSearchResponse>(response.body.string())
+            val animeList = apiResponse.videos.map { it.toSAnime(baseUrl) }
+            val hasNextPage = apiResponse.page < apiResponse.total_pages
+            AnimesPage(animeList, hasNextPage)
+        } catch (e: Exception) {
+            Log.e(tag, "Popular parse error: ${e.message}")
+            AnimesPage(emptyList(), false)
+        }
     }
 
-    // ==============================
-    // 2. LATEST UPDATES
-    // ==============================
+    // ==================== Latest Updates ====================
     override fun latestUpdatesRequest(page: Int): Request {
-        val url = "$apiBaseUrl/video/search/".toHttpUrl().newBuilder()
-            .addQueryParameter("per_page", "30")
-            .addQueryParameter("page", page.toString())
-            .addQueryParameter("order", "latest")
-            .addQueryParameter("thumbsize", "medium")
-            .addQueryParameter("format", "json")
-            .build()
+        val url = "$apiUrl/video/search/?query=all&page=$page&order=latest&thumbsize=big&format=json"
         return GET(url, headers)
     }
 
     override fun latestUpdatesParse(response: Response): AnimesPage {
-        return parseVideoSearchResponse(response)
+        return popularAnimeParse(response)
     }
 
-    // ==============================
-    // 3. SEARCH
-    // ==============================
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val url = "$apiBaseUrl/video/search/".toHttpUrl().newBuilder()
-            .addQueryParameter("per_page", "30")
-            .addQueryParameter("page", page.toString())
-            .addQueryParameter("thumbsize", "medium")
-            .addQueryParameter("format", "json")
-
-        var searchQuery = query
-        filters.forEach { filter ->
-            when (filter) {
-                is CategoryFilter -> {
-                    if (filter.state != 0) {
-                        searchQuery = if (searchQuery.isBlank()) {
-                            filter.values[filter.state]
-                        } else {
-                            "$searchQuery ${filter.values[filter.state]}"
-                        }
-                    }
-                }
-                is SortFilter -> {
-                    if (filter.state != 0) {
-                        url.addQueryParameter("order", filter.values[filter.state])
-                    }
-                }
-                is GayFilter -> {
-                    // FIXED: Correctly handle the filter's integer state
-                    url.addQueryParameter("gay", filter.state.toString())
-                }
-                else -> {}
-            }
+    // ==================== Search ====================
+    override fun searchAnimeRequest(page: Int, query: String): Request {
+        return if (query.isNotBlank()) {
+            val url = "$apiUrl/video/search/?query=${query.encode()}&page=$page&thumbsize=big&format=json"
+            GET(url, headers)
+        } else {
+            popularAnimeRequest(page)
         }
-
-        url.addQueryParameter("query", searchQuery.ifBlank { "all" })
-        return GET(url.build(), headers)
     }
 
     override fun searchAnimeParse(response: Response): AnimesPage {
-        return parseVideoSearchResponse(response)
+        return popularAnimeParse(response)
     }
 
-    // ==============================
-    // 4. ANIME DETAILS
-    // ==============================
+    // ==================== Anime Details ====================
     override fun animeDetailsParse(response: Response): SAnime {
-        val video = response.parseAs<ApiVideoSearchResponse>().videos.firstOrNull()
-            ?: throw Exception("Failed to parse video details")
-
-        return SAnime.create().apply {
-            title = video.title
-            thumbnail_url = video.defaultThumb.src
-            genre = video.keywords.split(", ").joinToString()
-            description = buildString {
-                append("Rating: ${video.rate}\n")
-                append("Views: ${video.views}\n")
-                append("Duration: ${video.lengthMin}\n")
-                append("Added: ${video.added}\n")
-                append("\nTags: ${video.keywords}")
+        return try {
+            val videoDetail = json.decodeFromString<ApiVideoResponse>(response.body.string())
+            videoDetail.toSAnime(baseUrl)
+        } catch (e: Exception) {
+            SAnime.create().apply {
+                title = "Error loading details"
+                status = SAnime.COMPLETED
             }
-            status = SAnime.COMPLETED
-            setUrlWithoutDomain(video.url)
         }
     }
 
-    // ==============================
-    // 5. EPISODE LIST
-    // ==============================
+    // ==================== Episodes ====================
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val video = response.parseAs<ApiVideoSearchResponse>().videos.firstOrNull()
-            ?: return emptyList()
-
         return listOf(
             SEpisode.create().apply {
                 name = "Video"
                 episode_number = 1F
-                setUrlWithoutDomain("$baseUrl/embed/${video.id}")
-                date_upload = runCatching {
-                    dateFormat.parse(video.added)?.time
-                }.getOrNull() ?: 0L
-            },
+                setUrlWithoutDomain(response.request.url.toString())
+            }
         )
     }
 
-    // ==============================
-    // 6. VIDEO LIST EXTRACTION
-    // ==============================
+    // ==================== Video Extraction ====================
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
-        val videoList = mutableListOf<Video>()
+        val videos = mutableListOf<Video>()
 
-        // Method 1: Look for video sources in script tags
-        val scriptContent = document.select("script").html()
-        val videoSourcesRegex = Regex("""video_sources\s*:\s*(\{.*?\})""")
-        videoSourcesRegex.find(scriptContent)?.groups?.get(1)?.value?.let { jsonStr ->
-            try {
-                val sourcesMap = json.parseAs<Map<String, String>>(jsonStr)
-                // FIXED: Changed from ambiguous destructuring '(quality, url)' to explicit property access
-                sourcesMap.forEach { entry ->
-                    val quality = entry.key
-                    val url = entry.value
-                    val cleanQuality = when (quality) {
-                        "2160" -> "4K"
-                        "1080" -> "1080p"
-                        "720" -> "720p"
-                        "480" -> "480p"
-                        "240" -> "240p"
-                        else -> "${quality}p"
-                    }
-                    if (url.isNotBlank()) {
-                        videoList.add(Video(url, "Direct - $cleanQuality", url))
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("Eporner", "Failed to parse video sources", e)
-            }
-        }
-
-        // Method 2: Look for MP4 URLs in the page
-        if (videoList.isEmpty()) {
-            val mp4Regex = Regex("""https?://[^"\s]+\.mp4""")
-            mp4Regex.findAll(document.html()).forEach { match ->
+        // Try to find HLS master playlist
+        document.select("script").forEach { script ->
+            val scriptText = script.html()
+            val hlsRegex = Regex("""(https?:[^"' ]+\.m3u8[^"' ]*)""")
+            hlsRegex.findAll(scriptText).forEach { match ->
                 val url = match.value
-                if (url.contains("eporner.com") || url.contains("static-ca-cdn")) {
-                    val quality = when {
-                        url.contains("2160") -> "4K"
-                        url.contains("1080") -> "1080p"
-                        url.contains("720") -> "720p"
-                        url.contains("480") -> "480p"
-                        else -> "Unknown"
+                if (url.contains("m3u8")) {
+                    try {
+                        val playlistUtils = PlaylistUtils(client, headers)
+                        videos.addAll(playlistUtils.extractFromHls(url, response.request.url.toString()))
+                    } catch (e: Exception) {
+                        Log.e(tag, "HLS extraction failed: ${e.message}")
                     }
-                    videoList.add(Video(url, "MP4 - $quality", url))
                 }
             }
         }
 
-        return videoList.distinctBy { it.url }
-    }
-
-    // ==============================
-    // 7. HELPER: Parse API Response
-    // ==============================
-    private fun parseVideoSearchResponse(response: Response): AnimesPage {
-        val apiResponse = response.parseAs<ApiVideoSearchResponse>()
-        val animeList = apiResponse.videos.map { video ->
-            SAnime.create().apply {
-                title = video.title
-                thumbnail_url = video.defaultThumb.src
-                setUrlWithoutDomain(video.url)
+        // Fallback: Direct video source
+        if (videos.isEmpty()) {
+            document.select("video source").forEach { source ->
+                val url = source.attr("abs:src")
+                val quality = source.attr("label").ifEmpty { "Source" }
+                if (url.isNotBlank()) {
+                    videos.add(Video(url, quality, url))
+                }
             }
         }
-        val hasNextPage = apiResponse.page < apiResponse.totalPages
-        return AnimesPage(animeList, hasNextPage)
+
+        return videos.distinctBy { it.url }
     }
 
-    // ==============================
-    // 8. FILTERS
-    // ==============================
-    override fun getFilterList(): AnimeFilterList {
-        return AnimeFilterList(
-            CategoryFilter(),
-            SortFilter(),
-            GayFilter(),
-        )
-    }
+    // ==================== Utility Functions ====================
+    private fun String.encode(): String = java.net.URLEncoder.encode(this, "UTF-8")
 
-    private class CategoryFilter : AnimeFilter.Select<String>(
-        "Category",
-        arrayOf(
-            "<Select>",
-            "anal",
-            "blowjob",
-            "hardcore",
-            "teen",
-            "milf",
-            "big-tits",
-            "creampie",
-            "amateur",
-            "homemade",
-            "asian",
-            "lesbian",
-        ),
+    // ==================== Data Classes ====================
+    @Serializable
+    private data class ApiSearchResponse(
+        @SerialName("videos") val videos: List<ApiVideo>,
+        @SerialName("page") val page: Int,
+        @SerialName("total_pages") val total_pages: Int
     )
 
-    private class SortFilter : AnimeFilter.Select<String>(
-        "Sort By",
-        arrayOf(
-            "<Select>",
-            "latest",
-            "most-popular",
-            "top-weekly",
-            "top-monthly",
-            "top-rated",
-            "longest",
-            "shortest",
-        ),
+    @Serializable
+    private data class ApiVideoResponse(
+        @SerialName("id") val id: String,
+        @SerialName("title") val title: String,
+        @SerialName("keywords") val keywords: String,
+        @SerialName("views") val views: Long,
+        @SerialName("url") val url: String,
+        @SerialName("added") val added: String,
+        @SerialName("length_sec") val lengthSec: Int,
+        @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
+        @SerialName("thumbs") val thumbs: List<ApiThumbnail>
+    ) {
+        fun toSAnime(baseUrl: String): SAnime = SAnime.create().apply {
+            setUrlWithoutDomain(this@ApiVideoResponse.url)
+            this.title = this@ApiVideoResponse.title
+            this.thumbnail_url = this@ApiVideoResponse.defaultThumb.src
+            this.genre = this@ApiVideoResponse.keywords
+            this.description = "Views: $views | Length: ${lengthSec / 60}min"
+            this.status = SAnime.COMPLETED
+        }
+    }
+
+    @Serializable
+    private data class ApiVideo(
+        @SerialName("id") val id: String,
+        @SerialName("title") val title: String,
+        @SerialName("keywords") val keywords: String,
+        @SerialName("url") val url: String,
+        @SerialName("default_thumb") val defaultThumb: ApiThumbnail
+    ) {
+        fun toSAnime(baseUrl: String): SAnime = SAnime.create().apply {
+            setUrlWithoutDomain(this@ApiVideo.url)
+            this.title = this@ApiVideo.title
+            this.thumbnail_url = this@ApiVideo.defaultThumb.src
+            this.genre = this@ApiVideo.keywords
+            this.status = SAnime.COMPLETED
+        }
+    }
+
+    @Serializable
+    private data class ApiThumbnail(
+        @SerialName("src") val src: String,
+        @SerialName("width") val width: Int,
+        @SerialName("height") val height: Int
     )
-
-    // FIXED: Simplified GayFilter class - removed problematic state override
-    private class GayFilter : AnimeFilter.Select<Int>(
-        "Gay Content",
-        arrayOf("Exclude (0)", "Include (1)", "Only (2)"),
-    )
-
-    // ==============================
-    // 9. PREFERENCES
-    // ==============================
-    companion object {
-        private const val PREF_QUALITY_KEY = "pref_quality"
-        private const val PREF_QUALITY_TITLE = "Preferred Quality"
-        private const val PREF_QUALITY_DEFAULT = "1080p"
-    }
-
-    override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        ListPreference(screen.context).apply {
-            key = PREF_QUALITY_KEY
-            title = PREF_QUALITY_TITLE
-            entries = arrayOf("240p", "480p", "720p", "1080p", "4K")
-            entryValues = arrayOf("240p", "480p", "720p", "1080p", "4K")
-            setDefaultValue(PREF_QUALITY_DEFAULT)
-            summary = "%s"
-            setOnPreferenceChangeListener { _, newValue ->
-                val selected = newValue as String
-                val index = findIndexOfValue(selected)
-                val entry = entryValues[index] as String
-                preferences.edit().putString(key, entry).commit()
-                true
-            }
-        }.also(screen::addPreference)
-    }
-
-    override fun List<Video>.sort(): List<Video> {
-        val preferredQuality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)
-            ?: PREF_QUALITY_DEFAULT
-
-        return sortedWith(
-            compareByDescending<Video> { video ->
-                when {
-                    video.quality.contains(preferredQuality, true) -> 3
-                    video.quality.contains("4k", true) -> 2
-                    video.quality.contains("1080", true) -> 1
-                    else -> 0
-                }
-            }.thenByDescending { video ->
-                Regex("""(\d+)p""").find(video.quality)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            },
-        )
-    }
 }
-
-// ==============================
-// API DATA MODELS
-// ==============================
-
-@Serializable
-private data class ApiVideoSearchResponse(
-    @SerialName("videos") val videos: List<ApiVideo>,
-    @SerialName("page") val page: Int,
-    @SerialName("total_pages") val totalPages: Int,
-    @SerialName("total_count") val totalCount: Int,
-    @SerialName("per_page") val perPage: Int,
-    @SerialName("time_ms") val timeMs: Int,
-)
-
-@Serializable
-private data class ApiVideo(
-    @SerialName("id") val id: String,
-    @SerialName("title") val title: String,
-    @SerialName("keywords") val keywords: String,
-    @SerialName("views") val views: Long,
-    @SerialName("rate") val rate: String,
-    @SerialName("url") val url: String,
-    @SerialName("added") val added: String,
-    @SerialName("length_sec") val lengthSec: Int,
-    @SerialName("length_min") val lengthMin: String,
-    @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
-)
-
-@Serializable
-private data class ApiThumbnail(
-    @SerialName("size") val size: String,
-    @SerialName("width") val width: Int,
-    @SerialName("height") val height: Int,
-    @SerialName("src") val src: String,
-)
