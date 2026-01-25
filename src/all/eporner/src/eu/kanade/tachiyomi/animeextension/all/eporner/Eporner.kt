@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import android.content.Context
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceManager
@@ -19,13 +18,11 @@ import eu.kanade.tachiyomi.lib.unpacker.Unpacker
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import eu.kanade.tachiyomi.util.parallelCatchingFlatMapBlocking
-import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.nodes.Document
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -101,7 +98,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // ==================== VIDEO LISTING PARSER ====================
-    private fun parseVideoListing(document: Document): AnimesPage {
+    private fun parseVideoListing(document: org.jsoup.nodes.Document): AnimesPage {
         val elements = document.select("#videos .mb, .video-unit, div.video")
 
         val animeList = elements.mapNotNull { element ->
@@ -613,7 +610,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // ==================== UTILITY FUNCTIONS ====================
-    private fun parseUploadDate(document: Document): Long {
+    private fun parseUploadDate(document: org.jsoup.nodes.Document): Long {
         return try {
             val dateText = document.selectFirst("span[itemprop='uploadDate']")?.attr("content")
                 ?: document.selectFirst(".upload-date")?.text()
