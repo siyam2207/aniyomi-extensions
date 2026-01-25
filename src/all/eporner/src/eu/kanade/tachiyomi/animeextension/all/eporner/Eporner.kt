@@ -37,35 +37,43 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ============================== Popular ===============================
     override fun popularAnimeRequest(page: Int): Request {
-        // Eporner uses 0-based pagination: /0/, /1/, /2/ for page 1, 2, 3
-        val pageNum = page - 1
-        return GET("$baseUrl/hd-porn/$pageNum/", headers)
+        // Eporner uses: https://www.eporner.com/hd-porn/ (no page number for first page)
+        // Page 2: https://www.eporner.com/hd-porn/2/
+        val url = if (page == 1) {
+            "$baseUrl/hd-porn/"
+        } else {
+            "$baseUrl/hd-porn/$page/"
+        }
+        return GET(url, headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
 
-        // CORRECT SELECTOR: Videos are in #vidresults .mvhd
-        val elements = document.select("#vidresults .mvhd")
+        // Correct selector for Eporner: videos are in div#videoas
+        val elements = document.select("#videoas .mb, .videobox")
 
         val animeList = elements.mapNotNull { element ->
             val link = element.selectFirst("a") ?: return@mapNotNull null
             val href = link.attr("href")
-            if (href.isBlank()) return@mapNotNull null
+            if (href.isBlank() || !href.startsWith("/video-")) return@mapNotNull null
 
             SAnime.create().apply {
                 setUrlWithoutDomain(href)
                 title = link.selectFirst("img")?.attr("alt")
-                    ?: link.attr("title")
+                    ?: element.selectFirst(".title")?.text()
                     ?: "Unknown Title"
                 thumbnail_url = link.selectFirst("img")?.attr("src")
                     ?: link.selectFirst("img")?.attr("data-src")
+                    ?: element.selectFirst("img")?.attr("src")
             }
         }
 
-        // Check for next page - eporner has pagination links
-        val hasNextPage = document.select("#pagination a").any {
-            it.text().contains("Next", ignoreCase = true) || it.text() == "»"
+        // Check for next page
+        val hasNextPage = document.select(".pagination a").any {
+            it.text().contains("Next", ignoreCase = true) || 
+            it.text() == "»" || 
+            it.text().toIntOrNull() == page + 1
         }
 
         return AnimesPage(animeList, hasNextPage)
@@ -73,8 +81,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // =============================== Latest ===============================
     override fun latestUpdatesRequest(page: Int): Request {
-        val pageNum = page - 1
-        return GET("$baseUrl/latest/$pageNum/", headers)
+        // Eporner latest: https://www.eporner.com/latest/ (no page for first)
+        val url = if (page == 1) {
+            "$baseUrl/latest/"
+        } else {
+            "$baseUrl/latest/$page/"
+        }
+        return GET(url, headers)
     }
 
     override fun latestUpdatesParse(response: Response): AnimesPage {
@@ -83,17 +96,25 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // =============================== Search ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val pageNum = page - 1
-
-        // Check for category filter
+        val pageNum = page
         val category = filters.firstInstanceOrNull<CategoryFilter>()?.selected
 
         return if (query.isNotBlank()) {
-            // Text search - eporner uses /search/query/page/
-            GET("$baseUrl/search/${query.encodeUtf8()}/$pageNum/", headers)
+            // Eporner search: https://www.eporner.com/search/query/ (no page for first)
+            val url = if (page == 1) {
+                "$baseUrl/search/${query.encodeUtf8()}/"
+            } else {
+                "$baseUrl/search/${query.encodeUtf8()}/$page/"
+            }
+            GET(url, headers)
         } else if (category != null) {
-            // Category filter
-            GET("$baseUrl/cat/$category/$pageNum/", headers) // Note: /cat/ not /category/
+            // Eporner category: https://www.eporner.com/category/cat-name/
+            val url = if (page == 1) {
+                "$baseUrl/category/$category/"
+            } else {
+                "$baseUrl/category/$category/$page/"
+            }
+            GET(url, headers)
         } else {
             popularAnimeRequest(page)
         }
@@ -114,15 +135,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             title = document.selectFirst("h1")?.text()
                 ?: "Unknown Title"
 
-            // Video info section
-            val infoSection = document.selectFirst(".infobar")
+            // Video info
+            val infoSection = document.selectFirst(".info-container")
 
             // Categories/tags
-            genre = document.select("a[href^=/cat/]")
+            genre = document.select("a[href^=/category/]")
                 .joinToString { it.text() }
 
             // Pornstars
-            artist = document.select("a[href^=/pornstar/]")
+            artist = document.select("a[href^=/model/]")
                 .joinToString { it.text() }
 
             // Description from meta tag
@@ -131,8 +152,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             // Thumbnail
             thumbnail_url = document.selectFirst("meta[property=og:image]")?.attr("content")
-                ?: document.selectFirst("#mainvideo")?.attr("poster")
-                ?: document.selectFirst(".preview img")?.attr("src")
+                ?: document.selectFirst(".preview")?.attr("src")
+                ?: document.selectFirst("#player")?.attr("poster")
 
             status = SAnime.COMPLETED
         }
@@ -148,15 +169,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
                 // Get upload date from page
                 val document = response.asJsoup()
-                val dateText = document.selectFirst(".infobar .duration")?.text()
-                    ?.substringAfter("Added: ")?.substringBefore(" -")
+                val dateText = document.selectFirst(".info .added")?.text()
+                    ?.substringAfter("Added: ")
 
                 dateText?.let {
                     try {
                         // Try to parse date like "2 days ago", "3 weeks ago", or actual date
                         if (it.contains("day") || it.contains("week") || it.contains("month") || it.contains("year")) {
-                            // Relative time - set to current time minus some
-                            date_upload = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L) // 1 week ago
+                            // Relative time
+                            date_upload = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
                         } else {
                             // Try actual date parsing
                             val format = SimpleDateFormat("MMMM dd, yyyy", Locale.US)
@@ -173,51 +194,47 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
 
-        // Method 1: Check for video element (most likely)
-        document.select("video#mainvideo source").forEach { source ->
-            val url = source.attr("src")
-            if (url.isNotBlank() && (url.contains(".mp4") || url.contains(".webm"))) {
+        // Eporner uses a video player with data-cfsrc attributes
+        document.select("video source").forEach { source ->
+            val url = source.attr("src").takeIf { it.isNotBlank() } 
+                ?: source.attr("data-cfsrc").takeIf { it.isNotBlank() }
+            
+            if (url != null && (url.contains(".mp4") || url.contains(".webm"))) {
                 val quality = source.attr("title") ?: extractQualityFromUrl(url)
                 videos.add(Video(url, "Direct: $quality", url))
             }
         }
 
-        // Method 2: Check for data-video attribute
-        document.select("[data-video]").forEach { element ->
-            val url = element.attr("data-video")
-            if (url.isNotBlank() && url.contains(".mp4")) {
-                val quality = extractQualityFromUrl(url)
-                videos.add(Video(url, "Data Video: $quality", url))
+        // Check for download links
+        document.select("a.download[href*=.mp4]").forEach { link ->
+            val url = link.attr("href")
+            if (url.isNotBlank()) {
+                val quality = link.text().takeIf { it.contains("p") } 
+                    ?: extractQualityFromUrl(url) 
+                    ?: "Download"
+                videos.add(Video(url, quality, url))
             }
         }
 
-        // Method 3: Look for HLS in scripts
+        // Look for video URLs in scripts
         val scriptText = document.select("script").toString()
-
-        // Look for MP4 URLs in scripts
-        val mp4Regex = Regex("""["']?(https?://[^"']+\.(?:mp4|webm)[^"']*)["']?""")
-        mp4Regex.findAll(scriptText).forEach { match ->
+        
+        // Pattern for Eporner's video URLs
+        val videoRegex = Regex("""["']?(https?://[^"']+?\.mp4(?:\?[^"']*)?)["']?""")
+        videoRegex.findAll(scriptText).forEach { match ->
             val url = match.groupValues[1]
             if (url.contains("eporner") && !videos.any { it.videoUrl == url }) {
                 val quality = extractQualityFromUrl(url)
-                videos.add(Video(url, "Script MP4: $quality", url))
+                videos.add(Video(url, "Script: $quality", url))
             }
         }
 
-        // Method 4: Check for download links
-        document.select("a[href*=.mp4], a[href*=.webm]").forEach { link ->
-            val url = link.attr("href")
-            if (url.contains("eporner") && url.startsWith("http")) {
-                val quality = link.text().takeIf { it.contains("p") } ?: extractQualityFromUrl(url)
-                videos.add(Video(url, "Download: $quality", url))
-            }
-        }
-
-        return videos.distinctBy { it.videoUrl }.takeIf { it.isNotEmpty() } ?: emptyList()
+        return videos.distinctBy { it.videoUrl }.takeIf { it.isNotEmpty() } 
+            ?: emptyList()
     }
 
     private fun extractQualityFromUrl(url: String): String {
-        val regex = Regex("""(\d{3,4})[pP]""")
+        val regex = Regex("""/(\d{3,4})[pP]?\.mp4""")
         return regex.find(url)?.groupValues?.get(1)?.let { "${it}p" } ?: "Unknown"
     }
 
@@ -277,9 +294,10 @@ class CategoryFilter : AnimeFilter.Select<String>(
     val selected get() = CATEGORIES[state].second.takeUnless { state == 0 }
 
     companion object {
-        // Actual eporner categories from their menu
+        // Eporner actual categories from their menu
         val CATEGORIES = listOf(
             Pair("<Select>", ""),
+            Pair("HD Porn", "hd-porn"),
             Pair("Amateur", "amateur"),
             Pair("Anal", "anal"),
             Pair("Asian", "asian"),
@@ -293,58 +311,12 @@ class CategoryFilter : AnimeFilter.Select<String>(
             Pair("Facial", "facial"),
             Pair("Gangbang", "gangbang"),
             Pair("Hardcore", "hardcore"),
-            Pair("HD", "hd"),
             Pair("Latina", "latina"),
             Pair("Lesbian", "lesbian"),
             Pair("MILF", "milf"),
             Pair("POV", "pov"),
             Pair("Teen", "teen"),
             Pair("Threesome", "threesome"),
-            Pair("Babe", "babe"),
-            Pair("Big Dick", "big-dick"),
-            Pair("Bukkake", "bukkake"),
-            Pair("Cartoon", "cartoon"),
-            Pair("Casting", "casting"),
-            Pair("Celebrity", "celebrity"),
-            Pair("College", "college"),
-            Pair("Compilation", "compilation"),
-            Pair("Cougar", "cougar"),
-            Pair("Cowgirl", "cowgirl"),
-            Pair("Cum Swallow", "cum-swallow"),
-            Pair("Cum in Mouth", "cum-in-mouth"),
-            Pair("Deepthroat", "deepthroat"),
-            Pair("Doggystyle", "doggystyle"),
-            Pair("Double Penetration", "double-penetration"),
-            Pair("Ebony", "ebony"),
-            Pair("Fetish", "fetish"),
-            Pair("Fingering", "fingering"),
-            Pair("Funny", "funny"),
-            Pair("Gay", "gay"),
-            Pair("Group Sex", "group-sex"),
-            Pair("Hairy", "hairy"),
-            Pair("Handjob", "handjob"),
-            Pair("Homemade", "homemade"),
-            Pair("Interracial", "interracial"),
-            Pair("Japanese", "japanese"),
-            Pair("Masturbation", "masturbation"),
-            Pair("Mature", "mature"),
-            Pair("Orgy", "orgy"),
-            Pair("Public", "public"),
-            Pair("Redhead", "redhead"),
-            Pair("Rough Sex", "rough-sex"),
-            Pair("Russian", "russian"),
-            Pair("Squirting", "squirting"),
-            Pair("Stockings", "stockings"),
-            Pair("Straight", "straight"),
-            Pair("Swallow", "swallow"),
-            Pair("Tattoo", "tattoo"),
-            Pair("Throat Fuck", "throat-fuck"),
-            Pair("Toys", "toys"),
-            Pair("Upskirt", "upskirt"),
-            Pair("Vintage", "vintage"),
-            Pair("Virtual Reality", "virtual-reality"),
-            Pair("Webcam", "webcam"),
-            Pair("Young & Old", "young-old"),
         )
     }
 }
