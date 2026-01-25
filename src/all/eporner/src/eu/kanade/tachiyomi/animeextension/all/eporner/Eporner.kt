@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.animesource.online.eporner
+package eu.kanade.tachiyomi.animesource.all.eporner
 
 import eu.kanade.tachiyomi.animesource.model.*
 import eu.kanade.tachiyomi.animesource.online.ParsedHttpSource
