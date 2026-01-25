@@ -1,13 +1,13 @@
 ext {
-    extName = "Eporner"
-    pkgNameSuffix = "eporner"
-    extClass = "Eporner"
+    extName = 'Eporner'
+    extClass = '.Eporner'
     extVersionCode = 1
-    libVersion = "1.0"
+    isNsfw = true
 }
 
+apply from: "$rootDir/common.gradle"
+
 dependencies {
-    implementation project(":core")
-    implementation project(":exoplayer")
-    implementation project(":streaminglib")
+    // Only add extractor libs if needed
+    // implementation(project(':lib:playlist-utils'))
 }
