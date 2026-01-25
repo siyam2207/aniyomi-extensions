@@ -88,7 +88,7 @@ class Eporner : AnimeHttpSource() {
                 name = "Video"
                 episode_number = 1F
                 setUrlWithoutDomain(response.request.url.toString())
-            }
+            },
         )
     }
 
@@ -136,7 +136,7 @@ class Eporner : AnimeHttpSource() {
     private data class ApiSearchResponse(
         @SerialName("videos") val videos: List<ApiVideo>,
         @SerialName("page") val page: Int,
-        @SerialName("total_pages") val total_pages: Int
+        @SerialName("total_pages") val total_pages: Int,
     )
 
     @Serializable
@@ -149,7 +149,7 @@ class Eporner : AnimeHttpSource() {
         @SerialName("added") val added: String,
         @SerialName("length_sec") val lengthSec: Int,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
-        @SerialName("thumbs") val thumbs: List<ApiThumbnail>
+        @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
     ) {
         fun toSAnime(baseUrl: String): SAnime = SAnime.create().apply {
             setUrlWithoutDomain(this@ApiVideoResponse.url)
@@ -167,7 +167,7 @@ class Eporner : AnimeHttpSource() {
         @SerialName("title") val title: String,
         @SerialName("keywords") val keywords: String,
         @SerialName("url") val url: String,
-        @SerialName("default_thumb") val defaultThumb: ApiThumbnail
+        @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
     ) {
         fun toSAnime(baseUrl: String): SAnime = SAnime.create().apply {
             setUrlWithoutDomain(this@ApiVideo.url)
@@ -182,6 +182,6 @@ class Eporner : AnimeHttpSource() {
     private data class ApiThumbnail(
         @SerialName("src") val src: String,
         @SerialName("width") val width: Int,
-        @SerialName("height") val height: Int
+        @SerialName("height") val height: Int,
     )
 }
