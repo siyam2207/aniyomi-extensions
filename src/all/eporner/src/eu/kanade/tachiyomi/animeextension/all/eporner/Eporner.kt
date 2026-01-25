@@ -25,7 +25,6 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
-
     override val name = "Eporner"
     override val baseUrl = "https://www.eporner.com"
     private val apiBaseUrl = "$baseUrl/api/v2"
@@ -86,8 +85,11 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
             when (filter) {
                 is CategoryFilter -> {
                     if (filter.state != 0) {
-                        searchQuery = if (searchQuery.isBlank()) filter.values[filter.state] 
-                                    else "$searchQuery ${filter.values[filter.state]}"
+                        searchQuery = if (searchQuery.isBlank()) {
+                            filter.values[filter.state]
+                        } else {
+                            "$searchQuery ${filter.values[filter.state]}"
+                        }
                     }
                 }
                 is SortFilter -> {
@@ -139,7 +141,7 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun episodeListParse(response: Response): List<SEpisode> {
         val video = response.parseAs<ApiVideoSearchResponse>().videos.firstOrNull()
             ?: return emptyList()
-            
+
         return listOf(
             SEpisode.create().apply {
                 name = "Video"
@@ -148,7 +150,7 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
                 date_upload = runCatching {
                     dateFormat.parse(video.added)?.time
                 }.getOrNull() ?: 0L
-            }
+            },
         )
     }
 
@@ -227,7 +229,7 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
         return AnimeFilterList(
             CategoryFilter(),
             SortFilter(),
-            GayFilter()
+            GayFilter(),
         )
     }
 
@@ -235,25 +237,38 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
         "Category",
         arrayOf(
             "<Select>",
-            "anal", "blowjob", "hardcore", "teen", "milf", "big-tits",
-            "creampie", "amateur", "homemade", "asian", "lesbian"
-        )
+            "anal",
+            "blowjob",
+            "hardcore",
+            "teen",
+            "milf",
+            "big-tits",
+            "creampie",
+            "amateur",
+            "homemade",
+            "asian",
+            "lesbian",
+        ),
     )
 
     private class SortFilter : AnimeFilter.Select<String>(
         "Sort By",
         arrayOf(
             "<Select>",
-            "latest", "most-popular", "top-weekly", "top-monthly",
-            "top-rated", "longest", "shortest"
-        )
+            "latest",
+            "most-popular",
+            "top-weekly",
+            "top-monthly",
+            "top-rated",
+            "longest",
+            "shortest",
+        ),
     )
 
     private class GayFilter : AnimeFilter.Select<Int>(
         "Gay Content",
-        arrayOf("Exclude (0)", "Include (1)", "Only (2)")
+        arrayOf("Exclude (0)", "Include (1)", "Only (2)"),
     ) {
-        // Custom state handling for Int values
         override var state: Int
             get() = super.state
             set(value) {
@@ -289,9 +304,9 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     override fun List<Video>.sort(): List<Video> {
-        val preferredQuality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) 
+        val preferredQuality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)
             ?: PREF_QUALITY_DEFAULT
-        
+
         return sortedWith(
             compareByDescending<Video> { video ->
                 when {
@@ -302,7 +317,7 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
                 }
             }.thenByDescending { video ->
                 Regex("""(\d+)p""").find(video.quality)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            }
+            },
         )
     }
 }
@@ -318,7 +333,7 @@ private data class ApiVideoSearchResponse(
     @SerialName("total_pages") val totalPages: Int,
     @SerialName("total_count") val totalCount: Int,
     @SerialName("per_page") val perPage: Int,
-    @SerialName("time_ms") val timeMs: Int
+    @SerialName("time_ms") val timeMs: Int,
 )
 
 @Serializable
@@ -332,7 +347,7 @@ private data class ApiVideo(
     @SerialName("added") val added: String,
     @SerialName("length_sec") val lengthSec: Int,
     @SerialName("length_min") val lengthMin: String,
-    @SerialName("default_thumb") val defaultThumb: ApiThumbnail
+    @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
 )
 
 @Serializable
@@ -340,5 +355,5 @@ private data class ApiThumbnail(
     @SerialName("size") val size: String,
     @SerialName("width") val width: Int,
     @SerialName("height") val height: Int,
-    @SerialName("src") val src: String
+    @SerialName("src") val src: String,
 )
