@@ -14,6 +14,7 @@ import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import eu.kanade.tachiyomi.util.parseAs
+import extensions.utils.getPreferencesLazy // <-- CRITICAL: This import was missing
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -32,6 +33,7 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
 
     private val json by injectLazy<kotlinx.serialization.json.Json>()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+    private val preferences by getPreferencesLazy() // <-- CRITICAL: This property was missing
 
     // ==============================
     // 1. POPULAR ANIME
@@ -97,6 +99,7 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
                     }
                 }
                 is GayFilter -> {
+                    // FIXED: Correctly handle the filter's integer state
                     url.addQueryParameter("gay", filter.state.toString())
                 }
                 else -> {}
@@ -166,7 +169,10 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
         videoSourcesRegex.find(scriptContent)?.groups?.get(1)?.value?.let { jsonStr ->
             try {
                 val sourcesMap = json.parseAs<Map<String, String>>(jsonStr)
-                sourcesMap.forEach { (quality, url) ->
+                // FIXED: Changed from ambiguous destructuring '(quality, url)' to explicit property access
+                sourcesMap.forEach { entry ->
+                    val quality = entry.key
+                    val url = entry.value
                     val cleanQuality = when (quality) {
                         "2160" -> "4K"
                         "1080" -> "1080p"
@@ -264,16 +270,11 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
         ),
     )
 
+    // FIXED: Simplified GayFilter class - removed problematic state override
     private class GayFilter : AnimeFilter.Select<Int>(
         "Gay Content",
         arrayOf("Exclude (0)", "Include (1)", "Only (2)"),
-    ) {
-        override var state: Int
-            get() = super.state
-            set(value) {
-                super.state = value.coerceIn(0, 2)
-            }
-    }
+    )
 
     // ==============================
     // 9. PREFERENCES
