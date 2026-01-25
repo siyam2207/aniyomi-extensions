@@ -1,109 +1,77 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import eu.kanade.tachiyomi.animesource.model.AnimesPage
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.animesource.AnimeHttpSource
+import eu.kanade.tachiyomi.animesource.model.*
+import eu.kanade.tachiyomi.animesource.AnimeFilterList
 import eu.kanade.tachiyomi.network.GET
-import okhttp3.Headers
-import okhttp3.OkHttpClient
+import eu.kanade.tachiyomi.util.asJsoup
+import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.nodes.Element
 
 class Eporner : AnimeHttpSource() {
 
     override val name = "Eporner"
     override val baseUrl = "https://www.eporner.com"
-    override val lang = "all"
+    override val lang = "en"
     override val supportsLatest = true
 
-    override val client: OkHttpClient = OkHttpClient()
+    // ============================== Popular ===============================
 
-    // --------------------
-    // Popular
-    // --------------------
-    override fun popularAnimeRequest(page: Int) =
-        GET("$baseUrl/videos/?o=mv&p=$page")
+    override fun popularAnimeRequest(page: Int): Request =
+        GET("$baseUrl/hd-porn/$page/")
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
-        val elements = document.select("a.videoBox")
-        val animeList = elements.map(::animeFromElement)
-        val hasNextPage = document.selectFirst("a.next, a[rel=next]") != null
-
-        return AnimesPage(
-            animeList,
-            hasNextPage,
-        )
+        return AnimesPage(emptyList(), false)
     }
 
-    private fun animeFromElement(element: Element): SAnime =
-        SAnime.create().apply {
-            title = element.selectFirst("span.title")?.text() ?: "Unknown"
-            thumbnail_url =
-                element.selectFirst("img")
-                    ?.attr("data-src")
-                    ?.takeIf { it.isNotBlank() }
-                    ?: element.selectFirst("img")?.attr("src")
-            url = element.attr("href")
-        }
+    // ============================== Latest ================================
 
-    // --------------------
-    // Latest
-    // --------------------
-    override fun latestUpdatesRequest(page: Int) =
-        GET("$baseUrl/videos/?o=mv&p=$page")
+    override fun latestUpdatesRequest(page: Int): Request =
+        GET("$baseUrl/hd-porn/$page/?o=latest")
 
-    override fun latestUpdatesParse(response: Response): AnimesPage =
-        popularAnimeParse(response)
+    override fun latestUpdatesParse(response: Response): AnimesPage {
+        val document = response.asJsoup()
+        return AnimesPage(emptyList(), false)
+    }
 
-    // --------------------
-    // Search
-    // --------------------
+    // ============================== Search ================================
+
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-    ) =
-        GET(
-            "$baseUrl/search/${query.replace(" ", "+")}/?o=mv&p=$page",
-        )
+        filters: AnimeFilterList
+    ): Request {
+        return GET("$baseUrl/search/$query/$page/")
+    }
 
-    override fun searchAnimeParse(response: Response): AnimesPage =
-        popularAnimeParse(response)
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        val document = response.asJsoup()
+        return AnimesPage(emptyList(), false)
+    }
 
-    // --------------------
-    // Episodes
-    // --------------------
+    // ============================== Details ===============================
+
+    override fun animeDetailsParse(response: Response): SAnime {
+        return SAnime.create().apply {
+            title = "Eporner Video"
+            description = ""
+        }
+    }
+
+    // ============================== Episodes ==============================
+
     override fun episodeListParse(response: Response): List<SEpisode> =
         listOf(
             SEpisode.create().apply {
-                name = "Video"
+                name = "Episode"
+                episode_number = 1f
                 url = response.request.url.toString()
-            },
+            }
         )
 
-    // --------------------
-    // Video
-    // --------------------
-    override fun videoListParse(response: Response): List<Video> {
-        val document = response.asJsoup()
-        val regex =
-            Regex("""https://dash[^"]+\.mp4\.urlset/master\.m3u8[^"]*""")
-        val hlsUrl =
-            regex.find(document.html())?.value
-                ?: throw Exception("HLS master playlist not found")
+    // ============================== Video ================================
 
-        return listOf(
-            Video(
-                url = hlsUrl,
-                quality = "HLS",
-                videoUrl = hlsUrl,
-                headers = Headers.headersOf(
-                    "Referer",
-                    baseUrl,
-                ),
-            ),
-        )
-    }
+    override fun videoListParse(response: Response): List<Video> =
+        emptyList()
 }
