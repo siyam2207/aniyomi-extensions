@@ -8,14 +8,15 @@ ext {
 apply from: "$rootDir/common.gradle"
 
 dependencies {
-    // Core video extraction
-    implementation(project(':lib:playlist-utils'))  // For HLS streams
-    implementation(project(':lib:unpacker'))        // For packed JS video data
+    // Essential for HLS/m3u8 playlist parsing (direct MP4 streams)
+    implementation(project(':lib:playlist-utils'))
     
-    // Optional extractors (Eporner might use these for embeds)
+    // For CDN-hosted MP4 streams (common on adult sites)
     implementation(project(':lib:streamwish-extractor'))
+    
+    // For embedded video players
     implementation(project(':lib:voe-extractor'))
-    implementation(project(':lib:dood-extractor'))
-    implementation(project(':lib:streamtape-extractor'))
-    implementation(project(':lib:okru-extractor'))
+    
+    // Fallback extractor for various unknown hosts
+    implementation(project(':lib:universal-extractor'))
 }
