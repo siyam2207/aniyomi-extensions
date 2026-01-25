@@ -7,6 +7,7 @@ ext {
 }
 
 dependencies {
-    compileOnly "org.jsoup:jsoup:1.14.3"
-    compileOnly "eu.kanade.tachiyomi:extensions-lib:16-rc4"
+    implementation project(":core")
+    implementation project(":exoplayer")
+    implementation project(":streaminglib")
 }
