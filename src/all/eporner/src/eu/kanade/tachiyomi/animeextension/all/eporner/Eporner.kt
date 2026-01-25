@@ -57,7 +57,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== POPULAR ANIME ====================
     override fun popularAnimeRequest(page: Int): Request {
-        val sort = getPrefString(PREF_SORT_KEY, PREF_SORT_DEFAULT)
+        val sort = preferences.getString(PREF_SORT_KEY, PREF_SORT_DEFAULT) ?: PREF_SORT_DEFAULT
         return GET("$baseUrl/$sort/$page/", headers)
     }
 
@@ -110,7 +110,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         ?: "Unknown Title"
 
                     // Thumbnail with preview support
-                    val enablePreviews = getPrefBoolean(PREF_PREVIEW_KEY, PREF_PREVIEW_DEFAULT)
+                    val enablePreviews = preferences.getBoolean(PREF_PREVIEW_KEY, PREF_PREVIEW_DEFAULT)
                     thumbnail_url = element.selectFirst("img")?.let { img ->
                         when {
                             enablePreviews -> {
@@ -503,11 +503,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_QUALITY_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                try {
-                    editPreferences { putString(PREF_QUALITY_KEY, newValue as String) }
-                } catch (e: Exception) {
-                    // Handle exception
-                }
+                preferences.edit().putString(PREF_QUALITY_KEY, newValue as String).apply()
                 true
             }
         }.also(screen::addPreference)
@@ -527,11 +523,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_SORT_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                try {
-                    editPreferences { putString(PREF_SORT_KEY, newValue as String) }
-                } catch (e: Exception) {
-                    // Handle exception
-                }
+                preferences.edit().putString(PREF_SORT_KEY, newValue as String).apply()
                 true
             }
         }.also(screen::addPreference)
@@ -543,11 +535,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             summary = "Show animated previews/GIFs for videos"
             setDefaultValue(PREF_PREVIEW_DEFAULT)
             setOnPreferenceChangeListener { _, newValue ->
-                try {
-                    editPreferences { putBoolean(PREF_PREVIEW_KEY, newValue as Boolean) }
-                } catch (e: Exception) {
-                    // Handle exception
-                }
+                preferences.edit().putBoolean(PREF_PREVIEW_KEY, newValue as Boolean).apply()
                 true
             }
         }.also(screen::addPreference)
@@ -559,11 +547,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             summary = "Automatically play next video when current ends"
             setDefaultValue(PREF_AUTOPLAY_DEFAULT)
             setOnPreferenceChangeListener { _, newValue ->
-                try {
-                    editPreferences { putBoolean(PREF_AUTOPLAY_KEY, newValue as Boolean) }
-                } catch (e: Exception) {
-                    // Handle exception
-                }
+                preferences.edit().putBoolean(PREF_AUTOPLAY_KEY, newValue as Boolean).apply()
                 true
             }
         }.also(screen::addPreference)
@@ -582,17 +566,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_DATA_SAVING_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                try {
-                    editPreferences { putString(PREF_DATA_SAVING_KEY, newValue as String) }
-                } catch (e: Exception) {
-                    // Handle exception
-                }
+                preferences.edit().putString(PREF_DATA_SAVING_KEY, newValue as String).apply()
                 true
             }
         }.also(screen::addPreference)
 
         // Cache Management
-        Preference(screen.context, null).apply {
+        Preference(screen.context).apply {
             key = PREF_CACHE_CLEAR_KEY
             title = "🗑️ Clear Cache"
             summary = "Clear all cached thumbnails and data"
@@ -605,8 +585,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== VIDEO SORTING ====================
     override fun List<Video>.sort(): List<Video> {
-        val qualityPref = getPrefString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)
-        val dataMode = getPrefString(PREF_DATA_SAVING_KEY, PREF_DATA_SAVING_DEFAULT)
+        val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
+        val dataMode = preferences.getString(PREF_DATA_SAVING_KEY, PREF_DATA_SAVING_DEFAULT) ?: PREF_DATA_SAVING_DEFAULT
 
         return sortedWith(
             compareByDescending<Video> { video ->
@@ -686,32 +666,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private val videoComparator = Comparator<Video> { v1, v2 ->
         v2.qualityValue.compareTo(v1.qualityValue)
-    }
-
-    // ==================== PREFERENCE HELPERS ====================
-    private fun getPrefString(key: String, defaultValue: String): String {
-        return try {
-            val sharedPreferences = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
-            sharedPreferences.getString(key, defaultValue) ?: defaultValue
-        } catch (e: Exception) {
-            defaultValue
-        }
-    }
-
-    private fun getPrefBoolean(key: String, defaultValue: Boolean): Boolean {
-        return try {
-            val sharedPreferences = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
-            sharedPreferences.getBoolean(key, defaultValue)
-        } catch (e: Exception) {
-            defaultValue
-        }
-    }
-
-    private fun editPreferences(block: android.content.SharedPreferences.Editor.() -> Unit) {
-        val sharedPreferences = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
-        val editor = sharedPreferences.edit()
-        block(editor)
-        editor.apply()
     }
 
     // ==================== COMPANION OBJECT ====================
