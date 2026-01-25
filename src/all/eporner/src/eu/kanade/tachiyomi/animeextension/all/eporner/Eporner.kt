@@ -6,7 +6,6 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
-import eu.kanade.tachiyomi.animeextension.all.eporner.Eporner.Companion.toHttpUrl
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -23,6 +22,8 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -591,20 +592,22 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
         val dataMode = preferences.getString(PREF_DATA_SAVING_KEY, PREF_DATA_SAVING_DEFAULT) ?: PREF_DATA_SAVING_DEFAULT
         
-        return sortedWith(compareByDescending<Video> { video ->
-            when (qualityPref) {
-                "auto" -> when (dataMode) {
-                    "disabled" -> video.qualityValue
-                    "wifi" -> if (isWifiConnected()) video.qualityValue else 0
-                    "enabled" -> if (video.qualityValue <= 720) video.qualityValue else 0
-                    "extreme" -> if (video.qualityValue <= 480) video.qualityValue else 0
-                    else -> video.qualityValue
+        return sortedWith(
+            compareByDescending<Video> { video ->
+                when (qualityPref) {
+                    "auto" -> when (dataMode) {
+                        "disabled" -> video.qualityValue
+                        "wifi" -> if (isWifiConnected()) video.qualityValue else 0
+                        "enabled" -> if (video.qualityValue <= 720) video.qualityValue else 0
+                        "extreme" -> if (video.qualityValue <= 480) video.qualityValue else 0
+                        else -> video.qualityValue
+                    }
+                    else -> if (video.quality.contains(qualityPref)) 1000 + video.qualityValue else video.qualityValue
                 }
-                else -> if (video.quality.contains(qualityPref)) 1000 + video.qualityValue else video.qualityValue
+            }.thenByDescending { video ->
+                video.qualityValue
             }
-        }.thenByDescending { video ->
-            video.qualityValue
-        })
+        )
     }
 
     // ==================== UTILITY FUNCTIONS ====================
@@ -755,3 +758,8 @@ class HDOnlyFilter : AnimeFilter.CheckBox("HD Only")
 class VRFilter : AnimeFilter.CheckBox("VR Only")
 class PremiumFilter : AnimeFilter.CheckBox("Premium Only")
 class ActorFilter(name: String) : AnimeFilter.Text(name)
+
+// Extension for HttpUrl
+private fun String.toHttpUrl(): HttpUrl {
+    return HttpUrl.parse(this) ?: throw IllegalArgumentException("Invalid URL: $this")
+}
