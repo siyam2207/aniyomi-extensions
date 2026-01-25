@@ -71,9 +71,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
         // Check for next page
         val hasNextPage = document.select(".pagination a").any {
-            it.text().contains("Next", ignoreCase = true) || 
-            it.text() == "»" || 
-            it.text().toIntOrNull() == page + 1
+            it.text().contains("Next", ignoreCase = true) ||
+                it.text() == "»" ||
+                it.text().toIntOrNull() == page + 1
         }
 
         return AnimesPage(animeList, hasNextPage)
@@ -196,9 +196,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
         // Eporner uses a video player with data-cfsrc attributes
         document.select("video source").forEach { source ->
-            val url = source.attr("src").takeIf { it.isNotBlank() } 
+            val url = source.attr("src").takeIf { it.isNotBlank() }
                 ?: source.attr("data-cfsrc").takeIf { it.isNotBlank() }
-            
+
             if (url != null && (url.contains(".mp4") || url.contains(".webm"))) {
                 val quality = source.attr("title") ?: extractQualityFromUrl(url)
                 videos.add(Video(url, "Direct: $quality", url))
@@ -209,8 +209,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         document.select("a.download[href*=.mp4]").forEach { link ->
             val url = link.attr("href")
             if (url.isNotBlank()) {
-                val quality = link.text().takeIf { it.contains("p") } 
-                    ?: extractQualityFromUrl(url) 
+                val quality = link.text().takeIf { it.contains("p") }
+                    ?: extractQualityFromUrl(url)
                     ?: "Download"
                 videos.add(Video(url, quality, url))
             }
@@ -218,7 +218,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
         // Look for video URLs in scripts
         val scriptText = document.select("script").toString()
-        
+
         // Pattern for Eporner's video URLs
         val videoRegex = Regex("""["']?(https?://[^"']+?\.mp4(?:\?[^"']*)?)["']?""")
         videoRegex.findAll(scriptText).forEach { match ->
@@ -229,7 +229,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }
 
-        return videos.distinctBy { it.videoUrl }.takeIf { it.isNotEmpty() } 
+        return videos.distinctBy { it.videoUrl }.takeIf { it.isNotEmpty() }
             ?: emptyList()
     }
 
