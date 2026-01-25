@@ -1,14 +1,12 @@
 ext {
     extName = 'Eporner'
     extClass = '.Eporner'
-    extVersionCode = 2  // Keep this incremented
+    extVersionCode = 1
     isNsfw = true
 }
 
-// This already includes ALL essential dependencies
 apply from: "$rootDir/common.gradle"
 
-// Empty dependencies block is PERFECTLY FINE
 dependencies {
-    // Nothing needed here
+    implementation(project(':lib:playlist-utils'))
 }
