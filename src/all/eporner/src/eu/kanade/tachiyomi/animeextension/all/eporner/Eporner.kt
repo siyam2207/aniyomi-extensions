@@ -29,7 +29,7 @@ class Eporner : AnimeHttpSource() {
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
         val elements = document.select("a.videoBox")
-        val animeList = elements.map(::popularAnimeFromElement)
+        val animeList = elements.map(::animeFromElement)
         val hasNextPage = document.selectFirst("a.next, a[rel=next]") != null
 
         return AnimesPage(
@@ -38,7 +38,7 @@ class Eporner : AnimeHttpSource() {
         )
     }
 
-    private fun popularAnimeFromElement(element: Element): SAnime =
+    private fun animeFromElement(element: Element): SAnime =
         SAnime.create().apply {
             title = element.selectFirst("span.title")?.text() ?: "Unknown"
             thumbnail_url =
@@ -92,3 +92,18 @@ class Eporner : AnimeHttpSource() {
             Regex("""https://dash[^"]+\.mp4\.urlset/master\.m3u8[^"]*""")
         val hlsUrl =
             regex.find(document.html())?.value
+                ?: throw Exception("HLS master playlist not found")
+
+        return listOf(
+            Video(
+                url = hlsUrl,
+                quality = "HLS",
+                videoUrl = hlsUrl,
+                headers = Headers.headersOf(
+                    "Referer",
+                    baseUrl,
+                ),
+            ),
+        )
+    }
+}
