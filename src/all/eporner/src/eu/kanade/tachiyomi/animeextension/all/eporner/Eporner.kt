@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import android.content.SharedPreferences
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceScreen
