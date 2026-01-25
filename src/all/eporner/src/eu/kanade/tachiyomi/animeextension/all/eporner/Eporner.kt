@@ -14,7 +14,6 @@ import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import extensions.utils.getPreferencesLazy
-import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import java.text.SimpleDateFormat
@@ -46,12 +45,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
 
-        // Eporner structure: each video in div.eporner-block
-        val elements = document.select("div.mb, div.eporner-block, div.video")
+        // Updated selectors for eporner.com - check actual structure
+        val elements = document.select("div.mb")
 
         val animeList = elements.map { element ->
             SAnime.create().apply {
-                // Eporner links are like: /video-abc123/title/
                 setUrlWithoutDomain(element.selectFirst("a")!!.attr("href"))
                 title = element.selectFirst("a")?.attr("title")
                     ?: element.selectFirst("img")?.attr("alt")
@@ -62,7 +60,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }
 
-        // Check for next page - Eporner usually has pagination at bottom
+        // Check for next page
         val hasNextPage = document.select("a[rel=next], a.next, li.next").isNotEmpty() ||
             document.select("div.pagination a:contains(Next)").isNotEmpty()
 
@@ -76,7 +74,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     override fun latestUpdatesParse(response: Response): AnimesPage {
-        return popularAnimeParse(response) // Same structure as popular
+        return popularAnimeParse(response)
     }
 
     // =============================== Search ===============================
@@ -115,7 +113,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 ?: "Unknown"
 
             // Metadata from info section
-            val infoSection = document.selectFirst("div.video-details, div.info")
+            val infoSection = document.selectFirst("div.video-details")
             infoSection?.let { info ->
                 // Categories/tags
                 genre = info.select("a[href*=/category/], a[href*=/tag/]")
@@ -149,7 +147,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ============================== Episodes ==============================
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // Eporner is single video per page, so one "episode"
         return listOf(
             SEpisode.create().apply {
                 name = "Video"
@@ -158,15 +155,12 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
                 // Try to get upload date
                 val document = response.asJsoup()
-                val dateText = document.selectFirst("time, span.date, div.uploaded")?.text()
+                val dateText = document.selectFirst("time, span.date")?.text()
                 dateText?.let {
                     try {
-                        // Try various date formats
                         val formats = listOf(
                             SimpleDateFormat("MMMM dd, yyyy", Locale.US),
                             SimpleDateFormat("MMM dd, yyyy", Locale.US),
-                            SimpleDateFormat("yyyy-MM-dd", Locale.US),
-                            SimpleDateFormat("dd/MM/yyyy", Locale.US),
                         )
 
                         for (format in formats) {
@@ -196,21 +190,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }
 
-        // Method 2: Check for iframes with video players
-        document.select("iframe").forEach { iframe ->
-            val iframeUrl = iframe.attr("src")
-            if (iframeUrl.contains("eporner.com/embed/")) {
-                // Extract video ID from embed URL
-                val videoId = iframeUrl.substringAfter("/embed/").substringBefore("/")
-                if (videoId.isNotBlank()) {
-                    // Try to get direct video links from API or page
-                    val directLinks = getDirectVideoLinks(videoId)
-                    videos.addAll(directLinks)
-                }
-            }
-        }
-
-        // Method 3: Check for HLS/m3u8 playlists
+        // Method 2: Check for HLS/m3u8 in scripts
         val scripts = document.select("script").toString()
         val hlsRegex = Regex("""(https?://[^"']+\.m3u8[^"']*)""")
         hlsRegex.findAll(scripts).forEach { match ->
@@ -229,48 +209,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }
 
-        // Method 4: Look for download links
-        document.select("a[href*=.mp4], a[href*=.webm], a[download]").forEach { link ->
-            val url = link.attr("href")
-            if (url.contains(".mp4") || url.contains(".webm")) {
-                val quality = extractQualityFromUrl(url) ?: "Unknown"
-                videos.add(Video(url, "Download: $quality", url))
-            }
-        }
-
         return videos.distinctBy { it.videoUrl }
-    }
-
-    private fun getDirectVideoLinks(videoId: String): List<Video> {
-        // Try to fetch video page with different quality parameters
-        val qualities = listOf("1080", "720", "480", "360", "240")
-        val videos = mutableListOf<Video>()
-
-        qualities.forEach { quality ->
-            try {
-                // Try common eporner video URL patterns
-                val possibleUrls = listOf(
-                    "$baseUrl/download/$videoId/$quality/",
-                    "$baseUrl/video/$videoId/$quality/",
-                    "https://cdn.eporner.com/video/$videoId/${quality}p.mp4",
-                )
-
-                for (url in possibleUrls) {
-                    try {
-                        val request = GET(url, headers)
-                        val response = client.newCall(request).execute()
-                        if (response.isSuccessful) {
-                            videos.add(Video(url, "${quality}p", url))
-                            response.close()
-                            break
-                        }
-                        response.close()
-                    } catch (_: Exception) { }
-                }
-            } catch (_: Exception) { }
-        }
-
-        return videos
     }
 
     private fun extractQualityFromUrl(url: String): String {
@@ -334,7 +273,7 @@ class CategoryFilter : AnimeFilter.Select<String>(
     val selected get() = CATEGORIES[state].second.takeUnless { state == 0 }
 
     companion object {
-        // Common eporner categories - you might need to update these
+        // Updated eporner categories - verify on actual site
         val CATEGORIES = listOf(
             Pair("<Select>", ""),
             Pair("Amateur", "amateur"),
@@ -350,6 +289,7 @@ class CategoryFilter : AnimeFilter.Select<String>(
             Pair("Facial", "facial"),
             Pair("Gangbang", "gangbang"),
             Pair("Hardcore", "hardcore"),
+            Pair("HD", "hd"),
             Pair("Latina", "latina"),
             Pair("Lesbian", "lesbian"),
             Pair("MILF", "milf"),
