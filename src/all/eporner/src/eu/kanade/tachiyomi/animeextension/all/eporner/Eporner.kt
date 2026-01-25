@@ -18,7 +18,6 @@ import eu.kanade.tachiyomi.lib.unpacker.Unpacker
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import eu.kanade.tachiyomi.util.parallelCatchingFlatMapBlocking
-import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -431,60 +430,66 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== FILTER IMPLEMENTATIONS ====================
     private fun buildFilterUrl(page: Int, filters: AnimeFilterList): String {
-        val url = "$baseUrl/filter/".toHttpUrl().newBuilder()
-
+        // Use URL building without HttpUrl import
+        val queryParams = mutableListOf<String>()
+        
         filters.forEach { filter ->
             when (filter) {
                 is SortFilter -> {
                     if (filter.state != 0) {
-                        url.addQueryParameter("sort", filter.toUriPart())
+                        queryParams.add("sort=${filter.toUriPart()}")
                     }
                 }
                 is CategoryFilter -> {
                     if (filter.state != 0) {
-                        url.addQueryParameter("category", filter.toUriPart())
+                        queryParams.add("category=${filter.toUriPart()}")
                     }
                 }
                 is QualityFilter -> {
                     if (filter.state != 0) {
-                        url.addQueryParameter("quality", filter.toUriPart())
+                        queryParams.add("quality=${filter.toUriPart()}")
                     }
                 }
                 is DurationFilter -> {
                     if (filter.state != 0) {
-                        url.addQueryParameter("duration", filter.toUriPart())
+                        queryParams.add("duration=${filter.toUriPart()}")
                     }
                 }
                 is DateFilter -> {
                     if (filter.state != 0) {
-                        url.addQueryParameter("date", filter.toUriPart())
+                        queryParams.add("date=${filter.toUriPart()}")
                     }
                 }
                 is HDOnlyFilter -> {
                     if (filter.state) {
-                        url.addQueryParameter("hd", "1")
+                        queryParams.add("hd=1")
                     }
                 }
                 is VRFilter -> {
                     if (filter.state) {
-                        url.addQueryParameter("vr", "1")
+                        queryParams.add("vr=1")
                     }
                 }
                 is PremiumFilter -> {
                     if (filter.state) {
-                        url.addQueryParameter("premium", "1")
+                        queryParams.add("premium=1")
                     }
                 }
                 is ActorFilter -> {
                     if (filter.state.isNotBlank()) {
-                        url.addQueryParameter("actor", filter.state)
+                        queryParams.add("actor=${java.net.URLEncoder.encode(filter.state, "UTF-8")}")
                     }
                 }
             }
         }
-
-        url.addQueryParameter("page", page.toString())
-        return url.build().toString()
+        
+        queryParams.add("page=$page")
+        
+        return if (queryParams.isNotEmpty()) {
+            "$baseUrl/filter/?${queryParams.joinToString("&")}"
+        } else {
+            "$baseUrl/filter/$page/"
+        }
     }
 
     // ==================== PREFERENCE SCREEN ====================
@@ -757,8 +762,3 @@ class HDOnlyFilter : AnimeFilter.CheckBox("HD Only")
 class VRFilter : AnimeFilter.CheckBox("VR Only")
 class PremiumFilter : AnimeFilter.CheckBox("Premium Only")
 class ActorFilter(name: String) : AnimeFilter.Text(name)
-
-// Extension for HttpUrl
-private fun String.toHttpUrl(): HttpUrl {
-    return HttpUrl.parse(this) ?: throw IllegalArgumentException("Invalid URL: $this")
-}
