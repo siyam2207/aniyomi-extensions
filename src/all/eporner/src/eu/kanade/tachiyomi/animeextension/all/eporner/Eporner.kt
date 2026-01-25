@@ -52,39 +52,41 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         .build()
 
     // ==================== PREFERENCE ACCESS ====================
+    private lateinit var prefsContext: android.content.Context
+    
     private fun getStringPref(key: String, defaultValue: String): String {
-        return try {
-            val prefs = context.getSharedPreferences("source_$id", 0)
-            prefs.getString(key, defaultValue) ?: defaultValue
-        } catch (e: Exception) {
+        return if (::prefsContext.isInitialized) {
+            prefsContext.getSharedPreferences("source_$id", 0)
+                .getString(key, defaultValue) ?: defaultValue
+        } else {
             defaultValue
         }
     }
 
     private fun getBooleanPref(key: String, defaultValue: Boolean): Boolean {
-        return try {
-            val prefs = context.getSharedPreferences("source_$id", 0)
-            prefs.getBoolean(key, defaultValue)
-        } catch (e: Exception) {
+        return if (::prefsContext.isInitialized) {
+            prefsContext.getSharedPreferences("source_$id", 0)
+                .getBoolean(key, defaultValue)
+        } else {
             defaultValue
         }
     }
 
     private fun saveStringPref(key: String, value: String) {
-        try {
-            val prefs = context.getSharedPreferences("source_$id", 0)
-            prefs.edit().putString(key, value).apply()
-        } catch (e: Exception) {
-            // Ignore
+        if (::prefsContext.isInitialized) {
+            prefsContext.getSharedPreferences("source_$id", 0)
+                .edit()
+                .putString(key, value)
+                .apply()
         }
     }
 
     private fun saveBooleanPref(key: String, value: Boolean) {
-        try {
-            val prefs = context.getSharedPreferences("source_$id", 0)
-            prefs.edit().putBoolean(key, value).apply()
-        } catch (e: Exception) {
-            // Ignore
+        if (::prefsContext.isInitialized) {
+            prefsContext.getSharedPreferences("source_$id", 0)
+                .edit()
+                .putBoolean(key, value)
+                .apply()
         }
     }
 
@@ -523,6 +525,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== PREFERENCE SCREEN ====================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        // Store context for later use
+        prefsContext = screen.context
+        
         // Video Quality Preference
         ListPreference(screen.context).apply {
             key = PREF_QUALITY_KEY
