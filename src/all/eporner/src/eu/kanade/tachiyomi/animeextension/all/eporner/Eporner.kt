@@ -1,8 +1,8 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
+import android.content.SharedPreferences
 import androidx.preference.ListPreference
 import androidx.preference.Preference
-import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
@@ -51,11 +51,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             chain.proceed(request)
         }
         .build()
-
-    // ==================== PREFERENCES ====================
-    private val preferences by lazy {
-        PreferenceManager.getDefaultSharedPreferences(context)
-    }
 
     // ==================== INTERNAL COMPONENTS ====================
     private val playlistUtils by lazy { PlaylistUtils(client, headers) }
@@ -429,7 +424,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== FILTER IMPLEMENTATIONS ====================
     private fun buildFilterUrl(page: Int, filters: AnimeFilterList): String {
-        // Use URL building without HttpUrl import
         val queryParams = mutableListOf<String>()
         filters.forEach { filter ->
             when (filter) {
@@ -439,7 +433,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
                 is CategoryFilter -> {
-                    if (filter.state != 0) {
+                    if (filter.state) {
                         queryParams.add("category=${filter.toUriPart()}")
                     }
                 }
@@ -478,6 +472,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         queryParams.add("actor=${java.net.URLEncoder.encode(filter.state, "UTF-8")}")
                     }
                 }
+                else -> {
+                    // Handle other filter types or ignore
+                }
             }
         }
         queryParams.add("page=$page")
@@ -507,7 +504,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_QUALITY_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putString(key, newValue as String).apply()
+                try {
+                    val editor = preferences.edit()
+                    editor.putString(key, newValue as String)
+                    editor.apply()
+                } catch (e: Exception) {
+                    // Handle exception
+                }
                 true
             }
         }.also(screen::addPreference)
@@ -527,7 +530,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_SORT_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putString(key, newValue as String).apply()
+                try {
+                    val editor = preferences.edit()
+                    editor.putString(key, newValue as String)
+                    editor.apply()
+                } catch (e: Exception) {
+                    // Handle exception
+                }
                 true
             }
         }.also(screen::addPreference)
@@ -539,7 +548,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             summary = "Show animated previews/GIFs for videos"
             setDefaultValue(PREF_PREVIEW_DEFAULT)
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putBoolean(key, newValue as Boolean).apply()
+                try {
+                    val editor = preferences.edit()
+                    editor.putBoolean(key, newValue as Boolean)
+                    editor.apply()
+                } catch (e: Exception) {
+                    // Handle exception
+                }
                 true
             }
         }.also(screen::addPreference)
@@ -551,7 +566,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             summary = "Automatically play next video when current ends"
             setDefaultValue(PREF_AUTOPLAY_DEFAULT)
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putBoolean(key, newValue as Boolean).apply()
+                try {
+                    val editor = preferences.edit()
+                    editor.putBoolean(key, newValue as Boolean)
+                    editor.apply()
+                } catch (e: Exception) {
+                    // Handle exception
+                }
                 true
             }
         }.also(screen::addPreference)
@@ -570,7 +591,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(PREF_DATA_SAVING_DEFAULT)
             summary = "%s"
             setOnPreferenceChangeListener { _, newValue ->
-                preferences.edit().putString(key, newValue as String).apply()
+                try {
+                    val editor = preferences.edit()
+                    editor.putString(key, newValue as String)
+                    editor.apply()
+                } catch (e: Exception) {
+                    // Handle exception
+                }
                 true
             }
         }.also(screen::addPreference)
