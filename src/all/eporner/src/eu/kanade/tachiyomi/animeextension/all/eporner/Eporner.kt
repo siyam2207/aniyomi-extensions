@@ -431,7 +431,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun buildFilterUrl(page: Int, filters: AnimeFilterList): String {
         // Use URL building without HttpUrl import
         val queryParams = mutableListOf<String>()
-        
         filters.forEach { filter ->
             when (filter) {
                 is SortFilter -> {
@@ -483,7 +482,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
         
         queryParams.add("page=$page")
-        
         return if (queryParams.isNotEmpty()) {
             "$baseUrl/filter/?${queryParams.joinToString("&")}"
         } else {
