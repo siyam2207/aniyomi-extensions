@@ -17,13 +17,15 @@ import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.lib.unpacker.Unpacker
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.util.asJsoup
+import eu.kanade.tachiyomi.util.parallelCatchingFlatMapBlocking
 import okhttp3.Headers
 import okhttp3.HttpUrl
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -101,7 +103,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== VIDEO LISTING PARSER ====================
     private fun parseVideoListing(document: Document): AnimesPage {
         val elements = document.select("#videos .mb, .video-unit, div.video")
-        
+
         val animeList = elements.mapNotNull { element ->
             try {
                 SAnime.create().apply {
@@ -111,13 +113,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val href = it.attr("href")
                         setUrlWithoutDomain(if (href.startsWith("/")) "$baseUrl$href" else href)
                     }
-                    
+
                     // Title
                     title = link?.attr("title")?.takeIf { it.isNotBlank() }
                         ?: element.selectFirst("img")?.attr("alt")
                         ?: element.selectFirst(".title, h3")?.text()
                         ?: "Unknown Title"
-                    
+
                     // Thumbnail with preview support
                     val enablePreviews = preferences.getBoolean(PREF_PREVIEW_KEY, PREF_PREVIEW_DEFAULT)
                     thumbnail_url = element.selectFirst("img")?.let { img ->
@@ -135,7 +137,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                             }
                         }
                     }
-                    
+
                     // Metadata
                     val duration = element.selectFirst(".duration, .time")?.text()
                     val views = element.selectFirst(".views")?.text()
@@ -143,7 +145,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     val isHD = element.selectFirst(".hd") != null
                     val isVR = element.selectFirst(".vr") != null
                     val is4K = element.selectFirst(".uhd") != null
-                    
+
                     description = buildString {
                         duration?.let { append("⏱ $it\n") }
                         views?.let { append("👁 $it\n") }
@@ -152,7 +154,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         if (isVR) append("🎥 VR\n")
                         if (is4K) append("📈 4K\n")
                     }.trim()
-                    
+
                     // Extract video ID for previews
                     val videoId = link?.attr("href")?.substringAfterLast("/")?.substringBefore("?")
                     if (videoId != null && enablePreviews) {
@@ -164,7 +166,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 null
             }
         }
-        
+
         val hasNextPage = document.select("a.next, .pagination a:contains(Next)").isNotEmpty()
         return AnimesPage(animeList, hasNextPage)
     }
@@ -172,12 +174,12 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== ANIME DETAILS ====================
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
-        
+
         return SAnime.create().apply {
             // Basic Info
             title = document.selectFirst("h1")?.text() ?: ""
             thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")
-            
+
             // Metadata Extraction
             val infoItems = document.select(".info .item")
             val metadata = mutableMapOf<String, String>()
@@ -188,39 +190,39 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     metadata[key] = value
                 }
             }
-            
+
             // Description Building
             description = buildString {
                 // Main description
                 document.selectFirst(".desc")?.text()?.let { append("$it\n\n") }
-                
+
                 // Metadata
                 metadata.forEach { (key, value) ->
                     append("$key: $value\n")
                 }
-                
+
                 // Actors
                 val actors = document.select(".actors a").eachText()
                 if (actors.isNotEmpty()) {
                     append("\n🎭 Actors: ${actors.joinToString(", ")}\n")
                 }
-                
+
                 // Categories
                 val categories = document.select(".categories a").eachText()
                 if (categories.isNotEmpty()) {
                     append("📁 Categories: ${categories.joinToString(", ")}\n")
                 }
-                
+
                 // Tags
                 val tags = document.select(".tags a").eachText()
                 if (tags.isNotEmpty()) {
                     append("🏷️ Tags: ${tags.joinToString(", ")}\n")
                 }
-                
+
                 // Production Info
                 val studio = document.selectFirst(".studio a")?.text()
                 studio?.let { append("🎬 Studio: $it\n") }
-                
+
                 // Quality Info
                 val qualities = mutableListOf<String>()
                 if (document.selectFirst(".hd") != null) qualities.add("HD")
@@ -230,14 +232,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     append("📊 Quality: ${qualities.joinToString(", ")}\n")
                 }
             }
-            
+
             // Genre and Author
             val allCategories = document.select(".categories a").eachText()
             genre = allCategories.joinToString(", ")
-            
+
             author = document.selectFirst(".studio a")?.text()
                 ?: document.selectFirst(".production a")?.text()
-            
+
             status = SAnime.COMPLETED
         }
     }
@@ -259,20 +261,20 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
-        
+
         // Method 1: Extract from videoObj JavaScript
         val scriptData = document.select("script:containsData(videoObj)").firstOrNull()?.data()
         if (scriptData != null) {
             extractFromVideoObj(scriptData).let { videos.addAll(it) }
         }
-        
+
         // Method 2: Extract from iframe embeds
         if (videos.isEmpty()) {
             document.select("iframe").mapNotNull { it.attr("src") }
                 .parallelCatchingFlatMapBlocking { extractFromEmbed(it) }
                 .let { videos.addAll(it) }
         }
-        
+
         // Method 3: Extract from HTML5 video sources
         document.select("source").forEach { source ->
             val url = source.attr("src")
@@ -281,19 +283,19 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 videos.add(Video(url, quality, url))
             }
         }
-        
+
         // Method 4: Try API endpoint
         if (videos.isEmpty()) {
             val videoId = document.location().substringAfterLast("/").substringBefore("?")
             extractFromApi(videoId).let { videos.addAll(it) }
         }
-        
+
         return videos.distinctBy { it.videoUrl }.sortedWith(videoComparator)
     }
 
     private fun extractFromVideoObj(script: String): List<Video> {
         val videos = mutableListOf<Video>()
-        
+
         // Parse quality URLs from videoObj
         val qualityPattern = """["']?(\d+)p["']?\s*:\s*["']([^"']+)["']""".toRegex()
         qualityPattern.findAll(script).forEach { match ->
@@ -303,7 +305,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 videos.add(Video(url, "Direct - $quality", url))
             }
         }
-        
+
         // Parse HLS manifest
         val hlsPattern = """hlsUrl\s*:\s*["']([^"']+)["']""".toRegex()
         hlsPattern.find(script)?.groupValues?.get(1)?.let { hlsUrl ->
@@ -311,7 +313,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 playlistUtils.extractFromHls(hlsUrl, baseUrl).let { videos.addAll(it) }
             }
         }
-        
+
         return videos
     }
 
@@ -319,7 +321,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val response = client.newCall(GET(embedUrl, headers)).execute()
             val doc = response.asJsoup()
-            
+
             val videos = mutableListOf<Video>()
             doc.select("source").forEach { source ->
                 val url = source.attr("src")
@@ -328,7 +330,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     videos.add(Video(url, "Embed - $quality", url))
                 }
             }
-            
+
             // Check for packed JavaScript
             doc.select("script:containsData(function(p,a,c,k,e,d))").firstOrNull()?.data()?.let { packed ->
                 Unpacker.unpack(packed)?.let { unpacked ->
@@ -339,7 +341,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
+
             videos
         } catch (e: Exception) {
             emptyList()
@@ -351,7 +353,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val url = "$baseUrl/api/video/$videoId"
             val response = client.newCall(GET(url, headers)).execute()
             val jsonString = response.body.string()
-            
+
             val videos = mutableListOf<Video>()
             val qualityPattern = """["']?(\d+)p["']?\s*:\s*["']([^"']+)["']""".toRegex()
             qualityPattern.findAll(jsonString).forEach { match ->
@@ -361,7 +363,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     videos.add(Video(url, "API - $quality", url))
                 }
             }
-            
+
             videos
         } catch (e: Exception) {
             emptyList()
@@ -374,7 +376,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // Sort Filter
             SortFilter(),
             AnimeFilter.Separator(),
-            
+
             // Category Filter Group
             AnimeFilter.Header("🎯 CATEGORIES"),
             CategoryFilter("Amateur", "amateur"),
@@ -404,22 +406,22 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             CategoryFilter("VR", "vr"),
             CategoryFilter("4K", "4k"),
             AnimeFilter.Separator(),
-            
+
             // Quality Filter
             AnimeFilter.Header("📊 QUALITY FILTERS"),
             QualityFilter(),
             AnimeFilter.Separator(),
-            
+
             // Duration Filter
             AnimeFilter.Header("⏱ DURATION FILTERS"),
             DurationFilter(),
             AnimeFilter.Separator(),
-            
+
             // Date Filter
             AnimeFilter.Header("📅 DATE FILTERS"),
             DateFilter(),
             AnimeFilter.Separator(),
-            
+
             // Advanced Filters
             AnimeFilter.Header("⚙️ ADVANCED FILTERS"),
             HDOnlyFilter(),
@@ -433,7 +435,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== FILTER IMPLEMENTATIONS ====================
     private fun buildFilterUrl(page: Int, filters: AnimeFilterList): String {
         val url = "$baseUrl/filter/".toHttpUrl().newBuilder()
-        
+
         filters.forEach { filter ->
             when (filter) {
                 is SortFilter -> {
@@ -483,7 +485,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
         }
-        
+
         url.addQueryParameter("page", page.toString())
         return url.build().toString()
     }
@@ -591,7 +593,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun List<Video>.sort(): List<Video> {
         val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
         val dataMode = preferences.getString(PREF_DATA_SAVING_KEY, PREF_DATA_SAVING_DEFAULT) ?: PREF_DATA_SAVING_DEFAULT
-        
+
         return sortedWith(
             compareByDescending<Video> { video ->
                 when (qualityPref) {
@@ -606,7 +608,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }.thenByDescending { video ->
                 video.qualityValue
-            }
+            },
         )
     }
 
@@ -615,14 +617,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val dateText = document.selectFirst("span[itemprop='uploadDate']")?.attr("content")
                 ?: document.selectFirst(".upload-date")?.text()
-            
+
             if (dateText != null) {
                 val formats = listOf(
                     SimpleDateFormat("yyyy-MM-dd", Locale.US),
                     SimpleDateFormat("MMM dd, yyyy", Locale.US),
                     SimpleDateFormat("dd MMM yyyy", Locale.US),
                 )
-                
+
                 for (format in formats) {
                     try {
                         return format.parse(dateText)?.time ?: continue
@@ -677,19 +679,19 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         // Preference Keys
         private const val PREF_QUALITY_KEY = "pref_quality"
         private const val PREF_QUALITY_DEFAULT = "auto"
-        
+
         private const val PREF_SORT_KEY = "pref_sort"
         private const val PREF_SORT_DEFAULT = "most-viewed"
-        
+
         private const val PREF_PREVIEW_KEY = "pref_preview"
         private const val PREF_PREVIEW_DEFAULT = true
-        
+
         private const val PREF_AUTOPLAY_KEY = "pref_autoplay"
         private const val PREF_AUTOPLAY_DEFAULT = true
-        
+
         private const val PREF_DATA_SAVING_KEY = "pref_data_saving"
         private const val PREF_DATA_SAVING_DEFAULT = "wifi"
-        
+
         private const val PREF_CACHE_CLEAR_KEY = "pref_cache_clear"
     }
 }
