@@ -111,7 +111,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 is AnimeFilter.TriState,
                 is AnimeFilter.Select<*>,
                 is AnimeFilter.Text,
-                is AnimeFilter.Sort -> {
+                is AnimeFilter.Sort, -> {
                     // Do nothing for these filter types
                 }
             }
