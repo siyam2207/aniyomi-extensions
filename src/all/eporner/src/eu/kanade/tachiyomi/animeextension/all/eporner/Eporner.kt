@@ -100,35 +100,36 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val document = response.asJsoup()
             SAnime.create().apply {
                 url = response.request.url.toString()
-                
+
                 // Extract title
-                title = document.selectFirst("h1")?.text() ?: 
-                       document.selectFirst("title")?.text() ?: "Unknown Title"
-                
+                title = document.selectFirst("h1")?.text()
+                    ?: document.selectFirst("title")?.text()
+                    ?: "Unknown Title"
+
                 // Extract thumbnail
-                thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content") ?:
-                               document.selectFirst("video")?.attr("poster") ?:
-                               document.selectFirst("img.thumb")?.attr("src")
-                
+                thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")
+                    ?: document.selectFirst("video")?.attr("poster")
+                    ?: document.selectFirst("img.thumb")?.attr("src")
+
                 // Extract description/views
                 val viewsText = document.selectFirst("div.views")?.text() ?: ""
                 val durationText = document.selectFirst("div.length")?.text() ?: ""
-                
+
                 description = buildString {
                     if (viewsText.isNotEmpty()) append("Views: $viewsText\n")
                     if (durationText.isNotEmpty()) append("Duration: $durationText\n")
-                    
+
                     // Extract tags/keywords
                     val tags = document.select("a.tag").map { it.text() }
                     if (tags.isNotEmpty()) {
                         append("\nTags: ${tags.joinToString(", ")}")
                     }
                 }
-                
+
                 // Extract tags as genre
                 val tags = document.select("a.tag").map { it.text() }
                 genre = tags.joinToString(", ")
-                
+
                 status = SAnime.COMPLETED
             }
         } catch (e: Exception) {
@@ -171,7 +172,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val document = response.asJsoup()
             val videos = mutableListOf<Video>()
-            
+
             // METHOD 1: Check for direct video URLs in data- attributes
             document.select("[data-video-url], [data-src]").forEach { element ->
                 val url = element.attr("data-video-url").ifEmpty { element.attr("data-src") }
@@ -179,7 +180,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     addVideoWithQuality(videos, url)
                 }
             }
-            
+
             // METHOD 2: Check for iframe embeds
             document.select("iframe[src*='embed']").forEach { iframe ->
                 val embedUrl = iframe.attr("abs:src")
@@ -196,10 +197,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
+
             // METHOD 3: Extract from scripts (most reliable for Eporner)
             extractVideosFromScripts(document, videos, response.request.url.toString())
-            
+
             // METHOD 4: Fallback to common patterns
             if (videos.isEmpty()) {
                 val html = document.html()
@@ -208,7 +209,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     Regex("""file\s*:\s*["'](https?://[^"']+\.mp4[^"']*)["']"""),
                     Regex("""(https?://[^"'\s<>]+\.mp4)"""),
                 )
-                
+
                 videoPatterns.forEach { pattern ->
                     pattern.findAll(html).forEach { match ->
                         val url = match.groupValues.getOrNull(1) ?: match.value
@@ -218,22 +219,22 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
+
             // Log found videos for debugging
             Log.d(tag, "Total videos found: ${videos.size}")
             videos.forEach { Log.d(tag, "Video: ${it.quality} - ${it.videoUrl.take(50)}...") }
-            
+
             videos.distinctBy { it.videoUrl }
         } catch (e: Exception) {
             Log.e(tag, "Video list parse error: ${e.message}", e)
             emptyList()
         }
     }
-    
+
     private fun extractVideosFromScripts(document: org.jsoup.nodes.Document, videos: MutableList<Video>, referer: String) {
         document.select("script:not([src])").forEach { script ->
             val scriptText = script.html()
-            
+
             // Look for Eporner-specific video patterns
             val patterns = listOf(
                 // Common Eporner pattern: {quality: "720", videoUrl: "http://..."}
@@ -245,7 +246,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 // Base64 encoded URLs (sometimes used)
                 Regex("""["']?(?:video|file)["']?\s*:\s*["'](https?://[^"']+)["']"""),
             )
-            
+
             patterns.forEachIndexed { index, pattern ->
                 pattern.findAll(scriptText).forEach { match ->
                     when (index) {
@@ -283,7 +284,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }
     }
-    
+
     private fun addVideoWithQuality(videos: MutableList<Video>, url: String) {
         val quality = when {
             url.contains("1080") -> "1080p"
