@@ -132,13 +132,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun animeDetailsRequest(anime: SAnime): Request {
         val videoId = anime.url.substringAfterLast("/").substringBefore("-")
         val url = "$apiUrl/video/id/?id=$videoId&format=json"
-        
         // FIX: Build fresh headers with proper Referer for API call
         val requestHeaders = headersBuilder()
             .add("Referer", "$baseUrl/")
             .add("Origin", baseUrl)
             .build()
-        
         Log.d(tag, "Details request to: $url")
         return GET(url, requestHeaders)
     }
@@ -249,7 +247,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     Regex("""videoUrl["']?\s*:\s*["']([^"']+)["']\s*,\s*quality["']?\s*:\s*["']?(\d+)["']"""),
                     Regex(""""quality"\s*:\s*"(\d+)"\s*,\s*"videoUrl"\s*:\s*"([^"]+)"""),
                 )
-                
                 patterns.forEach { pattern ->
                     pattern.findAll(scriptText).forEach { match ->
                         val quality = match.groupValues.getOrNull(1) ?: match.groupValues.getOrNull(2) ?: ""
