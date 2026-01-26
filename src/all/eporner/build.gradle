@@ -9,24 +9,21 @@ apply from: "$rootDir/common.gradle"
 
 dependencies {
     // ====== ANTI-BOT PROTECTION ======
-    implementation(project(':lib:cloudflare-interceptor'))  // NON-NEGOTIABLE
+    implementation(project(':lib:cloudflare-interceptor'))
     
     // ====== CORE PARSING ======
-    implementation(project(':lib:playlist-utils'))    // HLS/m3u8 parsing
-    implementation(project(':lib:unpacker'))          // JS unpacking
+    implementation(project(':lib:playlist-utils'))
+    implementation(project(':lib:unpacker'))
     
     // ====== EPORNER-SPECIFIC EXTRACTORS ======
-    implementation(project(':lib:streamwish-extractor'))  // Main host
-    implementation(project(':lib:voe-extractor'))         // Secondary
-    implementation(project(':lib:mp4upload-extractor'))   // Fallback
-    implementation(project(':lib:universal-extractor'))   // Safety net
+    implementation(project(':lib:streamwish-extractor'))
+    implementation(project(':lib:voe-extractor'))
+    implementation(project(':lib:mp4upload-extractor'))
+    implementation(project(':lib:universal-extractor'))
     
-    // ====== EXTERNAL DEPENDENCIES ======
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    implementation 'org.jsoup:jsoup:1.17.2'
-    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
-    
-    // ====== OPTIONAL ENHANCEMENTS ======
-    // implementation(project(':lib:dataimage'))      // If data: URIs used
-    // implementation(project(':lib:cryptoaes'))      // If encrypted tokens
+    // ====== USE VERSION CATALOG REFERENCES ======
+    implementation libs.kotlin.stdlib
+    implementation libs.kotlin.json
+    implementation libs.jsoup
+    implementation libs.okhttp
 }
