@@ -1,12 +1,21 @@
 ext {
     extName = 'Eporner'
+    pkgNameSuffix = 'all.eporner'
     extClass = '.Eporner'
-    extVersionCode = 2  // Increment with each update
+    extVersionCode = 1
+    libVersion = '1.5'
     isNsfw = true
 }
 
-apply from: "$rootDir/common.gradle"
-
 dependencies {
-    implementation(project(':lib:playlist-utils'))
+    implementation(project(':lib-anime'))
+    implementation(project(':lib-i18n'))
+    implementation(project(':lib-playlist-common'))
+    
+    // Core networking and parsing
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'org.jsoup:jsoup:1.17.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
 }
+
+apply from: "$rootDir/common.gradle"
