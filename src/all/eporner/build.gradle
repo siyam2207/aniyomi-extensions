@@ -1,27 +1,32 @@
 ext {
     extName = 'Eporner'
-    pkgNameSuffix = 'all.eporner'
     extClass = '.Eporner'
     extVersionCode = 1
-    libVersion = '1.5'
     isNsfw = true
 }
 
+apply from: "$rootDir/common.gradle"
+
 dependencies {
-    // === CORE VIDEO EXTRACTION (NON-NEGOTIABLE) ===
+    // ====== ANTI-BOT PROTECTION ======
+    implementation(project(':lib:cloudflare-interceptor'))  // NON-NEGOTIABLE
+    
+    // ====== CORE PARSING ======
     implementation(project(':lib:playlist-utils'))    // HLS/m3u8 parsing
-    implementation(project(':lib:unpacker'))          // JS-packed video URLs
+    implementation(project(':lib:unpacker'))          // JS unpacking
     
-    // === CLOUDFLARE PROTECTION (CRITICAL) ===
-    implementation(project(':lib:cloudflare-interceptor'))
+    // ====== EPORNER-SPECIFIC EXTRACTORS ======
+    implementation(project(':lib:streamwish-extractor'))  // Main host
+    implementation(project(':lib:voe-extractor'))         // Secondary
+    implementation(project(':lib:mp4upload-extractor'))   // Fallback
+    implementation(project(':lib:universal-extractor'))   // Safety net
     
-    // === UNIVERSAL FALLBACK (FOR CDN VARIATIONS) ===
-    implementation(project(':lib:universal-extractor'))
-    
-    // === EXTERNAL DEPENDENCIES ===
+    // ====== EXTERNAL DEPENDENCIES ======
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.jsoup:jsoup:1.17.2'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
+    
+    // ====== OPTIONAL ENHANCEMENTS ======
+    // implementation(project(':lib:dataimage'))      // If data: URIs used
+    // implementation(project(':lib:cryptoaes'))      // If encrypted tokens
 }
-
-apply from: "$rootDir/common.gradle"
