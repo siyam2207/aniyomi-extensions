@@ -35,20 +35,27 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private val preferences by getPreferencesLazy()
     private val tag = "EpornerExtension"
 
-    // ==================== Headers ====================
+    // ==================== Headers (CRITICAL FIX) ====================
     override fun headersBuilder(): Headers.Builder {
-        return Headers.Builder()
-            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .add("Accept", "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .add("Accept-Language", "en-US,en;q=0.5")
-            .add("Referer", baseUrl)
-            .add("Origin", baseUrl)
+        return super.headersBuilder()
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+            .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+            .add("Accept-Language", "en-US,en;q=0.9")
+            .add("Accept-Encoding", "gzip, deflate, br")
+            .add("Connection", "keep-alive")
+            .add("Upgrade-Insecure-Requests", "1")
+            .add("Sec-Fetch-Dest", "document")
+            .add("Sec-Fetch-Mode", "navigate")
+            .add("Sec-Fetch-Site", "none")
+            .add("Sec-Fetch-User", "?1")
+            .add("Cache-Control", "max-age=0")
     }
 
     // ==================== Popular Anime ====================
     override fun popularAnimeRequest(page: Int): Request {
         val url = "$apiUrl/video/search/?query=all&page=$page&order=top-weekly&thumbsize=big&format=json"
-        return GET(url, headers)
+        // FIX: Use headersBuilder() explicitly
+        return GET(url, headersBuilder().build())
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
@@ -66,7 +73,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Latest Updates ====================
     override fun latestUpdatesRequest(page: Int): Request {
         val url = "$apiUrl/video/search/?query=all&page=$page&order=latest&thumbsize=big&format=json"
-        return GET(url, headers)
+        // FIX: Use headersBuilder() explicitly
+        return GET(url, headersBuilder().build())
     }
 
     override fun latestUpdatesParse(response: Response): AnimesPage {
@@ -112,21 +120,46 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
         val url = "$apiUrl/video/search/?query=$encodedQuery&page=$page&categories=$category&duration=$duration&quality=$quality&thumbsize=big&format=json"
         Log.d(tag, "Search URL: $url")
-        return GET(url, headers)
+        // FIX: Use headersBuilder() explicitly
+        return GET(url, headersBuilder().build())
     }
 
     override fun searchAnimeParse(response: Response): AnimesPage {
         return popularAnimeParse(response)
     }
 
-    // ==================== Anime Details ====================
+    // ==================== Anime Details (CRITICAL FIX) ====================
+    override fun animeDetailsRequest(anime: SAnime): Request {
+        val videoId = anime.url.substringAfterLast("/").substringBefore("-")
+        val url = "$apiUrl/video/id/?id=$videoId&format=json"
+        
+        // FIX: Build fresh headers with proper Referer for API call
+        val requestHeaders = headersBuilder()
+            .add("Referer", "$baseUrl/")
+            .add("Origin", baseUrl)
+            .build()
+        
+        Log.d(tag, "Details request to: $url")
+        return GET(url, requestHeaders)
+    }
+
     override fun animeDetailsParse(response: Response): SAnime {
+        // CRITICAL: Add response validation
+        Log.d(tag, "Details Response Code: ${response.code}")
+        if (!response.isSuccessful) {
+            Log.e(tag, "Details request failed with code: ${response.code}")
+            response.close()
+            // Fall back to HTML parsing
+            return htmlAnimeDetailsParse(GET(anime.url, headersBuilder().build()).execute())
+        }
+        
         return try {
             val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(response.body.string())
             videoDetail.toSAnime()
         } catch (e: Exception) {
-            Log.w(tag, "API details failed, trying HTML fallback: ${e.message}")
-            htmlAnimeDetailsParse(response)
+            Log.w(tag, "API details failed: ${e.message}")
+            // Fall back to HTML parsing
+            htmlAnimeDetailsParse(GET(anime.url, headersBuilder().build()).execute())
         }
     }
 
@@ -169,21 +202,22 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return videoListParse(response).firstOrNull()?.videoUrl ?: ""
     }
 
-    override fun animeDetailsRequest(anime: SAnime): Request {
-        val videoId = anime.url.substringAfterLast("/").substringBefore("-")
-        val url = "$apiUrl/video/id/?id=$videoId&format=json"
-        return GET(url, headers)
+    // Helper function to execute requests with proper headers
+    private fun Request.execute(): Response {
+        return client.newCall(this).execute()
     }
 
+    // ==================== Episodes & Video Requests ====================
     override fun episodeListRequest(anime: SAnime): Request {
-        return GET(anime.url, headers)
+        // FIX: Use headersBuilder() for HTML page requests
+        return GET(anime.url, headersBuilder().build())
     }
 
     override fun videoListRequest(episode: SEpisode): Request {
-        return GET(episode.url, headers)
+        // FIX: Use headersBuilder() for HTML page requests
+        return GET(episode.url, headersBuilder().build())
     }
 
-    // ==================== Episodes ====================
     override fun episodeListParse(response: Response): List<SEpisode> {
         return listOf(
             SEpisode.create().apply {
@@ -196,20 +230,34 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Video Extraction (Enhanced) ====================
     override fun videoListParse(response: Response): List<Video> {
+        // CRITICAL: Check response before parsing
+        if (!response.isSuccessful) {
+            Log.e(tag, "Video list request failed with code: ${response.code}")
+            return emptyList()
+        }
+        
         return try {
             val document = response.asJsoup()
             val videos = mutableListOf<Video>()
 
-            // METHOD 1: Eporner JavaScript pattern
+            // METHOD 1: Eporner JavaScript pattern (ENHANCED)
             document.select("script").forEach { script ->
                 val scriptText = script.html()
-                val pattern = Regex("""quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']""")
-                pattern.findAll(scriptText).forEach { match ->
-                    val quality = match.groupValues[1]
-                    val videoUrl = match.groupValues[2]
-                    if (videoUrl.isNotBlank()) {
-                        videos.add(Video(videoUrl, "Eporner - ${quality}p", videoUrl))
-                        Log.d(tag, "Found video: ${quality}p")
+                // Enhanced pattern matching
+                val patterns = listOf(
+                    Regex("""quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']"""),
+                    Regex("""videoUrl["']?\s*:\s*["']([^"']+)["']\s*,\s*quality["']?\s*:\s*["']?(\d+)["']"""),
+                    Regex(""""quality"\s*:\s*"(\d+)"\s*,\s*"videoUrl"\s*:\s*"([^"]+)"""),
+                )
+                
+                patterns.forEach { pattern ->
+                    pattern.findAll(scriptText).forEach { match ->
+                        val quality = match.groupValues.getOrNull(1) ?: match.groupValues.getOrNull(2) ?: ""
+                        val videoUrl = match.groupValues.getOrNull(2) ?: match.groupValues.getOrNull(1) ?: ""
+                        if (videoUrl.isNotBlank() && quality.isNotBlank()) {
+                            videos.add(Video(videoUrl, "Eporner - ${quality}p", videoUrl))
+                            Log.d(tag, "Found video: ${quality}p - $videoUrl")
+                        }
                     }
                 }
             }
@@ -223,7 +271,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val url = match.value
                         if (url.contains(".m3u8")) {
                             try {
-                                val playlistUtils = PlaylistUtils(client, headers)
+                                val playlistUtils = PlaylistUtils(client, headersBuilder().build())
                                 val hlsVideos = playlistUtils.extractFromHls(
                                     url,
                                     response.request.url.toString(),
