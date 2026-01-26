@@ -79,11 +79,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         } else {
             "all"
         }
-        
         var category = "all"
         var duration = "0"
         var quality = "0"
-        
         filters.forEach { filter ->
             when (filter) {
                 is CategoryFilter -> {
@@ -97,7 +95,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
         }
-        
         val url = "$apiUrl/video/search/?query=$encodedQuery&page=$page&categories=$category&duration=$duration&quality=$quality&thumbsize=big&format=json"
         Log.d(tag, "Search URL: $url")
         return GET(url, headers)
@@ -126,7 +123,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 title = document.selectFirst("h1")?.text() ?: "Unknown Title"
                 thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")
                     ?: document.selectFirst("img.thumb")?.attr("src")
-                
                 val viewsText = document.selectFirst("div.views")?.text() ?: ""
                 val durationText = document.selectFirst("div.length")?.text() ?: ""
                 
@@ -186,8 +182,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> {
         return try {
             val document = response.asJsoup()
-            val videos = mutableListOf<Video>()
-            
+            val videos = mutableListOf<Video>() 
             // METHOD 1: Eporner JavaScript pattern
             document.select("script").forEach { script ->
                 val scriptText = script.html()
@@ -201,7 +196,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
             // METHOD 2: HLS streams
             if (videos.isEmpty()) {
                 document.select("script").forEach { script ->
@@ -225,7 +219,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
             // METHOD 3: Direct MP4 fallback
             if (videos.isEmpty()) {
                 val html = document.html()
@@ -377,7 +370,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         private const val PREF_SORT_DEFAULT = "top-weekly"
         private val SORT_LIST = arrayOf("latest", "top-weekly", "top-monthly", "most-viewed", "top-rated")
     }
-
     // ==================== API Data Classes ====================
     @Serializable
     private data class ApiSearchResponse(
