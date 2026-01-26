@@ -8,11 +8,17 @@ ext {
 }
 
 dependencies {
-    implementation(project(':lib-anime'))
-    implementation(project(':lib-i18n'))
-    implementation(project(':lib-playlist-common'))
+    // === CORE VIDEO EXTRACTION (NON-NEGOTIABLE) ===
+    implementation(project(':lib:playlist-utils'))    // HLS/m3u8 parsing
+    implementation(project(':lib:unpacker'))          // JS-packed video URLs
     
-    // Core networking and parsing
+    // === CLOUDFLARE PROTECTION (CRITICAL) ===
+    implementation(project(':lib:cloudflare-interceptor'))
+    
+    // === UNIVERSAL FALLBACK (FOR CDN VARIATIONS) ===
+    implementation(project(':lib:universal-extractor'))
+    
+    // === EXTERNAL DEPENDENCIES ===
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.jsoup:jsoup:1.17.2'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
