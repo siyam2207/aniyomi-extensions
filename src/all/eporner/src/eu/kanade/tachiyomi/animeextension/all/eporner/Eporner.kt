@@ -121,23 +121,23 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
-        
+
         // METHOD 1: Extract from script JSON data (Eporner stores video URLs here)
         document.select("script").forEach { script ->
             val scriptText = script.html()
-            
+
             // Look for video source patterns
             val patterns = listOf(
                 Regex("""["']?quality["']?\s*:\s*["']?(\d+)p?["']?\s*,\s*["']?videoUrl["']?\s*:\s*["']([^"']+)["']"""),
                 Regex("""["']?src["']?\s*:\s*["']([^"']+\.mp4)["']"""),
                 Regex("""https?://[^"']+\.mp4"""),
             )
-            
+
             patterns.forEach { pattern ->
                 pattern.findAll(scriptText).forEach { match ->
                     val quality = match.groupValues.getOrNull(1) ?: "720"
                     val videoUrl = match.groupValues.getOrNull(2) ?: match.value
-                    
+
                     if (videoUrl.contains(".mp4") && videoUrl.startsWith("http")) {
                         val cleanQuality = if (quality.toIntOrNull() != null) "${quality}p" else "Unknown"
                         videos.add(Video(videoUrl, "Eporner - $cleanQuality", videoUrl))
@@ -145,7 +145,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
         }
-        
+
         // METHOD 2: Extract from video tags
         document.select("video source").forEach { source ->
             val url = source.attr("abs:src")
@@ -154,7 +154,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 videos.add(Video(url, "Direct - $quality", url))
             }
         }
-        
+
         // METHOD 3: Extract HLS streams
         document.select("script").forEach { script ->
             val scriptText = script.html()
@@ -177,7 +177,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
         }
-        
+
         // METHOD 4: Fallback - Check common video URL patterns
         if (videos.isEmpty()) {
             val bodyText = document.body().html()
@@ -196,7 +196,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
         }
-        
+
         return videos.distinctBy { it.videoUrl }.takeIf { it.isNotEmpty() } ?: emptyList()
     }
 
@@ -218,7 +218,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override fun List<Video>.sort(): List<Video> {
         val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
-        
+
         return sortedWith(
             compareByDescending<Video> {
                 when {
