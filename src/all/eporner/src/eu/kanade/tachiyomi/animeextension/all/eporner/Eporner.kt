@@ -150,7 +150,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // Fall back to HTML parsing
             return htmlAnimeDetailsParse(GET(anime.url, headersBuilder().build()).execute())
         }
-        
         return try {
             val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(response.body.string())
             videoDetail.toSAnime()
@@ -233,7 +232,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Log.e(tag, "Video list request failed with code: ${response.code}")
             return emptyList()
         }
-        
         return try {
             val document = response.asJsoup()
             val videos = mutableListOf<Video>()
