@@ -111,8 +111,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 is AnimeFilter.TriState,
                 is AnimeFilter.Select<*>,
                 is AnimeFilter.Text,
-                is AnimeFilter.Sort,
-                -> {
+                is AnimeFilter.Sort -> {
                     // Do nothing for these filter types
                 }
             }
@@ -148,7 +147,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Log.e(tag, "Details request failed with code: ${response.code}")
             response.close()
             // Fall back to HTML parsing
-            return htmlAnimeDetailsParse(GET(anime.url, headersBuilder().build()).execute())
         }
         return try {
             val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(response.body.string())
@@ -156,7 +154,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         } catch (e: Exception) {
             Log.w(tag, "API details failed: ${e.message}")
             // Fall back to HTML parsing
-            htmlAnimeDetailsParse(GET(anime.url, headersBuilder().build()).execute())
         }
     }
 
