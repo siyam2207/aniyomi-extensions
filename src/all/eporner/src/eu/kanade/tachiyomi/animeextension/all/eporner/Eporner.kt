@@ -259,11 +259,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             anime // Return anime as-is if details fail
         }
     }
-    
     override fun animeDetailsParse(response: Response): SAnime {
         throw UnsupportedOperationException("Use getAnimeDetails() instead")
     }
-    
     // =========== EPISODES ===========
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
         return listOf(
@@ -279,7 +277,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun episodeListParse(response: Response): List<SEpisode> {
         throw UnsupportedOperationException("Use getEpisodeList() instead")
     }
-    
     // =========== VIDEO EXTRACTION ===========
     override fun videoListRequest(episode: SEpisode): Request {
         val videoId = extractVideoId(episode.url)
@@ -288,19 +285,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     
     override suspend fun getVideoList(episode: SEpisode): List<Video> {
         Log.d("Eporner", "Extracting videos for episode: ${episode.name}")
-        
         val videos = mutableListOf<Video>()
         val embedUrl = videoListRequest(episode).url.toString()
-        
         return try {
             // First try: Fetch embed page
             val response = client.newCall(GET(embedUrl, headers)).awaitSuccess()
             val document = response.asJsoup()
-            
             // Pattern 1: Look for video sources in script tags
             document.select("script").forEach { script ->
                 val scriptContent = script.html()
-                
                 // Multiple patterns for finding video URLs
                 val patterns = listOf(
                     """(https?://[^"']+\.mp4[^"']*)""",
@@ -314,7 +307,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     regex.findAll(scriptContent).forEach { match ->
                         var url = match.groupValues.getOrNull(1) ?: match.value
                         url = url.trim().replace("\\/", "/")
-                        
                         if (url.startsWith("http") && url.contains(".mp4")) {
                             val quality = extractQualityFromUrl(url)
                             videos.add(Video(url, quality, url))
@@ -323,7 +315,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
             // Pattern 2: Check video elements directly
             document.select("video source").forEach { source ->
                 val url = source.attr("src")
@@ -336,7 +327,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     videos.add(Video(url, quality, url))
                 }
             }
-            
             // Pattern 3: Check iframe sources (common for embedded players)
             if (videos.isEmpty()) {
                 document.select("iframe").forEach { iframe ->
