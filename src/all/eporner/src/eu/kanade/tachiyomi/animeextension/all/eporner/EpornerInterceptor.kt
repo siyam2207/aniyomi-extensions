@@ -8,7 +8,6 @@ import java.util.concurrent.TimeUnit
  * Rotating User-Agent interceptor to prevent bot detection
  */
 class RotatingUserAgentInterceptor : Interceptor {
-    
     private val userAgents = listOf(
         // Chrome on Windows (updated)
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -19,11 +18,11 @@ class RotatingUserAgentInterceptor : Interceptor {
         // Edge on Windows
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0",
         // Chrome on Android
-        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36"
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36",
     )
-    
+
     private var currentIndex = 0
-    
+
     private fun getNextUserAgent(): String {
         synchronized(this) {
             val agent = userAgents[currentIndex]
@@ -31,10 +30,10 @@ class RotatingUserAgentInterceptor : Interceptor {
             return agent
         }
     }
-    
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
-        
+
         // Don't override if User-Agent already exists from headersBuilder
         val userAgentHeader = originalRequest.header("User-Agent")
         val newUserAgent = if (userAgentHeader.isNullOrEmpty()) {
@@ -42,7 +41,7 @@ class RotatingUserAgentInterceptor : Interceptor {
         } else {
             userAgentHeader
         }
-        
+
         val newRequest = originalRequest.newBuilder()
             .removeHeader("User-Agent")
             .addHeader("User-Agent", newUserAgent)
@@ -57,7 +56,7 @@ class RotatingUserAgentInterceptor : Interceptor {
             .addHeader("Sec-Fetch-Mode", "cors")
             .addHeader("Sec-Fetch-Site", "same-origin")
             .build()
-        
+
         return chain.proceed(newRequest)
     }
 }
@@ -66,28 +65,27 @@ class RotatingUserAgentInterceptor : Interceptor {
  * Rate limiting and retry interceptor for 403 errors
  */
 class EpornerRateLimitInterceptor : Interceptor {
-    
     private data class RateLimitInfo(
         val timestamp: Long,
-        var requestCount: Int = 1
+        var requestCount: Int = 1,
     )
-    
+
     private val rateLimitMap = mutableMapOf<String, RateLimitInfo>()
     private val lock = Any()
-    
+
     companion object {
         private const val MAX_REQUESTS_PER_MINUTE = 25
         private const val TIME_WINDOW_MS = TimeUnit.MINUTES.toMillis(1)
         private const val RETRY_DELAY_MS = 2000L
     }
-    
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val host = chain.request().url.host
-        
+
         synchronized(lock) {
             val now = System.currentTimeMillis()
             val info = rateLimitMap[host]
-            
+
             if (info != null && now - info.timestamp < TIME_WINDOW_MS) {
                 if (info.requestCount >= MAX_REQUESTS_PER_MINUTE) {
                     // Calculate wait time
@@ -104,15 +102,15 @@ class EpornerRateLimitInterceptor : Interceptor {
                 rateLimitMap[host] = RateLimitInfo(now)
             }
         }
-        
+
         // Execute request with retry logic
         var response: Response? = null
         var lastException: Exception? = null
-        
+
         for (attempt in 1..3) {
             try {
                 response = chain.proceed(chain.request())
-                
+
                 when (response.code) {
                     403 -> {
                         response.close()
@@ -122,7 +120,7 @@ class EpornerRateLimitInterceptor : Interceptor {
                             // Log cookie changes for debugging
                             println("403 received, cookies present: ${cookies.size}")
                         }
-                        
+
                         if (attempt < 3) {
                             Thread.sleep(RETRY_DELAY_MS * attempt)
                             continue
@@ -152,7 +150,7 @@ class EpornerRateLimitInterceptor : Interceptor {
                 }
             }
         }
-        
+
         response?.close()
         throw lastException ?: Exception("Failed to complete request after 3 attempts")
     }
