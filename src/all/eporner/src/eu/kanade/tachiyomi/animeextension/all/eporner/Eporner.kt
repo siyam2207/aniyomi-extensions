@@ -153,7 +153,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 status = SAnime.COMPLETED
             }
         }
-        
         return try {
             val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(response.body.string())
             videoDetail.toSAnime()
