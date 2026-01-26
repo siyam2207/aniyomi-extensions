@@ -85,19 +85,39 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
+    // ==================== Required ConfigurableAnimeSource Methods ====================
+    override fun videoUrlParse(response: Response): String {
+        // Return first video URL or empty string
+        return videoListParse(response).firstOrNull()?.videoUrl ?: ""
+    }
+
+    override fun animeDetailsRequest(anime: SAnime): Request {
+        // Extract video ID from URL
+        val videoId = anime.url.substringAfterLast("/").substringBefore("-")
+        val url = "$apiUrl/video/id/?id=$videoId&format=json"
+        return GET(url, headers)
+    }
+
+    override fun episodeListRequest(anime: SAnime): Request {
+        return GET(anime.url, headers)
+    }
+
+    override fun videoListRequest(episode: SEpisode): Request {
+        return GET(episode.url, headers)
+    }
+
     // ==================== Episodes ====================
     override fun episodeListParse(response: Response): List<SEpisode> {
         return listOf(
             SEpisode.create().apply {
                 name = "Video"
                 episode_number = 1F
-                // FIXED: Don't call setUrlWithoutDomain here
-                this.url = response.request.url.toString()
+                url = response.request.url.toString()
             },
         )
     }
 
-    // ==================== Video Extraction (Improved) ====================
+    // ==================== Video Extraction (Fixed) ====================
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
@@ -107,8 +127,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val embedUrl = iframe.attr("abs:src")
             if (embedUrl.isNotBlank()) {
                 try {
-                    val embedDoc = client.newCall(GET(embedUrl)).execute().asJsoup()
-                    extractVideosFromDocument(embedDoc, videos)
+                    val embedDoc = client.newCall(GET(embedUrl, headers)).execute().asJsoup()
+                    extractVideosFromDocument(embedDoc, videos, embedUrl)
                 } catch (e: Exception) {
                     Log.e(tag, "Embed extraction failed", e)
                 }
@@ -116,34 +136,40 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
 
         // Method 2: Direct extraction from main page
-        extractVideosFromDocument(document, videos)
+        extractVideosFromDocument(document, videos, response.request.url.toString())
 
         return videos.distinctBy { it.videoUrl }
     }
 
-    private fun extractVideosFromDocument(document: org.jsoup.nodes.Document, videos: MutableList<Video>) {
+    private fun extractVideosFromDocument(document: org.jsoup.nodes.Document, videos: MutableList<Video>, referer: String) {
         // Look for HLS streams in scripts
         document.select("script").forEach { script ->
             val scriptText = script.html()
             // Common patterns for video URLs
             val patterns = listOf(
-                Regex(""""(https?:[^"]+\.m3u8[^"]*)""""),
+                Regex("""(https?:[^"' ]+\.m3u8[^"' ]*)"""),
                 Regex("""src\s*:\s*["'](https?:[^"']+\.mp4[^"']*)["']"""),
-                Regex("""file\s*:\s*["'](https?:[^"']+\.mp4[^"']*)["']""")
+                Regex("""file\s*:\s*["'](https?:[^"']+\.mp4[^"']*)["']"""),
             )
 
             patterns.forEach { pattern ->
                 pattern.findAll(scriptText).forEach { match ->
-                    val url = match.groupValues[1]
+                    val url = match.groupValues.getOrNull(1) ?: match.value
                     if (url.isNotBlank()) {
                         if (url.contains(".m3u8")) {
                             try {
                                 val playlistUtils = PlaylistUtils(client, headers)
-                                videos.addAll(playlistUtils.extractFromHls(url, baseUrl))
+                                videos.addAll(
+                                    playlistUtils.extractFromHls(
+                                        url,
+                                        referer,
+                                        videoNameGen = { quality -> "HLS: $quality" },
+                                    ),
+                                )
                             } catch (e: Exception) {
                                 Log.e(tag, "HLS extraction failed for $url", e)
                             }
-                        } else {
+                        } else if (url.contains(".mp4")) {
                             val quality = extractQualityFromUrl(url)
                             videos.add(Video(url, "Direct: $quality", url))
                         }
@@ -180,15 +206,16 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     override fun List<Video>.sort(): List<Video> {
-        val quality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
+        val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
+        
         return sortedWith(
             compareByDescending<Video> {
                 when {
-                    it.quality.contains(quality) -> 2
-                    quality == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
+                    qualityPref == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
+                    it.quality.contains(qualityPref) -> 1000
                     else -> 0
                 }
-            }
+            },
         )
     }
 
