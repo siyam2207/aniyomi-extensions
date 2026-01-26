@@ -128,7 +128,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return popularAnimeParse(response)
     }
 
-    // ==================== Anime Details (CRITICAL FIX) ====================
+    // ==================== Anime Details (FIXED) ====================
     override fun animeDetailsRequest(anime: SAnime): Request {
         val videoId = anime.url.substringAfterLast("/").substringBefore("-")
         val url = "$apiUrl/video/id/?id=$videoId&format=json"
@@ -147,14 +147,23 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         if (!response.isSuccessful) {
             Log.e(tag, "Details request failed with code: ${response.code}")
             response.close()
-            // Fall back to HTML parsing
+            // Return error SAnime when API fails
+            return SAnime.create().apply {
+                title = "Error loading details (API failed)"
+                status = SAnime.COMPLETED
+            }
         }
+        
         return try {
             val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(response.body.string())
             videoDetail.toSAnime()
         } catch (e: Exception) {
             Log.w(tag, "API details failed: ${e.message}")
-            // Fall back to HTML parsing
+            // Return error SAnime when parsing fails
+            SAnime.create().apply {
+                title = "Error parsing API response"
+                status = SAnime.COMPLETED
+            }
         }
     }
 
@@ -195,11 +204,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Required Methods ====================
     override fun videoUrlParse(response: Response): String {
         return videoListParse(response).firstOrNull()?.videoUrl ?: ""
-    }
-
-    // Helper function to execute requests with proper headers
-    private fun Request.execute(): Response {
-        return client.newCall(this).execute()
     }
 
     // ==================== Episodes & Video Requests ====================
