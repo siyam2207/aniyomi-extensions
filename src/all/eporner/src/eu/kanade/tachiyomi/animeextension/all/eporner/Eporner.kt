@@ -22,6 +22,7 @@ import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import uy.kohesive.injekt.injectLazy
+import java.net.URLEncoder
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override val name = "Eporner"
@@ -75,7 +76,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Search ====================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val encodedQuery = if (query.isNotBlank()) {
-            java.net.URLEncoder.encode(query, "UTF-8")
+            URLEncoder.encode(query, "UTF-8")
         } else {
             "all"
         }
@@ -94,6 +95,16 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
                 is QualityFilter -> {
                     if (filter.state != 0) quality = filter.toUriPart()
+                }
+                is AnimeFilter.Header,
+                is AnimeFilter.Separator,
+                is AnimeFilter.Group,
+                is AnimeFilter.CheckBox,
+                is AnimeFilter.Select<*>,
+                is AnimeFilter.Text,
+                is AnimeFilter.Sort,
+                -> {
+                    // Do nothing for these filter types
                 }
             }
         }
