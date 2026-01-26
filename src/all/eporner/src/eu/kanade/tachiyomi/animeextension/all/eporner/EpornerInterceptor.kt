@@ -66,8 +66,8 @@ class RotatingUserAgentInterceptor : Interceptor {
  */
 class EpornerRateLimitInterceptor : Interceptor {
     private data class RateLimitInfo(
-        var timestamp: Long,  // Changed to var
-        var requestCount: Int = 1,  // Changed to var
+        var timestamp: Long,
+        var requestCount: Int = 1,
     )
 
     private val rateLimitMap = mutableMapOf<String, RateLimitInfo>()
@@ -75,7 +75,7 @@ class EpornerRateLimitInterceptor : Interceptor {
 
     companion object {
         private const val MAX_REQUESTS_PER_MINUTE = 25
-        private val TIME_WINDOW_MS = TimeUnit.MINUTES.toMillis(1)  // Changed from const to val
+        private val TIME_WINDOW_MS = TimeUnit.MINUTES.toMillis(1)
         private const val RETRY_DELAY_MS = 2000L
     }
 
