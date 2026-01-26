@@ -12,7 +12,7 @@ data class EpornerApiResponse(
     @SerialName("time_ms") val timeMs: Int,
     @SerialName("total_count") val totalCount: Int,
     @SerialName("total_pages") val totalPages: Int,
-    val videos: List<EpornerVideo>
+    val videos: List<EpornerVideo>,
 )
 
 @Serializable
@@ -28,7 +28,7 @@ data class EpornerVideo(
     @SerialName("length_min") val lengthMin: String,
     val embed: String,
     @SerialName("default_thumb") val defaultThumb: Thumbnail,
-    val thumbs: List<Thumbnail>
+    val thumbs: List<Thumbnail>,
 )
 
 @Serializable
@@ -36,7 +36,7 @@ data class Thumbnail(
     val size: String,
     val width: Int,
     val height: Int,
-    val src: String
+    val src: String,
 )
 
 @Serializable
@@ -55,19 +55,19 @@ data class EpornerVideoDetail(
     @SerialName("default_resolution") val defaultResolution: String,
     val thumbs: List<Thumbnail>,
     val models: List<Model>,
-    val pornstars: List<Pornstar>
+    val pornstars: List<Pornstar>,
 )
 
 @Serializable
 data class Model(
     val id: Int,
     val name: String,
-    val url: String
+    val url: String,
 )
 
 @Serializable
 data class Pornstar(
     val id: Int,
     val name: String,
-    val url: String
+    val url: String,
 )
