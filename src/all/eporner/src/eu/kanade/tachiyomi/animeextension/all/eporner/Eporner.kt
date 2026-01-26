@@ -207,7 +207,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override fun List<Video>.sort(): List<Video> {
         val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
-        
         return sortedWith(
             compareByDescending<Video> {
                 when {
