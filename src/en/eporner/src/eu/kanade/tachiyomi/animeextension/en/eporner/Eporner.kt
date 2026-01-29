@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.animesource.model.AnimeEpisode
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.model.AnimeHttpSource
+
 class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "Eporner"
