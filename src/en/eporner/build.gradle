@@ -8,13 +8,17 @@ apply from: "$rootDir/common.gradle"
 
 dependencies {
     implementation project(":core")
+
+    // AndroidX
     implementation "androidx.preference:preference-ktx:1.2.0"
+
+    // OkHttp pinned to project version
     implementation "com.squareup.okhttp3:okhttp:4.11.0"
 
-    // Add explicit Kotlin stdlib to match project
+    // Kotlin stdlib pinned to project version
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.6.20"
 
-    // Add explicit coroutines versions to match project
+    // Coroutines pinned to project version
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.2"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2"
 }
