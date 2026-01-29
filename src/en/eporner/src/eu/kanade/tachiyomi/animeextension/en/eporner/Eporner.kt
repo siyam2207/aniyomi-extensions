@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-import android.app.Application
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
