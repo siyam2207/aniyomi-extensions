@@ -1,12 +1,16 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.AnimeSource
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
-import okhttp3.OkHttpClient
+import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.util.parseAs
+import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
-import org.json.JSONObject
 
 class Eporner : AnimeHttpSource() {
 
@@ -15,46 +19,80 @@ class Eporner : AnimeHttpSource() {
     override val lang = "en"
     override val supportsLatest = true
 
-    override val client: OkHttpClient = OkHttpClient()
+    override fun headersBuilder(): Headers.Builder =
+        super.headersBuilder()
+            .set("Referer", "$baseUrl/")
+            .set("User-Agent", AnimeSource.USER_AGENT)
 
-    // No search implemented here, can add later
-    override fun searchAnimeRequest(query: String) = throw NotImplementedError()
-    override fun searchAnimeParse(response: Response) = throw NotImplementedError()
-    override fun latestUpdatesRequest(page: Int) = throw NotImplementedError()
-    override fun latestUpdatesParse(response: Response) = throw NotImplementedError()
-    override fun popularAnimeRequest(page: Int) = throw NotImplementedError()
-    override fun popularAnimeParse(response: Response) = throw NotImplementedError()
-    override fun animeDetailsRequest(animeUrl: String) = throw NotImplementedError()
-    override fun animeDetailsParse(response: Response) = throw NotImplementedError()
+    // ================= POPULAR =================
 
-    override fun videoListRequest(videoUrl: String): Request {
-        val videoId = videoUrl.substringAfterLast("-").substringBefore("/")
-        val apiUrl = "$baseUrl/api/v2/video/search/?id=$videoId&per_page=1&thumbsize=big"
-        return Request.Builder()
-            .url(apiUrl)
-            .get()
-            .build()
+    override fun popularAnimeRequest(page: Int): Request =
+        GET(EpornerApi.popular(page), headers)
+
+    override fun popularAnimeParse(response: Response): AnimesPage {
+        val data = response.parseAs<VideoListResponse>()
+        return AnimesPage(
+            data.videos.map { it.toAnime() },
+            data.page < data.pages,
+        )
     }
+
+    // ================= LATEST =================
+
+    override fun latestUpdatesRequest(page: Int): Request =
+        GET(EpornerApi.latest(page), headers)
+
+    override fun latestUpdatesParse(response: Response): AnimesPage =
+        popularAnimeParse(response)
+
+    // ================= SEARCH =================
+
+    override fun searchAnimeRequest(
+        page: Int,
+        query: String,
+        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList,
+    ): Request =
+        GET(EpornerApi.search(query, page), headers)
+
+    override fun searchAnimeParse(response: Response): AnimesPage =
+        popularAnimeParse(response)
+
+    // ================= DETAILS =================
+
+    override fun animeDetailsParse(response: Response): SAnime =
+        SAnime.create().apply { status = SAnime.COMPLETED }
+
+    // ================= EPISODES =================
+
+    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> =
+        listOf(
+            SEpisode.create().apply {
+                url = anime.url
+                name = "Video"
+            },
+        )
+
+    // ================= VIDEOS =================
+
+    override fun videoListRequest(episode: SEpisode): Request =
+        GET(EpornerApi.video(episode.url), headers)
 
     override fun videoListParse(response: Response): List<Video> {
-        val json = JSONObject(response.body?.string().orEmpty())
-        val videosArray = json.getJSONArray("videos")
-        if (videosArray.length() == 0) return emptyList()
+        val data = response.parseAs<VideoDetailResponse>()
+        val video = data.video
 
-        val videoObj = videosArray.getJSONObject(0)
-        val qualities = videoObj.getJSONObject("all_qualities")
-        val videoList = mutableListOf<Video>()
+        val videos = mutableListOf<Video>()
 
-        qualities.keys().forEach { quality ->
-            val url = qualities.getString(quality)
-            videoList.add(Video(url, "${videoObj.getString("title")} [$quality p]", url))
+        video.hls?.takeIf { it.isNotBlank() }?.let {
+            videos.add(Video(it, "HLS", it, headers))
         }
 
-        return videoList.sortedByDescending { it.quality.substringBefore(" p").toIntOrNull() ?: 0 }
+        video.mp4.forEach {
+            videos.add(Video(it.url, it.quality, it.url, headers))
+        }
+
+        return videos.sortedByDescending {
+            it.quality.filter(Char::isDigit).toIntOrNull() ?: 0
+        }
     }
-
-    override fun videoListParse(response: Response, page: Int) = videoListParse(response)
-
-    override fun fetchSearchAnime(page: Int, query: String, filters: AnimeFilterList) =
-        throw NotImplementedError()
 }
