@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
+import com.google.gson.JsonParser
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -21,31 +22,25 @@ class Eporner : AnimeHttpSource() {
     override val client: OkHttpClient = network.cloudflareClient
 
     // --------------------------- Latest ---------------------------
-    override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/most-recent/$page/", headers)
-    }
+    override fun latestUpdatesRequest(page: Int): Request =
+        GET("$baseUrl/most-recent/$page/", headers)
 
-    override fun latestUpdatesParse(response: Response): AnimesPage {
-        return parseAnimeList(response)
-    }
+    override fun latestUpdatesParse(response: Response): AnimesPage =
+        parseAnimeList(response)
 
     // --------------------------- Popular ---------------------------
-    override fun popularAnimeRequest(page: Int): Request {
-        return GET("$baseUrl/most-viewed/$page/", headers)
-    }
+    override fun popularAnimeRequest(page: Int): Request =
+        GET("$baseUrl/most-viewed/$page/", headers)
 
-    override fun popularAnimeParse(response: Response): AnimesPage {
-        return parseAnimeList(response)
-    }
+    override fun popularAnimeParse(response: Response): AnimesPage =
+        parseAnimeList(response)
 
     // --------------------------- Search ---------------------------
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return GET("$baseUrl/search/$query/$page/", headers)
-    }
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
+        GET("$baseUrl/search/$query/$page/", headers)
 
-    override fun searchAnimeParse(response: Response): AnimesPage {
-        return parseAnimeList(response)
-    }
+    override fun searchAnimeParse(response: Response): AnimesPage =
+        parseAnimeList(response)
 
     // --------------------------- Anime Details ---------------------------
     override fun animeDetailsParse(response: Response): SAnime {
@@ -60,48 +55,42 @@ class Eporner : AnimeHttpSource() {
 
     // --------------------------- Episodes ---------------------------
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // For this type of site, usually each video is its own "episode"
         val document = response.asJsoup()
         return listOf(
             SEpisode.create().apply {
                 name = "Watch"
                 episode_number = 1F
                 setUrlWithoutDomain(response.request.url.toString())
-            },
+            }
         )
     }
 
-    // --------------------------- Video Links ---------------------------
-    override fun videoListParse(response: Response): List<Video> {
-        val document = response.asJsoup()
-        val videos = mutableListOf<Video>()
-
-        // Try to extract video URLs from the page
-        val scriptText = document.select("script").find {
-            it.html().contains("video_url") || it.html().contains("mp4")
-        }?.html() ?: ""
-
-        // Look for mp4 URLs in the script
-        val mp4Pattern = Regex("""(https?://[^"'\s]+\.mp4[^"'\s]*)""")
-        val matches = mp4Pattern.findAll(scriptText)
-
-        matches.forEach { match ->
-            val url = match.value
-            val quality = when {
-                url.contains("1080") -> "1080p"
-                url.contains("720") -> "720p"
-                url.contains("480") -> "480p"
-                url.contains("360") -> "360p"
-                else -> "Unknown"
-            }
-            videos.add(Video(url, quality, url))
-        }
-
-        return videos
+    // --------------------------- Video Links via JSON API ---------------------------
+    override fun videoListRequest(episode: SEpisode): Request {
+        val videoId = episode.url.substringAfter("video-").substringBefore("/")
+        val apiUrl = "$baseUrl/api/v2/video/search/?id=$videoId&per_page=1&thumbsize=big"
+        return GET(apiUrl, headers)
     }
 
-    override fun videoListRequest(episode: SEpisode): Request {
-        return GET(baseUrl + episode.url, headers)
+    override fun videoListParse(response: Response): List<Video> {
+        val body = response.body?.string() ?: return emptyList()
+        val json = try {
+            JsonParser.parseString(body).asJsonObject
+        } catch (_: Exception) {
+            return emptyList()
+        }
+
+        val videoList = mutableListOf<Video>()
+        val videos = json.getAsJsonArray("videos") ?: return emptyList()
+        if (videos.size() > 0) {
+            val videoJson = videos[0].asJsonObject
+            val allQualities = videoJson.getAsJsonObject("all_qualities") ?: return emptyList()
+            allQualities.entrySet().forEach { (quality, urlElement) ->
+                val url = urlElement.asString
+                videoList.add(Video(url, "${quality}p", url))
+            }
+        }
+        return videoList
     }
 
     // --------------------------- Helpers ---------------------------
@@ -119,8 +108,6 @@ class Eporner : AnimeHttpSource() {
         return AnimesPage(animeList, hasNextPage)
     }
 
-    // --------------------------- Required but not used ---------------------------
-    override fun getFilterList(): AnimeFilterList {
-        return AnimeFilterList()
-    }
+    // --------------------------- Filters ---------------------------
+    override fun getFilterList(): AnimeFilterList = AnimeFilterList()
 }
