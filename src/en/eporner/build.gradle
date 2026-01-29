@@ -1,0 +1,8 @@
+ext {
+    extName = "Eporner"
+    pkgNameSuffix = "en.eporner"
+    extClass = ".Eporner"
+    extVersionCode = 1
+}
+
+apply(from = "$rootDir/common.gradle")
