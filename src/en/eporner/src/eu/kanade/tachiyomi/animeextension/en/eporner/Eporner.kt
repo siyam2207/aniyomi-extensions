@@ -6,7 +6,6 @@ import eu.kanade.tachiyomi.animeextension.anime.Anime
 import eu.kanade.tachiyomi.animeextension.anime.AnimeEpisode
 import eu.kanade.tachiyomi.animeextension.anime.Video
 import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
-import okhttp3.OkHttpClient
 
 class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
 
@@ -16,8 +15,6 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
     override val supportsLatest = true
 
     private val api = EpornerApi(client)
-
-    override fun client(): OkHttpClient = super.client()
 
     override fun popularAnimeRequest(page: Int) =
         api.popularRequest(page)
