@@ -1,19 +1,21 @@
 ext {
     extName = 'Eporner'
     extClass = '.Eporner'
-    extVersionCode = 1  // You can adjust this as needed
+    extVersionCode = 1
 }
 
 apply from: "$rootDir/common.gradle"
 
 dependencies {
-    // Only include extractors and libraries already compatible with your project
+    implementation(project(':core'))  // ← add this line
+
+    // Existing extractors/libraries
     implementation(project(':lib:okru-extractor'))
     implementation(project(':lib:streamwish-extractor'))
     implementation(project(':lib:mp4upload-extractor'))
     implementation(project(':lib:filemoon-extractor'))
     implementation(project(':lib:gogostream-extractor'))
     implementation(project(':lib:streamlare-extractor'))
-    implementation(project(':lib:playlist-utils')) // optional, if needed
+    implementation(project(':lib:playlist-utils')) // optional
     implementation(libs.jsunpacker)  // safe, used by other extensions
 }
