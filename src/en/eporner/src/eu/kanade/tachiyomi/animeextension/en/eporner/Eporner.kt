@@ -1,13 +1,17 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
 import android.app.Application
-import eu.kanade.tachiyomi.animesource.model.*
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
-import eu.kanade.tachiyomi.animesource.online.AnimeJsonInterceptor
-import eu.kanade.tachiyomi.network.GET
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
-import org.jsoup.Jsoup
+import okhttp3.Request
 import uy.kohesive.injekt.injectLazy
 
 class Eporner : AnimeHttpSource() {
