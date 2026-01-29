@@ -1,18 +1,90 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-object EpornerApi {
+import eu.kanade.tachiyomi.animeextension.anime.*
+import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import org.json.JSONObject
 
-    const val BASE_API = "https://www.eporner.com/api/v2"
+class EpornerApi(private val client: OkHttpClient) {
 
-    fun popular(page: Int): String =
-        "$BASE_API/video/search/?query=&per_page=30&page=$page&order=top-weekly&thumbsize=medium"
+    private val apiBase = "https://www.eporner.com/api/v2"
 
-    fun latest(page: Int): String =
-        "$BASE_API/video/search/?query=&per_page=30&page=$page&order=latest&thumbsize=medium"
+    fun popularRequest(page: Int): Request =
+        buildRequest("$apiBase/videos?sort=top&page=$page")
 
-    fun search(query: String, page: Int): String =
-        "$BASE_API/video/search/?query=$query&per_page=30&page=$page&thumbsize=medium"
+    fun latestRequest(page: Int): Request =
+        buildRequest("$apiBase/videos?sort=latest&page=$page")
 
-    fun video(id: String): String =
-        "$BASE_API/video/get?id=$id"
+    fun searchRequest(
+        page: Int,
+        query: String,
+        filters: AnimeFilterList,
+    ): Request {
+        val url = buildString {
+            append("$apiBase/videos?page=$page")
+
+            if (query.isNotBlank()) {
+                append("&query=$query")
+            }
+
+            EpornerFilters.applyFilters(this, filters)
+        }
+        return buildRequest(url)
+    }
+
+    fun parseAnimeList(response: Response): AnimesPage {
+        val json = JSONObject(response.body!!.string())
+        val list = json.getJSONArray("videos")
+
+        val animeList = (0 until list.length()).map {
+            val obj = list.getJSONObject(it)
+            Anime.create().apply {
+                title = obj.getString("title")
+                thumbnail_url = obj.getString("default_thumb")
+                url = obj.getString("url")
+            }
+        }
+
+        return AnimesPage(animeList, json.getBoolean("has_more"))
+    }
+
+    fun parseDetails(response: Response): Anime {
+        val obj = JSONObject(response.body!!.string())
+        return Anime.create().apply {
+            title = obj.getString("title")
+            description = obj.optString("description")
+            thumbnail_url = obj.getString("default_thumb")
+        }
+    }
+
+    fun parseEpisodes(response: Response): List<AnimeEpisode> =
+        listOf(
+            AnimeEpisode.create().apply {
+                name = "Video"
+                episode_number = 1f
+                url = response.request.url.toString()
+            },
+        )
+
+    fun parseVideos(response: Response): List<Video> {
+        val json = JSONObject(response.body!!.string())
+        val sources = json.getJSONArray("sources")
+
+        return (0 until sources.length()).map {
+            val src = sources.getJSONObject(it)
+            Video(
+                src.getString("url"),
+                "${src.getInt("quality")}p",
+                src.getString("url"),
+            )
+        }
+    }
+
+    private fun buildRequest(url: String): Request =
+        Request.Builder()
+            .url(url)
+            .header("User-Agent", "Aniyomi")
+            .build()
 }
