@@ -1,130 +1,99 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-import eu.kanade.tachiyomi.animesource.model.*
-import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
-import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import org.json.JSONObject
+import java.lang.Exception
 
-class Eporner : ParsedAnimeHttpSource() {
+class Eporner : AnimeHttpSource() {
 
-    override val name = "Eporner"
-    override val baseUrl = "https://www.eporner.com"
-    override val lang = "en"
-    override val supportsLatest = true
+    override val name: String = "Eporner"
+    override val baseUrl: String = "https://www.eporner.com"
+    override val lang: String = "en"
+    override val supportsLatest: Boolean = true
+    override val client: OkHttpClient = network.cloudflareClient
 
-    override val client = network.cloudflareClient
-
-    /* ===================== POPULAR ===================== */
+    // --------------------------- Popular ---------------------------
 
     override fun popularAnimeRequest(page: Int): Request {
-        return GET("$baseUrl/hd-porn/$page/", headers)
+        val url = "$baseUrl/popular/?page=$page"
+        return GET(url, headers)
     }
 
-    override fun popularAnimeSelector(): String = "div.mb"
-
-    override fun popularAnimeFromElement(element: Element): SAnime {
-        val anchor = element.selectFirst("a")!!
-
-        return SAnime.create().apply {
-            title = anchor.select("span.h5").text()
-            url = anchor.attr("href")
-            thumbnail_url = anchor.select("img").attr("data-src")
-                .ifBlank { anchor.select("img").attr("src") }
+    override fun popularAnimeParse(response: Response): List<SAnime> {
+        val document = Jsoup.parse(response.body!!.string())
+        return document.select("div.video-block").map { element ->
+            SAnime.create().apply {
+                title = element.select("a.title").text()
+                setUrlWithoutDomain(element.select("a.title").attr("href"))
+                thumbnail_url = element.select("img").attr("src")
+            }
         }
     }
 
-    override fun popularAnimeNextPageSelector(): String = "a.next"
+    // --------------------------- Episodes ---------------------------
 
-    /* ===================== LATEST ===================== */
-
-    override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/new-porn/$page/", headers)
+    override fun episodeListRequest(anime: SAnime): Request {
+        return GET(baseUrl + anime.url, headers)
     }
-
-    override fun latestUpdatesSelector() = popularAnimeSelector()
-    override fun latestUpdatesFromElement(element: Element) =
-        popularAnimeFromElement(element)
-    override fun latestUpdatesNextPageSelector() =
-        popularAnimeNextPageSelector()
-
-    /* ===================== SEARCH ===================== */
-
-    override fun searchAnimeRequest(
-        page: Int,
-        query: String,
-        filters: AnimeFilterList
-    ): Request {
-        return GET("$baseUrl/search/$query/$page/", headers)
-    }
-
-    override fun searchAnimeSelector() = popularAnimeSelector()
-    override fun searchAnimeFromElement(element: Element) =
-        popularAnimeFromElement(element)
-    override fun searchAnimeNextPageSelector() =
-        popularAnimeNextPageSelector()
-
-    /* ===================== DETAILS ===================== */
-
-    override fun animeDetailsParse(document: Document): SAnime {
-        return SAnime.create().apply {
-            title = document.selectFirst("h1")?.text() ?: ""
-            description = document.selectFirst("meta[name=description]")
-                ?.attr("content")
-            thumbnail_url = document.selectFirst("video[poster]")
-                ?.attr("poster")
-        }
-    }
-
-    /* ===================== EPISODES ===================== */
 
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val episode = SEpisode.create().apply {
-            name = "Video"
-            episode_number = 1f
-            url = response.request.url.toString()
+        val document = Jsoup.parse(response.body!!.string())
+        return document.select("ul.video-list li").map { element ->
+            SEpisode.create().apply {
+                name = element.select("a.title").text()
+                setUrlWithoutDomain(element.select("a").attr("href"))
+            }
         }
-        return listOf(episode)
     }
 
-    /* ===================== VIDEOS ===================== */
+    // --------------------------- Video Links ---------------------------
+
+    override fun videoListRequest(episode: SEpisode): Request {
+        return GET(baseUrl + episode.url, headers)
+    }
 
     override fun videoListParse(response: Response): List<Video> {
-        val videoId = extractVideoId(response.request.url.toString())
-        val apiUrl =
-            "$baseUrl/api/v2/video/search/?id=$videoId&per_page=1"
-
-        val apiResponse = client.newCall(GET(apiUrl, headers)).execute()
-        val body = apiResponse.body?.string() ?: return emptyList()
-
-        val videoList = mutableListOf<Video>()
-
-        val videosObj = JSONObject(body)
-            .getJSONArray("videos")
-            .getJSONObject(0)
-            .getJSONObject("videos")
-
-        videosObj.keys().forEach { quality ->
-            val videoUrl = videosObj.getString(quality)
-            videoList.add(
-                Video(
-                    videoUrl,
-                    "Eporner $quality",
-                    videoUrl
-                )
-            )
+        val document = Jsoup.parse(response.body!!.string())
+        val videos = mutableListOf<Video>()
+        document.select("source[type=video/mp4]").forEach { element ->
+            val url = element.attr("src")
+            val quality = element.attr("res") ?: "HD"
+            videos.add(Video(url, quality, url))
         }
-
-        return videoList
+        return videos
     }
 
-    /* ===================== HELPERS ===================== */
+    // --------------------------- Helpers ---------------------------
 
-    private fun extractVideoId(url: String): String {
-        return url.substringAfter("video-")
-            .substringBefore("/")
+    private fun GET(url: String, headers: Map<String, String> = emptyMap()): Request {
+        return Request.Builder()
+            .url(url)
+            .headers(okhttp3.Headers.headersOf(*headers.flatMap { listOf(it.key, it.value) }.toTypedArray()))
+            .build()
+    }
+
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        val url = "$baseUrl/search/?q=$query&page=$page"
+        return GET(url, headers)
+    }
+
+    override fun searchAnimeParse(response: Response): List<SAnime> {
+        val document = Jsoup.parse(response.body!!.string())
+        return document.select("div.video-block").map { element ->
+            SAnime.create().apply {
+                title = element.select("a.title").text()
+                setUrlWithoutDomain(element.select("a").attr("href"))
+                thumbnail_url = element.select("img").attr("src")
+            }
+        }
     }
 }
