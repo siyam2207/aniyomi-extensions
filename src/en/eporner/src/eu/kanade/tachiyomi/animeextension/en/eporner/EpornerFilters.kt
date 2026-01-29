@@ -1,14 +1,14 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
 import android.content.Context
-import androidx.preference.PreferenceManager
-import eu.kanade.tachiyomi.animeextension.filter.AnimeFilter
-import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
+import android.preference.PreferenceManager // Use this for older Tachiyomi compatibility
+import eu.kanade.tachiyomi.animeextension.model.AnimeFilter
+import eu.kanade.tachiyomi.animeextension.model.AnimeFilterList
 
 object EpornerFilters {
 
     private val categories = arrayOf(
-        "All", "Amateur", "Anal", "Asian", "Big Tits", "Blowjob", "MILF", "Teen",
+        "All", "Amateur", "Anal", "Asian", "Big Tits", "Blowjob", "MILF", "Teen"
     )
 
     fun getFilters(context: Context): AnimeFilterList {
@@ -20,17 +20,17 @@ object EpornerFilters {
         val categoryFilter = AnimeFilter.Select<String>(
             "Category",
             categories,
-            categories.indexOf(savedCategory),
+            categories.indexOf(savedCategory)
         )
         val durationFilter = AnimeFilter.Range(
             "Duration (min)",
             savedMinDuration,
-            savedMaxDuration,
+            savedMaxDuration
         )
 
         return AnimeFilterList(
             categoryFilter,
-            durationFilter,
+            durationFilter
         )
     }
 
