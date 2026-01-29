@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
+import androidx.preference.PreferenceManager
 import android.content.Context
 import eu.kanade.tachiyomi.animeextension.AnimeHttpSource
 import eu.kanade.tachiyomi.animeextension.ConfigurableAnimeSource
@@ -39,6 +40,6 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun onCreate(context: Context) {
         super.onCreate(context)
         this.context = context
-        api = EpornerApi(client)
+        api = EpornerApi(client())
     }
 }
