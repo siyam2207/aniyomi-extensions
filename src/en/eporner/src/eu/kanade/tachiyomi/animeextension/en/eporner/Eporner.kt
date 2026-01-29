@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-import com.google.gson.JsonParser
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -9,6 +8,9 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -55,7 +57,6 @@ class Eporner : AnimeHttpSource() {
 
     // --------------------------- Episodes ---------------------------
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val document = response.asJsoup()
         return listOf(
             SEpisode.create().apply {
                 name = "Watch"
@@ -75,20 +76,21 @@ class Eporner : AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> {
         val body = response.body?.string() ?: return emptyList()
         val json = try {
-            JsonParser.parseString(body).asJsonObject
+            Json.parseToJsonElement(body).jsonObject
         } catch (_: Exception) {
             return emptyList()
         }
 
+        val videosArray = json["videos"]?.jsonArray ?: return emptyList()
+        if (videosArray.isEmpty()) return emptyList()
+
+        val videoJson = videosArray[0].jsonObject
+        val allQualities = videoJson["all_qualities"]?.jsonObject ?: return emptyList()
+
         val videoList = mutableListOf<Video>()
-        val videos = json.getAsJsonArray("videos") ?: return emptyList()
-        if (videos.size() > 0) {
-            val videoJson = videos[0].asJsonObject
-            val allQualities = videoJson.getAsJsonObject("all_qualities") ?: return emptyList()
-            allQualities.entrySet().forEach { (quality, urlElement) ->
-                val url = urlElement.asString
-                videoList.add(Video(url, "${quality}p", url))
-            }
+        for ((quality, urlElement) in allQualities) {
+            val url = urlElement.toString().trim('"') // remove quotes
+            videoList.add(Video(url, "${quality}p", url))
         }
         return videoList
     }
