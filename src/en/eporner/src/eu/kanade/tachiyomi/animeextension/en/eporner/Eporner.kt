@@ -1,14 +1,13 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
 import android.content.Context
-import eu.kanade.tachiyomi.animesource.model.AnimeHttpSource
+import okhttp3.OkHttpClient
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.Anime
 import eu.kanade.tachiyomi.animesource.model.AnimeEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import okhttp3.OkHttpClient
-
+import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.model.AnimeHttpSource
 class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "Eporner"
