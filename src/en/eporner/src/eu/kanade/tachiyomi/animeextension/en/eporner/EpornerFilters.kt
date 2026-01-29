@@ -8,68 +8,60 @@ import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 object EpornerFilters {
 
     private val categories = arrayOf(
-        "All",
-        "Amateur",
-        "Anal",
-        "Asian",
-        "Big Tits",
-        "Blowjob",
-        "MILF",
-        "Teen",
+        "All", "Amateur", "Anal", "Asian", "Big Tits", "Blowjob", "MILF", "Teen"
     )
 
+    // Get filters from shared preferences or default
     fun getFilters(context: Context): AnimeFilterList {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-
         val savedCategory = prefs.getString("eporner_category", "All") ?: "All"
         val savedMinDuration = prefs.getInt("eporner_min_duration", 0)
         val savedMaxDuration = prefs.getInt("eporner_max_duration", 120)
 
-        val categoryFilter = AnimeFilter.Select(
+        val categoryFilter = AnimeFilter.Select<String>(
             "Category",
             categories,
-            categories.indexOf(savedCategory),
+            categories.indexOf(savedCategory)
         )
-
         val durationFilter = AnimeFilter.Range(
-            "Duration (minutes)",
+            "Duration (min)",
             savedMinDuration,
-            savedMaxDuration,
+            savedMaxDuration
         )
 
         return AnimeFilterList(
             categoryFilter,
-            durationFilter,
+            durationFilter
         )
     }
 
+    // Save filters to shared preferences
     fun saveFilters(context: Context, filters: AnimeFilterList) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context).edit()
-
         val category = (filters[0] as AnimeFilter.Select<String>).state
         val duration = filters[1] as AnimeFilter.Range
-
         prefs.putString("eporner_category", category)
-        prefs.putInt("eporner_min_duration", duration.min().toInt())
-        prefs.putInt("eporner_max_duration", duration.max().toInt())
+        prefs.putInt("eporner_min_duration", duration.min)
+        prefs.putInt("eporner_max_duration", duration.max)
         prefs.apply()
     }
 
+    // Apply filters to API request URL
     fun applyFilters(url: StringBuilder, filters: AnimeFilterList) {
         val category = (filters[0] as AnimeFilter.Select<String>).state
         val duration = filters[1] as AnimeFilter.Range
 
-        val min = duration.min()
-        val max = duration.max()
+        val min = duration.min
+        val max = duration.max
 
         if (category != "All") {
-            url.append("&category=${category.lowercase()}")
+            url.append("&category=${category.toLowerCase()}")
         }
         if (min > 0) {
-            url.append("&min_duration=${min.toInt()}")
+            url.append("&min_duration=${min}")
         }
         if (max < 120) {
-            url.append("&max_duration=${max.toInt()}")
+            url.append("&max_duration=${max}")
         }
     }
 }
