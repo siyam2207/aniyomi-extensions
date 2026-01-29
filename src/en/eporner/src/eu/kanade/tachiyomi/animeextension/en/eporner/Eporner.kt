@@ -6,15 +6,14 @@ import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import eu.kanade.tachiyomi.animeextension.model.AnimeFilterList
-import eu.kanade.tachiyomi.animeextension.model.AnimesPage
-import eu.kanade.tachiyomi.animeextension.model.SAnime
-import eu.kanade.tachiyomi.animeextension.model.SEpisode
-import eu.kanade.tachiyomi.animeextension.model.Video
-import eu.kanade.tachiyomi.animeextension.online.AnimeHttpSource
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
-
 class Eporner : AnimeHttpSource() {
 
     override val name: String = "Eporner"
