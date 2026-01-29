@@ -1,12 +1,12 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
 import android.content.Context
-import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.AnimeHttpSource
-import eu.kanade.tachiyomi.animesource.model.Anime
-import eu.kanade.tachiyomi.animesource.model.AnimeEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animeextension.AnimeHttpSource
+import eu.kanade.tachiyomi.animeextension.ConfigurableAnimeSource
+import eu.kanade.tachiyomi.animeextension.anime.Anime
+import eu.kanade.tachiyomi.animeextension.anime.AnimeEpisode
+import eu.kanade.tachiyomi.animeextension.anime.Video
+import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
 import okhttp3.OkHttpClient
 
 class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
@@ -31,8 +31,10 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun searchAnimeParse(response: okhttp3.Response) = api.parseAnimeList(response)
 
     override fun animeDetailsParse(response: okhttp3.Response): Anime = api.parseDetails(response)
-    override fun episodeListParse(response: okhttp3.Response): List<AnimeEpisode> = api.parseEpisodes(response)
-    override fun videoListParse(response: okhttp3.Response): List<Video> = api.parseVideos(response)
+    override fun episodeListParse(response: okhttp3.Response): List<AnimeEpisode> =
+        api.parseEpisodes(response)
+    override fun videoListParse(response: okhttp3.Response): List<Video> =
+        api.parseVideos(response)
 
     override fun getFilterList(): AnimeFilterList = EpornerFilters.getFilters(context)
 
