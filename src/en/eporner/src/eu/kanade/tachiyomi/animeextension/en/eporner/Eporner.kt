@@ -8,13 +8,10 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
-import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
-import org.jsoup.nodes.Element
-import java.lang.Exception
 
 class Eporner : AnimeHttpSource() {
 
@@ -66,27 +63,29 @@ class Eporner : AnimeHttpSource() {
     override fun episodeListParse(response: Response): List<SEpisode> {
         // For this type of site, usually each video is its own "episode"
         val document = response.asJsoup()
-        return listOf(SEpisode.create().apply {
-            name = "Watch"
-            episode_number = 1F
-            setUrlWithoutDomain(response.request.url.toString())
-        })
+        return listOf(
+            SEpisode.create().apply {
+                name = "Watch"
+                episode_number = 1F
+                setUrlWithoutDomain(response.request.url.toString())
+            }
+        )
     }
 
     // --------------------------- Video Links ---------------------------
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
-        
+
         // Try to extract video URLs from the page
-        val scriptText = document.select("script").find { 
-            it.html().contains("video_url") || it.html().contains("mp4") 
+        val scriptText = document.select("script").find {
+            it.html().contains("video_url") || it.html().contains("mp4")
         }?.html() ?: ""
-        
+
         // Look for mp4 URLs in the script
         val mp4Pattern = Regex("""(https?://[^"'\s]+\.mp4[^"'\s]*)""")
         val matches = mp4Pattern.findAll(scriptText)
-        
+
         matches.forEach { match ->
             val url = match.value
             val quality = when {
@@ -98,7 +97,7 @@ class Eporner : AnimeHttpSource() {
             }
             videos.add(Video(url, quality, url))
         }
-        
+
         return videos
     }
 
@@ -116,7 +115,7 @@ class Eporner : AnimeHttpSource() {
                 thumbnail_url = element.parent()?.parent()?.select("img")?.attr("src") ?: ""
             }
         }
-        
+
         val hasNextPage = document.select("a.next").isNotEmpty()
         return AnimesPage(animeList, hasNextPage)
     }
