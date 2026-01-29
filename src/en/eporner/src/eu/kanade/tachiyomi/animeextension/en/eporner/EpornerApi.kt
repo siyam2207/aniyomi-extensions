@@ -14,22 +14,19 @@ class EpornerApi(private val client: OkHttpClient) {
 
     private val apiBase = "https://www.eporner.com/api/v2"
 
-    // Requests
-    fun popularRequest(page: Int): Response =
-        client.newCall(
-            Request.Builder()
-                .url("$apiBase/videos?sort=top&page=$page")
-                .header("User-Agent", "Aniyomi")
-                .build(),
-        ).execute()
+    fun popularRequest(page: Int): Response = client.newCall(
+        Request.Builder()
+            .url("$apiBase/videos?sort=top&page=$page")
+            .header("User-Agent", "Aniyomi")
+            .build()
+    ).execute()
 
-    fun latestRequest(page: Int): Response =
-        client.newCall(
-            Request.Builder()
-                .url("$apiBase/videos?sort=latest&page=$page")
-                .header("User-Agent", "Aniyomi")
-                .build(),
-        ).execute()
+    fun latestRequest(page: Int): Response = client.newCall(
+        Request.Builder()
+            .url("$apiBase/videos?sort=latest&page=$page")
+            .header("User-Agent", "Aniyomi")
+            .build()
+    ).execute()
 
     fun searchRequest(page: Int, query: String, filters: AnimeFilterList): Response {
         val url = StringBuilder("$apiBase/videos?page=$page")
@@ -40,22 +37,20 @@ class EpornerApi(private val client: OkHttpClient) {
             Request.Builder()
                 .url(url.toString())
                 .header("User-Agent", "Aniyomi")
-                .build(),
+                .build()
         ).execute()
     }
 
-    fun animeDetailsRequest(url: String): Response =
-        client.newCall(
-            Request.Builder()
-                .url(url)
-                .header("User-Agent", "Aniyomi")
-                .build(),
-        ).execute()
+    fun animeDetailsRequest(url: String): Response = client.newCall(
+        Request.Builder()
+            .url(url)
+            .header("User-Agent", "Aniyomi")
+            .build()
+    ).execute()
 
     fun episodeListRequest(url: String): Response = animeDetailsRequest(url)
     fun videoListRequest(url: String): Response = animeDetailsRequest(url)
 
-    // Parsing
     fun parseAnimeList(response: Response): AnimesPage {
         val json = JSONObject(response.body!!.string())
         val list = json.getJSONArray("videos")
@@ -82,13 +77,11 @@ class EpornerApi(private val client: OkHttpClient) {
     }
 
     fun parseEpisodes(response: Response): List<SEpisode> =
-        listOf(
-            SEpisode.create().apply {
-                name = "Video"
-                episode_number = 1f
-                setUrlWithoutDomain(response.request.url.toString())
-            },
-        )
+        listOf(SEpisode.create().apply {
+            name = "Video"
+            episode_number = 1f
+            setUrlWithoutDomain(response.request.url.toString())
+        })
 
     fun parseVideos(response: Response): List<Video> {
         val json = JSONObject(response.body!!.string())
