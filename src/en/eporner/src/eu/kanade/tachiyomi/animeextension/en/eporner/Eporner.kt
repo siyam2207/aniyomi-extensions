@@ -1,98 +1,53 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-import eu.kanade.tachiyomi.animesource.AnimeSource
-import eu.kanade.tachiyomi.animesource.model.AnimesPage
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
-import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.parseAs
-import okhttp3.Headers
-import okhttp3.Request
-import okhttp3.Response
+import eu.kanade.tachiyomi.animeextension.AnimeHttpSource
+import eu.kanade.tachiyomi.animeextension.ConfigurableAnimeSource
+import eu.kanade.tachiyomi.animeextension.anime.Anime
+import eu.kanade.tachiyomi.animeextension.anime.AnimeEpisode
+import eu.kanade.tachiyomi.animeextension.anime.Video
+import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
+import okhttp3.OkHttpClient
 
-class Eporner : AnimeHttpSource() {
+class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "Eporner"
     override val baseUrl = "https://www.eporner.com"
     override val lang = "en"
     override val supportsLatest = true
 
-    override fun headersBuilder(): Headers.Builder =
-        super.headersBuilder()
-            .set("Referer", "$baseUrl/")
-            .set("User-Agent", AnimeSource.USER_AGENT)
+    private val api = EpornerApi(client)
 
-    // ================= POPULAR =================
+    override fun client(): OkHttpClient = super.client()
 
-    override fun popularAnimeRequest(page: Int): Request =
-        GET(EpornerApi.popular(page), headers)
+    override fun popularAnimeRequest(page: Int) =
+        api.popularRequest(page)
 
-    override fun popularAnimeParse(response: Response): AnimesPage {
-        val data = response.parseAs<VideoListResponse>()
-        return AnimesPage(
-            data.videos.map { it.toAnime() },
-            data.page < data.pages,
-        )
-    }
+    override fun popularAnimeParse(response: okhttp3.Response) =
+        api.parseAnimeList(response)
 
-    // ================= LATEST =================
+    override fun latestUpdatesRequest(page: Int) =
+        api.latestRequest(page)
 
-    override fun latestUpdatesRequest(page: Int): Request =
-        GET(EpornerApi.latest(page), headers)
-
-    override fun latestUpdatesParse(response: Response): AnimesPage =
-        popularAnimeParse(response)
-
-    // ================= SEARCH =================
+    override fun latestUpdatesParse(response: okhttp3.Response) =
+        api.parseAnimeList(response)
 
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList,
-    ): Request =
-        GET(EpornerApi.search(query, page), headers)
+        filters: AnimeFilterList,
+    ) = api.searchRequest(page, query, filters)
 
-    override fun searchAnimeParse(response: Response): AnimesPage =
-        popularAnimeParse(response)
+    override fun searchAnimeParse(response: okhttp3.Response) =
+        api.parseAnimeList(response)
 
-    // ================= DETAILS =================
+    override fun animeDetailsParse(response: okhttp3.Response): Anime =
+        api.parseDetails(response)
 
-    override fun animeDetailsParse(response: Response): SAnime =
-        SAnime.create().apply { status = SAnime.COMPLETED }
+    override fun episodeListParse(response: okhttp3.Response): List<AnimeEpisode> =
+        api.parseEpisodes(response)
 
-    // ================= EPISODES =================
+    override fun videoListParse(response: okhttp3.Response): List<Video> =
+        api.parseVideos(response)
 
-    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> =
-        listOf(
-            SEpisode.create().apply {
-                url = anime.url
-                name = "Video"
-            },
-        )
-
-    // ================= VIDEOS =================
-
-    override fun videoListRequest(episode: SEpisode): Request =
-        GET(EpornerApi.video(episode.url), headers)
-
-    override fun videoListParse(response: Response): List<Video> {
-        val data = response.parseAs<VideoDetailResponse>()
-        val video = data.video
-
-        val videos = mutableListOf<Video>()
-
-        video.hls?.takeIf { it.isNotBlank() }?.let {
-            videos.add(Video(it, "HLS", it, headers))
-        }
-
-        video.mp4.forEach {
-            videos.add(Video(it.url, it.quality, it.url, headers))
-        }
-
-        return videos.sortedByDescending {
-            it.quality.filter(Char::isDigit).toIntOrNull() ?: 0
-        }
-    }
+    override fun getFilterList() = EpornerFilters.getFilters()
 }
