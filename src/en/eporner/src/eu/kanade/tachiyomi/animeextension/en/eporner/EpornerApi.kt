@@ -19,14 +19,14 @@ class EpornerApi(private val client: OkHttpClient) {
         Request.Builder()
             .url("$apiBase/videos?sort=top&page=$page")
             .header("User-Agent", "Aniyomi")
-            .build()
+            .build(),
     ).execute()
 
     fun latestRequest(page: Int): Response = client.newCall(
         Request.Builder()
             .url("$apiBase/videos?sort=latest&page=$page")
             .header("User-Agent", "Aniyomi")
-            .build()
+            .build(),
     ).execute()
 
     fun searchRequest(page: Int, query: String, filters: AnimeFilterList): Response {
@@ -37,7 +37,7 @@ class EpornerApi(private val client: OkHttpClient) {
             Request.Builder()
                 .url(url.toString())
                 .header("User-Agent", "Aniyomi")
-                .build()
+                .build(),
         ).execute()
     }
 
@@ -45,7 +45,7 @@ class EpornerApi(private val client: OkHttpClient) {
         Request.Builder()
             .url(url)
             .header("User-Agent", "Aniyomi")
-            .build()
+            .build(),
     ).execute()
 
     fun episodeListRequest(url: String): Response = animeDetailsRequest(url)
@@ -82,7 +82,7 @@ class EpornerApi(private val client: OkHttpClient) {
                 name = "Video"
                 episode_number = 1f
                 url = response.request.url.toString()
-            }
+            },
         )
 
     fun parseVideos(response: Response): List<Video> {
@@ -93,7 +93,7 @@ class EpornerApi(private val client: OkHttpClient) {
             Video(
                 src.getString("url"),
                 "${src.getInt("quality")}p",
-                src.getString("url")
+                src.getString("url"),
             )
         }
     }
