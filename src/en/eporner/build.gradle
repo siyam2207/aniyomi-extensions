@@ -1,6 +1,5 @@
 ext {
     extName = 'Eporner'
-    pkgNameSuffix = 'en.eporner'
     extClass = '.Eporner'
     extVersionCode = 1
 }
