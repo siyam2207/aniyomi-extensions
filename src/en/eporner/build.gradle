@@ -7,18 +7,7 @@ ext {
 apply from: "$rootDir/common.gradle"
 
 dependencies {
-    implementation project(":core")
-
-    // AndroidX
-    implementation "androidx.preference:preference-ktx:1.2.0"
-
-    // OkHttp pinned to project version
-    implementation "com.squareup.okhttp3:okhttp:4.11.0"
-
-    // Kotlin stdlib pinned to project version
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.6.20"
-
-    // Coroutines pinned to project version
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.2"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2"
+    implementation project(":core")                 // Core Aniyomi library
+    implementation "androidx.preference:preference-ktx:1.2.0"  // AndroidX Preferences
+    implementation "com.squareup.okhttp3:okhttp"   // Let root project manage version
 }
