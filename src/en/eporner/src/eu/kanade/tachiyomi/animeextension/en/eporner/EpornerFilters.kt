@@ -8,7 +8,7 @@ import eu.kanade.tachiyomi.animeextension.model.AnimeFilterList
 object EpornerFilters {
 
     private val categories = arrayOf(
-        "All", "Amateur", "Anal", "Asian", "Big Tits", "Blowjob", "MILF", "Teen"
+        "All", "Amateur", "Anal", "Asian", "Big Tits", "Blowjob", "MILF", "Teen",
     )
 
     fun getFilters(context: Context): AnimeFilterList {
