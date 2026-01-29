@@ -2,8 +2,8 @@ package eu.kanade.tachiyomi.animeextension.en.eporner
 
 import eu.kanade.tachiyomi.animeextension.anime.Anime
 import eu.kanade.tachiyomi.animeextension.anime.AnimeEpisode
-import eu.kanade.tachiyomi.animeextension.anime.Video
 import eu.kanade.tachiyomi.animeextension.anime.AnimesPage
+import eu.kanade.tachiyomi.animeextension.anime.Video
 import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -17,39 +17,39 @@ class EpornerApi(private val client: OkHttpClient) {
     // Requests
     fun popularRequest(page: Int): Response = client.newCall(
         Request.Builder()
-            .url("$apiBase/videos?sort=top&page=$page")
-            .header("User-Agent", "Aniyomi")
+            .url("$apiBase/videos?sort=top&page=$page",)
+            .header("User-Agent", "Aniyomi",)
             .build()
     ).execute()
 
     fun latestRequest(page: Int): Response = client.newCall(
         Request.Builder()
-            .url("$apiBase/videos?sort=latest&page=$page")
-            .header("User-Agent", "Aniyomi")
+            .url("$apiBase/videos?sort=latest&page=$page",)
+            .header("User-Agent", "Aniyomi",)
             .build()
     ).execute()
 
-    fun searchRequest(page: Int, query: String, filters: AnimeFilterList, client: OkHttpClient): Response {
-        val url = StringBuilder("$apiBase/videos?page=$page")
-        if (query.isNotBlank()) url.append("&query=$query")
+    fun searchRequest(page: Int, query: String, filters: AnimeFilterList): Response {
+        val url = StringBuilder("$apiBase/videos?page=$page",)
+        if (query.isNotBlank()) url.append("&query=$query",)
         EpornerFilters.applyFilters(url, filters)
         return client.newCall(
             Request.Builder()
-                .url(url.toString())
-                .header("User-Agent", "Aniyomi")
+                .url(url.toString(),)
+                .header("User-Agent", "Aniyomi",)
                 .build()
         ).execute()
     }
 
     fun animeDetailsRequest(url: String): Response = client.newCall(
         Request.Builder()
-            .url(url)
-            .header("User-Agent", "Aniyomi")
+            .url(url,)
+            .header("User-Agent", "Aniyomi",)
             .build()
     ).execute()
 
-    fun episodeListRequest(url: String): Response = animeDetailsRequest(url)
-    fun videoListRequest(url: String): Response = animeDetailsRequest(url)
+    fun episodeListRequest(url: String): Response = animeDetailsRequest(url,)
+    fun videoListRequest(url: String): Response = animeDetailsRequest(url,)
 
     // Parsing
     fun parseAnimeList(response: Response): AnimesPage {
@@ -64,7 +64,7 @@ class EpornerApi(private val client: OkHttpClient) {
                 url = obj.getString("url")
             }
         }
-        return AnimesPage(animeList, json.getBoolean("has_more"))
+        return AnimesPage(animeList, json.getBoolean("has_more"),)
     }
 
     fun parseDetails(response: Response): Anime {
@@ -82,7 +82,7 @@ class EpornerApi(private val client: OkHttpClient) {
                 name = "Video"
                 episode_number = 1f
                 url = response.request.url.toString()
-            }
+            },
         )
 
     fun parseVideos(response: Response): List<Video> {
@@ -93,7 +93,7 @@ class EpornerApi(private val client: OkHttpClient) {
             Video(
                 src.getString("url"),
                 "${src.getInt("quality")}p",
-                src.getString("url")
+                src.getString("url"),
             )
         }
     }
