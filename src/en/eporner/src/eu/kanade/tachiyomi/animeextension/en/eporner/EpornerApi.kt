@@ -1,6 +1,9 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-import eu.kanade.tachiyomi.animeextension.anime.*
+import eu.kanade.tachiyomi.animeextension.anime.Anime
+import eu.kanade.tachiyomi.animeextension.anime.AnimeEpisode
+import eu.kanade.tachiyomi.animeextension.anime.AnimesPage
+import eu.kanade.tachiyomi.animeextension.anime.Video
 import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -47,7 +50,10 @@ class EpornerApi(private val client: OkHttpClient) {
             }
         }
 
-        return AnimesPage(animeList, json.getBoolean("has_more"))
+        return AnimesPage(
+            animeList,
+            json.getBoolean("has_more"),
+        )
     }
 
     fun parseDetails(response: Response): Anime {
