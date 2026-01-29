@@ -1,127 +1,74 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.AnimesPage
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
+import android.app.Application
+import eu.kanade.tachiyomi.animesource.model.*
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.animesource.online.AnimeJsonInterceptor
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.asJsoup
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
+import org.jsoup.Jsoup
+import uy.kohesive.injekt.injectLazy
 
 class Eporner : AnimeHttpSource() {
 
-    override val name: String = "Eporner"
-    override val baseUrl: String = "https://www.eporner.com"
-    override val lang: String = "en"
-    override val supportsLatest: Boolean = true
-    override val client: OkHttpClient = network.cloudflareClient
+    override val name = "Eporner"
+    override val baseUrl = "https://www.eporner.com"
+    override val lang = "en"
+    override val supportsLatest = true
 
-    private val jsonParser = Json { ignoreUnknownKeys = true }
+    private val client: OkHttpClient by injectLazy()
 
-    // --------------------------- Latest ---------------------------
-    override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/api/v1/videos/recent?page=$page", headers)
+    override fun popularAnimeRequest(page: Int): okhttp3.Request {
+        return GET("$baseUrl/json/categories/popular/$page/")
     }
 
-    override fun latestUpdatesParse(response: Response): AnimesPage {
-        return parseJsonAnimeList(response)
-    }
-
-    // --------------------------- Popular ---------------------------
-    override fun popularAnimeRequest(page: Int): Request {
-        return GET("$baseUrl/api/v1/videos/popular?page=$page", headers)
-    }
-
-    override fun popularAnimeParse(response: Response): AnimesPage {
-        return parseJsonAnimeList(response)
-    }
-
-    // --------------------------- Search ---------------------------
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return GET("$baseUrl/api/v1/videos/search?query=$query&page=$page", headers)
-    }
-
-    override fun searchAnimeParse(response: Response): AnimesPage {
-        return parseJsonAnimeList(response)
-    }
-
-    // --------------------------- Anime Details ---------------------------
-    override fun animeDetailsParse(response: Response): SAnime {
-        val json = jsonParser.parseToJsonElement(response.body!!.string()).jsonObject
-        val video = json["data"]!!.jsonArray.first().jsonObject
-
-        return SAnime.create().apply {
-            title = video["title"]!!.jsonObject["text"]?.toString()?.replace("\"", "") ?: "Unknown"
-            thumbnail_url = video["thumbnail_url"]?.toString()?.replace("\"", "") ?: ""
-            description = video["description"]?.toString()?.replace("\"", "") ?: ""
-            genre = video["categories"]?.jsonArray?.joinToString(", ") { it.jsonObject["name"]!!.toString().replace("\"", "") } ?: ""
-        }
-    }
-
-    // --------------------------- Episodes ---------------------------
-    override fun episodeListParse(response: Response): List<SEpisode> {
-        val json = jsonParser.parseToJsonElement(response.body!!.string()).jsonObject
-        val videoId = json["data"]!!.jsonArray.first().jsonObject["id"]!!.toString().replace("\"", "")
-
-        return listOf(
-            SEpisode.create().apply {
-                name = "Watch"
-                episode_number = 1F
-                setUrlWithoutDomain("/videos/$videoId")
+    override fun popularAnimeParse(response: okhttp3.Response): AnimesPage {
+        val json = Json.parseToJsonElement(response.body!!.string()).jsonObject
+        val animeList = json["videos"]!!.jsonArray.map { obj ->
+            SAnime.create().apply {
+                title = obj.jsonObject["title"]!!.jsonPrimitive.content
+                setUrlWithoutDomain("/videos/${obj.jsonObject["id"]!!.jsonPrimitive.content}")
+                thumbnail_url = obj.jsonObject["thumbnail_url"]?.jsonPrimitive?.content ?: ""
             }
+        }
+        val hasNextPage = json["has_next"]?.jsonPrimitive?.boolean ?: false
+        return AnimesPage(
+            animeList,
+            hasNextPage,
         )
     }
 
-    override fun videoListRequest(episode: SEpisode): Request {
-        return GET(baseUrl + episode.url, headers)
+    override fun latestUpdatesRequest(page: Int): okhttp3.Request {
+        return GET("$baseUrl/json/categories/latest/$page/")
     }
 
-    // --------------------------- Video Links ---------------------------
-    override fun videoListParse(response: Response): List<Video> {
-        val document = response.asJsoup()
-        val videos = mutableListOf<Video>()
+    override fun latestUpdatesParse(response: okhttp3.Response) = popularAnimeParse(response)
 
-        // Extract mp4 links from <video> tags or scripts
-        document.select("video source").forEach { element ->
-            val url = element.attr("src")
-            val quality = when {
-                url.contains("1080") -> "1080p"
-                url.contains("720") -> "720p"
-                url.contains("480") -> "480p"
-                url.contains("360") -> "360p"
-                else -> "Unknown"
-            }
-            videos.add(Video(url, quality, url))
-        }
-
-        return videos
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): okhttp3.Request {
+        return GET("$baseUrl/json/search/$query/$page/")
     }
 
-    // --------------------------- Helpers ---------------------------
-    private fun parseJsonAnimeList(response: Response): AnimesPage {
-        val json = jsonParser.parseToJsonElement(response.body!!.string()).jsonObject
-        val dataArray = json["data"]!!.jsonArray
+    override fun searchAnimeParse(response: okhttp3.Response) = popularAnimeParse(response)
 
-        val animeList = dataArray.map { item ->
-            val obj = item.jsonObject
-            SAnime.create().apply {
-                title = obj["title"]!!.toString().replace("\"", "")
-                setUrlWithoutDomain("/videos/${obj["id"]!!.toString().replace("\"", "")}")
-                thumbnail_url = obj["thumbnail_url"]?.toString()?.replace("\"", "") ?: ""
-            }
-        }
-
-        val hasNextPage = json["meta"]?.jsonObject?.get("next_page") != null
-        return AnimesPage(animeList, hasNextPage)
+    override fun videoListParse(response: okhttp3.Response): List<Video> {
+        val json = Json.parseToJsonElement(response.body!!.string()).jsonObject
+        return listOf(
+            Video(
+                url = json["video_url"]!!.jsonPrimitive.content,
+                quality = "HD",
+                video_type = "mp4",
+            ),
+        )
     }
 
-    // --------------------------- Required but not used ---------------------------
-    override fun getFilterList(): AnimeFilterList = AnimeFilterList()
+    override fun episodeListParse(response: okhttp3.Response): List<SEpisode> {
+        val json = Json.parseToJsonElement(response.body!!.string()).jsonObject
+        return listOf(
+            SEpisode.create().apply {
+                name = json["title"]!!.jsonPrimitive.content
+                setUrlWithoutDomain("/videos/${json["id"]!!.jsonPrimitive.content}")
+            },
+        )
+    }
 }
