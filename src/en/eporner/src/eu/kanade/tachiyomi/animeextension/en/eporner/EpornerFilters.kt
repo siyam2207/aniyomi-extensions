@@ -1,52 +1,50 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
-import eu.kanade.tachiyomi.animeextension.filter.AnimeFilter
-import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
+import eu.kanade.tachiyomi.animeextension.filter.*
+import androidx.preference.PreferenceManager
+import android.content.Context
 
 object EpornerFilters {
 
-    fun getFilters(): AnimeFilterList = AnimeFilterList(
-        SortFilter(),
-        CategoryFilter(),
+    // Static example categories (or fetch dynamically from API if needed)
+    private val categories = arrayOf(
+        "All", "Amateur", "Anal", "Asian", "Big Tits", "Blowjob", "MILF", "Teen"
     )
 
-    fun applyFilters(builder: StringBuilder, filters: AnimeFilterList) {
-        filters.forEach { filter ->
-            when (filter) {
-                is SortFilter -> {
-                    val value = filter.toUriPart()
-                    if (value.isNotEmpty()) {
-                        builder.append("&sort=$value")
-                    }
-                }
+    fun getFilters(context: Context): AnimeFilterList {
+        // Load saved filters from preferences
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val savedCategory = prefs.getString("eporner_category", "All") ?: "All"
+        val savedMinDuration = prefs.getInt("eporner_min_duration", 0)
+        val savedMaxDuration = prefs.getInt("eporner_max_duration", 120)
 
-                is CategoryFilter -> {
-                    val value = filter.toUriPart()
-                    if (value.isNotEmpty()) {
-                        builder.append("&category=$value")
-                    }
-                }
-            }
-        }
+        val categoryFilter = AnimeFilter.Select<String>("Category", categories, categories.indexOf(savedCategory))
+        val durationFilter = AnimeFilter.Range("Duration (min)", savedMinDuration, savedMaxDuration)
+
+        return AnimeFilterList(
+            categoryFilter,
+            durationFilter
+        )
     }
 
-    private class SortFilter : AnimeFilter.Select<String>(
-        "Sort",
-        arrayOf(
-            "Top" to "top",
-            "Latest" to "latest",
-            "Longest" to "longest",
-        ),
-    )
+    fun saveFilters(context: Context, filters: AnimeFilterList) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context).edit()
 
-    private class CategoryFilter : AnimeFilter.Select<String>(
-        "Category",
-        arrayOf(
-            "All" to "",
-            "Amateur" to "amateur",
-            "Anal" to "anal",
-            "Asian" to "asian",
-            "Big Tits" to "big-tits",
-        ),
-    )
+        val category = (filters[0] as AnimeFilter.Select<String>).state
+        val duration = filters[1] as AnimeFilter.Range
+
+        prefs.putString("eporner_category", category)
+        prefs.putInt("eporner_min_duration", duration.min.toInt())
+        prefs.putInt("eporner_max_duration", duration.max.toInt())
+        prefs.apply()
+    }
+
+    fun applyFilters(url: StringBuilder, filters: AnimeFilterList) {
+        val category = (filters[0] as AnimeFilter.Select<String>).state
+        val duration = filters[1] as AnimeFilter.Range
+
+        if (category != "All") url.append("&category=${category.lowercase()}")
+        if (duration.min > 0) url.append("&min_duration=${duration.min.toInt()}")
+        if (duration.max < 120) url.append("&max_duration=${duration.max.toInt()}")
+    }
 }
