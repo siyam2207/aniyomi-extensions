@@ -20,17 +20,17 @@ object EpornerFilters {
         val categoryFilter = AnimeFilter.Select<String>(
             "Category",
             categories,
-            categories.indexOf(savedCategory)
+            categories.indexOf(savedCategory),
         )
         val durationFilter = AnimeFilter.Range(
             "Duration (min)",
             savedMinDuration,
-            savedMaxDuration
+            savedMaxDuration,
         )
 
         return AnimeFilterList(
             categoryFilter,
-            durationFilter
+            durationFilter,
         )
     }
 
