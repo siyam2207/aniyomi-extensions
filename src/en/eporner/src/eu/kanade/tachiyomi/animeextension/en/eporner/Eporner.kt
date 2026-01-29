@@ -11,7 +11,6 @@ import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.nodes.Document
 
 class Eporner : AnimeHttpSource() {
 
@@ -68,7 +67,7 @@ class Eporner : AnimeHttpSource() {
                 name = "Watch"
                 episode_number = 1F
                 setUrlWithoutDomain(response.request.url.toString())
-            }
+            },
         )
     }
 
