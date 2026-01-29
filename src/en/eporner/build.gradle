@@ -5,3 +5,9 @@ ext {
 }
 
 apply from: "$rootDir/common.gradle"
+
+dependencies {
+    implementation project(":core")
+    implementation "androidx.preference:preference-ktx:1.2.0"
+    implementation "com.squareup.okhttp3:okhttp:4.11.0"
+}
