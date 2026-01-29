@@ -2,10 +2,10 @@ package eu.kanade.tachiyomi.animeextension.en.eporner
 
 import eu.kanade.tachiyomi.animeextension.AnimeHttpSource
 import eu.kanade.tachiyomi.animeextension.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animeextension.anime.Anime
-import eu.kanade.tachiyomi.animeextension.anime.AnimeEpisode
-import eu.kanade.tachiyomi.animeextension.anime.Video
+import eu.kanade.tachiyomi.animeextension.anime.*
 import eu.kanade.tachiyomi.animeextension.filter.AnimeFilterList
+import okhttp3.OkHttpClient
+import android.content.Context
 
 class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
 
@@ -14,37 +14,32 @@ class Eporner : AnimeHttpSource(), ConfigurableAnimeSource {
     override val lang = "en"
     override val supportsLatest = true
 
-    private val api = EpornerApi(client)
+    private lateinit var api: EpornerApi
 
-    override fun popularAnimeRequest(page: Int) =
-        api.popularRequest(page)
+    override fun client(): OkHttpClient = super.client()
 
-    override fun popularAnimeParse(response: okhttp3.Response) =
-        api.parseAnimeList(response)
+    override fun fetchPopularAnime(page: Int) = api.popularRequest(page)
+    override fun fetchLatestUpdates(page: Int) = api.latestRequest(page)
+    override fun fetchSearchAnime(page: Int, query: String, filters: AnimeFilterList) = api.searchRequest(page, query, filters)
 
-    override fun latestUpdatesRequest(page: Int) =
-        api.latestRequest(page)
+    override fun popularAnimeParse(response: okhttp3.Response) = api.parseAnimeList(response)
+    override fun latestUpdatesParse(response: okhttp3.Response) = api.parseAnimeList(response)
+    override fun searchAnimeParse(response: okhttp3.Response) = api.parseAnimeList(response)
 
-    override fun latestUpdatesParse(response: okhttp3.Response) =
-        api.parseAnimeList(response)
+    override fun animeDetailsParse(response: okhttp3.Response): Anime = api.parseDetails(response)
+    override fun episodeListParse(response: okhttp3.Response): List<AnimeEpisode> = api.parseEpisodes(response)
+    override fun videoListParse(response: okhttp3.Response): List<Video> = api.parseVideos(response)
 
-    override fun searchAnimeRequest(
-        page: Int,
-        query: String,
-        filters: AnimeFilterList,
-    ) = api.searchRequest(page, query, filters)
+    override fun getFilterList(): AnimeFilterList = EpornerFilters.getFilters(context)
 
-    override fun searchAnimeParse(response: okhttp3.Response) =
-        api.parseAnimeList(response)
+    override fun setupPreferenceScreen(screen: androidx.preference.PreferenceScreen) {
+        // Called automatically when filters are applied
+        val filters = getFilterList()
+        EpornerFilters.saveFilters(context, filters)
+    }
 
-    override fun animeDetailsParse(response: okhttp3.Response): Anime =
-        api.parseDetails(response)
-
-    override fun episodeListParse(response: okhttp3.Response): List<AnimeEpisode> =
-        api.parseEpisodes(response)
-
-    override fun videoListParse(response: okhttp3.Response): List<Video> =
-        api.parseVideos(response)
-
-    override fun getFilterList() = EpornerFilters.getFilters()
+    override fun onCreate(context: Context) {
+        super.onCreate(context)
+        api = EpornerApi(client)
+    }
 }
