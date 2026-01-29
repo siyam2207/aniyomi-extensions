@@ -2,8 +2,8 @@ package eu.kanade.tachiyomi.animeextension.en.eporner
 
 import android.content.Context
 import android.preference.PreferenceManager // Use this for older Tachiyomi compatibility
-import eu.kanade.tachiyomi.animeextension.model.AnimeFilter
-import eu.kanade.tachiyomi.animeextension.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 
 object EpornerFilters {
 
@@ -48,7 +48,7 @@ object EpornerFilters {
         val category = (filters[0] as AnimeFilter.Select<String>).state
         val duration = filters[1] as AnimeFilter.Range
         if (category != "All") url.append("&category=${category.lowercase()}")
-        if (duration.min > 0) url.append("&min_duration=${duration.min.toInt()}")
-        if (duration.max < 120) url.append("&max_duration=${duration.max.toInt()}")
+        if (duration.min > 0) url.append("&min_duration=${duration.min()}")
+        if (duration.max < 120) url.append("&max_duration=${duration.max()}")
     }
 }
