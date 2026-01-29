@@ -7,7 +7,7 @@ ext {
 apply from: "$rootDir/common.gradle"
 
 dependencies {
-    implementation project(":core")                 // Core Aniyomi library
-    implementation "androidx.preference:preference-ktx:1.2.0"  // AndroidX Preferences
-    implementation "com.squareup.okhttp3:okhttp"   // Let root project manage version
+    implementation project(":core")              // core library of aniyomi
+    implementation "androidx.preference:preference-ktx:1.2.0"  // fixed stable version
+    implementation libs.okhttp                   // use version from root catalog, do NOT hardcode
 }
