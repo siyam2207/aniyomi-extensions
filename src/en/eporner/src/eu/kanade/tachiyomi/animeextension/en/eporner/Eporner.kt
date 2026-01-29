@@ -61,7 +61,7 @@ class Eporner : AnimeHttpSource() {
                 name = "Watch"
                 episode_number = 1F
                 setUrlWithoutDomain(response.request.url.toString())
-            }
+            },
         )
     }
 
