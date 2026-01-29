@@ -1,7 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.en.eporner
 
 import android.content.Context
-import androidx.preference.PreferenceManager
 import okhttp3.OkHttpClient
 import eu.kanade.tachiyomi.animeextension.AnimeHttpSource
 import eu.kanade.tachiyomi.animeextension.ConfigurableAnimeSource
