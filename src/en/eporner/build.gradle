@@ -1,13 +1,19 @@
 ext {
     extName = 'Eporner'
     extClass = '.Eporner'
-    extVersionCode = 1
+    extVersionCode = 1  // You can adjust this as needed
 }
 
 apply from: "$rootDir/common.gradle"
 
 dependencies {
-    implementation project(":core")              // core library of aniyomi
-    implementation "androidx.preference:preference-ktx:1.2.0"  // fixed stable version
-    implementation libs.okhttp                   // use version from root catalog, do NOT hardcode
+    // Only include extractors and libraries already compatible with your project
+    implementation(project(':lib:okru-extractor'))
+    implementation(project(':lib:streamwish-extractor'))
+    implementation(project(':lib:mp4upload-extractor'))
+    implementation(project(':lib:filemoon-extractor'))
+    implementation(project(':lib:gogostream-extractor'))
+    implementation(project(':lib:streamlare-extractor'))
+    implementation(project(':lib:playlist-utils')) // optional, if needed
+    implementation(libs.jsunpacker)  // safe, used by other extensions
 }
