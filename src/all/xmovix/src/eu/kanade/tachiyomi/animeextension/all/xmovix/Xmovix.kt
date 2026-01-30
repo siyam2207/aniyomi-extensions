@@ -12,16 +12,13 @@ import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.lib.doodextractor.DoodExtractor
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
-import kotlinx.serialization.Serializable
 import okhttp3.FormBody
 import okhttp3.Headers
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 
 class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
-
     // ====================
     // Source Metadata
     // ====================
@@ -67,20 +64,20 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
-        
+
         val animeList = document.select("div.item").mapNotNull { element ->
             runCatching {
                 SAnime.create().apply {
                     val link = element.selectFirst("a")!!
-                    title = link.attr("title").takeIf { it.isNotBlank() } 
-                            ?: element.selectFirst("img")?.attr("alt") 
-                            ?: "Untitled"
+                    title = link.attr("title").takeIf { it.isNotBlank() }
+                        ?: element.selectFirst("img")?.attr("alt")
+                        ?: "Untitled"
                     setUrlWithoutDomain(link.attr("href"))
                     thumbnail_url = element.selectFirst("img")?.attr("abs:src")
                 }
             }.getOrNull()
         }
-        
+
         val hasNextPage = document.selectFirst("a.next") != null
         return AnimesPage(animeList, hasNextPage)
     }
@@ -108,7 +105,7 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
                 .add("story", query)
                 .add("search_start", page.toString())
                 .build()
-            
+
             POST("$baseUrl/index.php", headers, formBody)
         } else {
             // Fallback to popular if no query
@@ -118,22 +115,22 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun searchAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
-        
+
         // Search results have different structure
         val animeList = document.select("div.search-item, div.item").mapNotNull { element ->
             runCatching {
                 SAnime.create().apply {
                     val link = element.selectFirst("a")!!
                     title = link.attr("title").takeIf { it.isNotBlank() }
-                            ?: element.selectFirst("h2, h3")?.text()
-                            ?: element.selectFirst("img")?.attr("alt")
-                            ?: "Untitled"
+                        ?: element.selectFirst("h2, h3")?.text()
+                        ?: element.selectFirst("img")?.attr("alt")
+                        ?: "Untitled"
                     setUrlWithoutDomain(link.attr("href"))
                     thumbnail_url = element.selectFirst("img")?.attr("abs:src")
                 }
             }.getOrNull()
         }
-        
+
         val hasNextPage = document.selectFirst("a.next") != null
         return AnimesPage(animeList, hasNextPage)
     }
@@ -143,21 +140,21 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
     // ====================
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
-        
+
         return SAnime.create().apply {
             title = document.selectFirst("h1")?.text() ?: ""
-            
+
             // Try multiple possible selectors for description
             description = document.selectFirst("div.description, div.movie-desc, p.desc")?.text()
-            
+
             // Genres/tags
             genre = document.select("a[href*='/genre/'], a[href*='/tag/'], div.tags a").eachText().joinToString()
-            
+
             // Thumbnail - try multiple possible locations
             thumbnail_url = document.selectFirst("img.cover, img.poster, div.poster img")?.attr("abs:src")
-            
+
             status = SAnime.COMPLETED // Adult films are typically completed
-            
+
             // Additional metadata if available
             author = document.selectFirst("a[href*='/studio/']")?.text()
         }
@@ -169,14 +166,14 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
         val response = client.newCall(GET("$baseUrl${anime.url}", headers)).execute()
         val document = response.asJsoup()
-        
+
         // Find all player links - adjust selector based on actual site structure
         return document.select("a.player-item, a[href*='player'], button[data-player]").mapIndexed { index, element ->
             SEpisode.create().apply {
                 name = element.text().takeIf { it.isNotBlank() } ?: "Player ${index + 1}"
-                url = element.attr("href").takeIf { it.isNotBlank() } 
-                      ?: element.attr("data-player")
-                      ?: element.attr("onclick").substringAfter("'").substringBefore("'")
+                url = element.attr("href").takeIf { it.isNotBlank() }
+                    ?: element.attr("data-player")
+                    ?: element.attr("onclick").substringAfter("'").substringBefore("'")
                 episode_number = (index + 1).toFloat()
             }
         }
@@ -193,15 +190,15 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val videoList = mutableListOf<Video>()
-        
+
         // Find Player 2 link (DoodStream)
         // Adjust selector based on actual site structure
         val playerLinks = document.select("a.player-item, a[href*='player']")
-        
+
         // Get the second player (index 1) as requested
         if (playerLinks.size >= 2) {
             val player2Link = playerLinks[1].attr("href").takeIf { it.isNotBlank() }
-            
+
             if (player2Link != null) {
                 try {
                     // Use the DoodExtractor you provided
@@ -213,7 +210,7 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
                 }
             }
         }
-        
+
         return videoList
     }
 
@@ -223,7 +220,7 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun List<Video>.sort(): List<Video> {
         val quality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
         return sortedWith(
-            compareByDescending { it.quality.contains(quality) }
+            compareByDescending { it.quality.contains(quality) },
         )
     }
 
@@ -238,7 +235,7 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
             entryValues = QUALITY_LIST
             setDefaultValue(PREF_QUALITY_DEFAULT)
             summary = "%s"
-            
+
             setOnPreferenceChangeListener { _, newValue ->
                 val selected = newValue as String
                 val index = findIndexOfValue(selected)
@@ -262,19 +259,3 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
         private val QUALITY_LIST = arrayOf("1080p", "720p", "480p", "360p")
     }
 }
-
-// ====================
-// Helper Data Classes (if needed for JSON parsing)
-// ====================
-@Serializable
-private data class SearchResponse(
-    val results: List<SearchItem> = emptyList(),
-    val hasNext: Boolean = false
-)
-
-@Serializable
-private data class SearchItem(
-    val title: String,
-    val url: String,
-    val image: String
-)
