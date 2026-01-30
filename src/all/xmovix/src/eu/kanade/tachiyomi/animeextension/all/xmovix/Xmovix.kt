@@ -9,209 +9,272 @@ import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
-import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
-import eu.kanade.tachiyomi.lib.unpacker.Unpacker
+import eu.kanade.tachiyomi.lib.doodextractor.DoodExtractor
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
-import extensions.utils.LazyMutable
-import extensions.utils.delegate
-import extensions.utils.getPreferencesLazy
+import kotlinx.serialization.Serializable
+import okhttp3.FormBody
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 
 class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
 
+    // ====================
+    // Source Metadata
+    // ====================
     override val name = "Xmovix"
+    override val baseUrl = "https://hd.xmovix.net/en"
     override val lang = "all"
     override val supportsLatest = true
 
-    private val preferences by getPreferencesLazy()
+    override val client: OkHttpClient = network.cloudflareClient
 
-    override var baseUrl: String
-        by preferences.delegate(PREF_DOMAIN_KEY, PREF_DOMAIN_DEFAULT)
+    // ====================
+    // Headers
+    // ====================
+    override fun headersBuilder(): Headers.Builder {
+        return Headers.Builder()
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+            .add("Accept-Language", "en-US,en;q=0.5")
+            .add("Accept-Encoding", "gzip, deflate, br")
+            .add("Connection", "keep-alive")
+            .add("Upgrade-Insecure-Requests", "1")
+            .add("Sec-Fetch-Dest", "document")
+            .add("Sec-Fetch-Mode", "navigate")
+            .add("Sec-Fetch-Site", "none")
+            .add("Sec-Fetch-User", "?1")
+            .add("Cache-Control", "max-age=0")
+            .add("Origin", baseUrl)
+            .add("Referer", "$baseUrl/")
+    }
 
-    override val client: OkHttpClient = OkHttpClient()
+    // ====================
+    // Extractor Instance
+    // ====================
+    private val doodExtractor by lazy { DoodExtractor(client) }
 
-    private var docHeaders by LazyMutable { newHeaders() }
-    private var playlistExtractor by LazyMutable { PlaylistUtils(client, docHeaders) }
-
-    private fun newHeaders(): Headers = Headers.Builder().apply {
-        set("Origin", baseUrl)
-        set("Referer", "$baseUrl/")
-    }.build()
-
-    // =======================
-    // Popular
-    // =======================
-
-    override fun popularAnimeRequest(page: Int): Request =
-        GET("$baseUrl/popular?page=$page", docHeaders)
+    // ====================
+    // Popular Anime
+    // ====================
+    override fun popularAnimeRequest(page: Int): Request {
+        // The site uses /most-viewed/ for popular content
+        return GET("$baseUrl/most-viewed/?page=$page", headers)
+    }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
-        val list = document.select("div.movie-card").map { element ->
-            SAnime.create().apply {
-                val a = element.selectFirst("a")!!
-                title = a.attr("title")
-                setUrlWithoutDomain(a.attr("href"))
-                thumbnail_url = element.selectFirst("img")?.attr("abs:data-src")
-            }
+        
+        val animeList = document.select("div.item").mapNotNull { element ->
+            runCatching {
+                SAnime.create().apply {
+                    val link = element.selectFirst("a")!!
+                    title = link.attr("title").takeIf { it.isNotBlank() } 
+                            ?: element.selectFirst("img")?.attr("alt") 
+                            ?: "Untitled"
+                    setUrlWithoutDomain(link.attr("href"))
+                    thumbnail_url = element.selectFirst("img")?.attr("abs:src")
+                }
+            }.getOrNull()
         }
-        val hasNext = document.selectFirst("a.next") != null
-        return AnimesPage(list, hasNext)
+        
+        val hasNextPage = document.selectFirst("a.next") != null
+        return AnimesPage(animeList, hasNextPage)
     }
 
-    // =======================
-    // Latest
-    // =======================
+    // ====================
+    // Latest Updates
+    // ====================
+    override fun latestUpdatesRequest(page: Int): Request {
+        return GET("$baseUrl/latest/?page=$page", headers)
+    }
 
-    override fun latestUpdatesRequest(page: Int): Request =
-        GET("$baseUrl/latest?page=$page", docHeaders)
+    override fun latestUpdatesParse(response: Response): AnimesPage {
+        return popularAnimeParse(response) // Same structure as popular
+    }
 
-    override fun latestUpdatesParse(response: Response): AnimesPage =
-        popularAnimeParse(response)
-
-    // =======================
+    // ====================
     // Search
-    // =======================
+    // ====================
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        return if (query.isNotBlank()) {
+            // Use the search endpoint discovered
+            val formBody = FormBody.Builder()
+                .add("do", "search")
+                .add("subaction", "search")
+                .add("story", query)
+                .add("search_start", page.toString())
+                .build()
+            
+            POST("$baseUrl/index.php", headers, formBody)
+        } else {
+            // Fallback to popular if no query
+            popularAnimeRequest(page)
+        }
+    }
 
-    override fun searchAnimeRequest(
-        page: Int,
-        query: String,
-        filters: AnimeFilterList,
-    ): Request =
-        GET("$baseUrl/search?q=$query&page=$page", docHeaders)
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        val document = response.asJsoup()
+        
+        // Search results have different structure
+        val animeList = document.select("div.search-item, div.item").mapNotNull { element ->
+            runCatching {
+                SAnime.create().apply {
+                    val link = element.selectFirst("a")!!
+                    title = link.attr("title").takeIf { it.isNotBlank() }
+                            ?: element.selectFirst("h2, h3")?.text()
+                            ?: element.selectFirst("img")?.attr("alt")
+                            ?: "Untitled"
+                    setUrlWithoutDomain(link.attr("href"))
+                    thumbnail_url = element.selectFirst("img")?.attr("abs:src")
+                }
+            }.getOrNull()
+        }
+        
+        val hasNextPage = document.selectFirst("a.next") != null
+        return AnimesPage(animeList, hasNextPage)
+    }
 
-    override fun searchAnimeParse(response: Response): AnimesPage =
-        popularAnimeParse(response)
-
-    // =======================
-    // Details
-    // =======================
-
+    // ====================
+    // Anime Details
+    // ====================
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
+        
         return SAnime.create().apply {
             title = document.selectFirst("h1")?.text() ?: ""
-            genre = document.select("a.genre").eachText().joinToString()
-            description = document.selectFirst("div.description")?.text()
-            thumbnail_url = document.selectFirst("img.cover")?.attr("abs:src")
-            status = SAnime.COMPLETED
+            
+            // Try multiple possible selectors for description
+            description = document.selectFirst("div.description, div.movie-desc, p.desc")?.text()
+            
+            // Genres/tags
+            genre = document.select("a[href*='/genre/'], a[href*='/tag/'], div.tags a").eachText().joinToString()
+            
+            // Thumbnail - try multiple possible locations
+            thumbnail_url = document.selectFirst("img.cover, img.poster, div.poster img")?.attr("abs:src")
+            
+            status = SAnime.COMPLETED // Adult films are typically completed
+            
+            // Additional metadata if available
+            author = document.selectFirst("a[href*='/studio/']")?.text()
         }
     }
 
-    // =======================
-    // Episodes
-    // =======================
-
+    // ====================
+    // Episodes (Players)
+    // ====================
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
-        val document = client.newCall(
-            GET("$baseUrl${anime.url}", docHeaders),
-        ).execute().asJsoup()
-
-        return document.select("div.episode-card").map { element ->
+        val response = client.newCall(GET("$baseUrl${anime.url}", headers)).execute()
+        val document = response.asJsoup()
+        
+        // Find all player links - adjust selector based on actual site structure
+        return document.select("a.player-item, a[href*='player'], button[data-player]").mapIndexed { index, element ->
             SEpisode.create().apply {
-                val a = element.selectFirst("a")!!
-                name = a.text()
-                url = a.attr("href")
-                episode_number =
-                    name.filter { it.isDigit() }.toFloatOrNull() ?: 1f
+                name = element.text().takeIf { it.isNotBlank() } ?: "Player ${index + 1}"
+                url = element.attr("href").takeIf { it.isNotBlank() } 
+                      ?: element.attr("data-player")
+                      ?: element.attr("onclick").substringAfter("'").substringBefore("'")
+                episode_number = (index + 1).toFloat()
             }
         }
     }
 
-    override fun episodeListParse(response: Response): List<SEpisode> =
-        throw UnsupportedOperationException()
+    // Not used but required by interface
+    override fun episodeListParse(response: Response): List<SEpisode> {
+        throw UnsupportedOperationException("Not used")
+    }
 
-    // =======================
-    // Video
-    // =======================
-
+    // ====================
+    // Video Extraction (Player 2 - DoodStream Only)
+    // ====================
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
-
-        val unpacked = document
-            .selectFirst("script:containsData(function(p,a,c,k,e,d))")
-            ?.data()
-            ?.let(Unpacker::unpack)
-            ?: return emptyList()
-
-        val masterUrl = unpacked
-            .substringAfter("source=\"")
-            .substringBefore("\"")
-
-        return playlistExtractor.extractFromHls(
-            masterUrl,
-            referer = "$baseUrl/",
-        )
-    }
-
-    override fun List<Video>.sort(): List<Video> {
-        val preferred = preferences.getString(
-            PREF_QUALITY,
-            PREF_QUALITY_DEFAULT,
-        )!!
-        return sortedWith(
-            compareByDescending { it.quality.contains(preferred) },
-        )
-    }
-
-    // =======================
-    // Filters / Preferences
-    // =======================
-
-    override fun getFilterList() = AnimeFilterList()
-
-    override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        val domainPref = ListPreference(screen.context).apply {
-            key = PREF_DOMAIN_KEY
-            title = "Preferred domain"
-            entries = PREF_DOMAIN_ENTRIES.toTypedArray()
-            entryValues = PREF_DOMAIN_ENTRIES.toTypedArray()
-            setDefaultValue(PREF_DOMAIN_DEFAULT)
-            summary = "%s"
-
-            setOnPreferenceChangeListener { _, newValue ->
-                baseUrl = newValue as String
-                docHeaders = newHeaders()
-                playlistExtractor = PlaylistUtils(client, docHeaders)
-                true
+        val videoList = mutableListOf<Video>()
+        
+        // Find Player 2 link (DoodStream)
+        // Adjust selector based on actual site structure
+        val playerLinks = document.select("a.player-item, a[href*='player']")
+        
+        // Get the second player (index 1) as requested
+        if (playerLinks.size >= 2) {
+            val player2Link = playerLinks[1].attr("href").takeIf { it.isNotBlank() }
+            
+            if (player2Link != null) {
+                try {
+                    // Use the DoodExtractor you provided
+                    val doodVideos = doodExtractor.videosFromUrl(player2Link, quality = "DoodStream")
+                    videoList.addAll(doodVideos)
+                } catch (e: Exception) {
+                    // Log error but don't crash
+                    e.printStackTrace()
+                }
             }
         }
+        
+        return videoList
+    }
 
-        val qualityPref = ListPreference(screen.context).apply {
-            key = PREF_QUALITY
+    // ====================
+    // Video Sorting
+    // ====================
+    override fun List<Video>.sort(): List<Video> {
+        val quality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
+        return sortedWith(
+            compareByDescending { it.quality.contains(quality) }
+        )
+    }
+
+    // ====================
+    // Preferences
+    // ====================
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY_KEY
             title = "Preferred quality"
-            entries = PREF_QUALITY_ENTRIES.toTypedArray()
-            entryValues = PREF_QUALITY_VALUES.toTypedArray()
+            entries = QUALITY_LIST
+            entryValues = QUALITY_LIST
             setDefaultValue(PREF_QUALITY_DEFAULT)
             summary = "%s"
-        }
-
-        screen.addPreference(domainPref)
-        screen.addPreference(qualityPref)
+            
+            setOnPreferenceChangeListener { _, newValue ->
+                val selected = newValue as String
+                val index = findIndexOfValue(selected)
+                val entry = entryValues[index] as String
+                preferences.edit().putString(key, entry).commit()
+            }
+        }.also(screen::addPreference)
     }
 
-    companion object {
-        private const val PREF_DOMAIN_KEY = "preferred_domain"
-        private val PREF_DOMAIN_ENTRIES = listOf(
-            "https://xmovix.net/en",
-        )
-        private val PREF_DOMAIN_DEFAULT = PREF_DOMAIN_ENTRIES.first()
+    // ====================
+    // Filters (Not implemented)
+    // ====================
+    override fun getFilterList() = AnimeFilterList()
 
-        private const val PREF_QUALITY = "preferred_quality"
-        private val PREF_QUALITY_ENTRIES = listOf(
-            "720p",
-            "480p",
-            "360p",
-        )
-        private val PREF_QUALITY_VALUES = listOf(
-            "720",
-            "480",
-            "360",
-        )
-        private val PREF_QUALITY_DEFAULT = PREF_QUALITY_VALUES.first()
+    // ====================
+    // Companion Object (Constants)
+    // ====================
+    companion object {
+        private const val PREF_QUALITY_KEY = "preferred_quality"
+        private const val PREF_QUALITY_DEFAULT = "720p"
+        private val QUALITY_LIST = arrayOf("1080p", "720p", "480p", "360p")
     }
 }
+
+// ====================
+// Helper Data Classes (if needed for JSON parsing)
+// ====================
+@Serializable
+private data class SearchResponse(
+    val results: List<SearchItem> = emptyList(),
+    val hasNext: Boolean = false
+)
+
+@Serializable
+private data class SearchItem(
+    val title: String,
+    val url: String,
+    val image: String
+)
