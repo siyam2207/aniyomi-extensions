@@ -64,7 +64,7 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
 
     // --- Search ---
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val url = "$baseUrl/search?q=${query}&page=$page"
+        val url = "$baseUrl/search?q=$query&page=$page"
         return GET(url, docHeaders)
     }
 
