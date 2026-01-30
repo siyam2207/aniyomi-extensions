@@ -165,7 +165,6 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun getFilterList() = AnimeFilterList()
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-
         val domainPref = ListPreference(screen.context).apply {
             key = PREF_DOMAIN_KEY
             title = "Preferred domain"
