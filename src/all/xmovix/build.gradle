@@ -1,7 +1,7 @@
 ext {
     extName = 'Xmovix'
     extClass = '.Xmovix' // Ensure your Kotlin file is: eu.kanade.tachiyomi.animeextension.all.xmovix.Xmovix
-    extVersionCode = 1
+    extVersionCode = 2
     isNsfw = true // Correctly marked for adult content
 }
 
