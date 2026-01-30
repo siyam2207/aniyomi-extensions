@@ -12,13 +12,13 @@ import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.lib.unpacker.Unpacker
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
+import extensions.utils.LazyMutable
+import extensions.utils.delegate
+import extensions.utils.getPreferencesLazy
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import extensions.utils.LazyMutable
-import extensions.utils.delegate
-import extensions.utils.getPreferencesLazy
 
 class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
 
