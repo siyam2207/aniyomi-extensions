@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.all.xmovix
 
+import android.util.Log
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
@@ -11,7 +12,9 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.lib.doodextractor.DoodExtractor
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.util.asJsoup
+import extensions.utils.getPreferencesLazy
 import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.OkHttpClient
@@ -28,6 +31,11 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
     override val supportsLatest = true
 
     override val client: OkHttpClient = network.cloudflareClient
+
+    // ====================
+    // Preferences
+    // ====================
+    private val preferences by getPreferencesLazy()
 
     // ====================
     // Headers
@@ -206,7 +214,7 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
                     videoList.addAll(doodVideos)
                 } catch (e: Exception) {
                     // Log error but don't crash
-                    e.printStackTrace()
+                    Log.e("Xmovix", "Failed to extract DoodStream video: ${e.message}")
                 }
             }
         }
@@ -218,9 +226,10 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
     // Video Sorting
     // ====================
     override fun List<Video>.sort(): List<Video> {
-        val quality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
+        val quality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
+        // Fix for contains() ambiguity - specify we're checking for a substring
         return sortedWith(
-            compareByDescending { it.quality.contains(quality) },
+            compareByDescending { video -> video.quality.contains(quality, ignoreCase = false) },
         )
     }
 
