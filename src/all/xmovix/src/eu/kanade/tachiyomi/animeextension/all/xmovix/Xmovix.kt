@@ -197,7 +197,7 @@ class Xmovix : AnimeHttpSource(), ConfigurableAnimeSource {
     companion object {
         private const val PREF_DOMAIN_KEY = "preferred_domain"
         private val PREF_DOMAIN_ENTRIES = listOf(
-            "https://xmovix.com",
+            "https://xmovix.net/en",
         )
         private val PREF_DOMAIN_DEFAULT = PREF_DOMAIN_ENTRIES.first()
 
