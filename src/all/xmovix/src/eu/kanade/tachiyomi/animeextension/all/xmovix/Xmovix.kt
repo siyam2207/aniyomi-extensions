@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
+import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -16,37 +17,51 @@ class Xmovix : AnimeHttpSource() {
     override val name = "Xmovix"
     override val lang = "all"
     override val supportsLatest = true
-    override val baseUrl = "https://hd.xmovix.net"
 
-    override val client: OkHttpClient = OkHttpClient()
+    // IMPORTANT: must include /en
+    override val baseUrl = "https://hd.xmovix.net/en"
+
+    override val client = OkHttpClient()
+
+    override val headers: Headers = Headers.Builder()
+        .add("User-Agent", "Mozilla/5.0")
+        .add("Referer", "https://hd.xmovix.net/")
+        .build()
 
     // =====================
     // Popular
     // =====================
-    override fun popularAnimeRequest(page: Int): Request =
-        GET(baseUrl, headers)
+    override fun popularAnimeRequest(page: Int): Request {
+        val url = if (page == 1) {
+            "$baseUrl/"
+        } else {
+            "$baseUrl/page/$page/"
+        }
+        return GET(url, headers)
+    }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
 
-        val list = document.select("div.shortstory").map { element ->
-            SAnime.create().apply {
-                val a = element.selectFirst("a") ?: return@map null
-                title = a.text()
-                setUrlWithoutDomain(a.attr("href"))
-                thumbnail_url =
-                    element.selectFirst("img")?.attr("abs:src")
-            }
-        }.filterNotNull()
+        val animeList = document.select("div.shortstory").mapNotNull { element ->
+            val a = element.selectFirst("a") ?: return@mapNotNull null
 
-        return AnimesPage(list, false)
+            SAnime.create().apply {
+                title = a.text().trim()
+                setUrlWithoutDomain(a.attr("href"))
+                thumbnail_url = element.selectFirst("img")?.attr("abs:src")
+            }
+        }
+
+        val hasNextPage = document.selectFirst("a.next") != null
+        return AnimesPage(animeList, hasNextPage)
     }
 
     // =====================
     // Latest
     // =====================
     override fun latestUpdatesRequest(page: Int): Request =
-        GET(baseUrl, headers)
+        popularAnimeRequest(page)
 
     override fun latestUpdatesParse(response: Response): AnimesPage =
         popularAnimeParse(response)
@@ -58,11 +73,11 @@ class Xmovix : AnimeHttpSource() {
         page: Int,
         query: String,
         filters: AnimeFilterList,
-    ): Request =
-        GET(
-            "$baseUrl/index.php?do=search&subaction=search&story=$query",
-            headers,
-        )
+    ): Request {
+        val url =
+            "$baseUrl/index.php?do=search&subaction=search&story=$query"
+        return GET(url, headers)
+    }
 
     override fun searchAnimeParse(response: Response): AnimesPage =
         popularAnimeParse(response)
@@ -74,11 +89,11 @@ class Xmovix : AnimeHttpSource() {
         val document = response.asJsoup()
 
         return SAnime.create().apply {
-            title = document.selectFirst("h1")?.text() ?: ""
+            title = document.selectFirst("h1")?.text()?.trim() ?: ""
             description =
-                document.selectFirst("div.fullstory")?.text()
+                document.selectFirst("div.fullstory")?.text()?.trim()
             thumbnail_url =
-                document.selectFirst("img")?.attr("abs:src")
+                document.selectFirst("div.fullstory img")?.attr("abs:src")
             status = SAnime.UNKNOWN
         }
     }
@@ -86,12 +101,13 @@ class Xmovix : AnimeHttpSource() {
     // =====================
     // Episodes (single dummy)
     // =====================
-    override fun episodeListParse(response: Response): List<SEpisode> =
-        listOf(
+    override fun episodeListParse(response: Response): List<SEpisode> {
+        return listOf(
             SEpisode.create().apply {
                 name = "Play"
                 episode_number = 1f
                 setUrlWithoutDomain(response.request.url.encodedPath)
             },
         )
+    }
 }
