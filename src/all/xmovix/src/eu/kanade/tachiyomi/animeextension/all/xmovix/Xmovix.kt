@@ -17,13 +17,11 @@ class Xmovix : AnimeHttpSource() {
     override val name = "Xmovix"
     override val lang = "all"
     override val supportsLatest = true
-
-    // IMPORTANT: must include /en
     override val baseUrl = "https://hd.xmovix.net/en"
-
     override val client = OkHttpClient()
 
-    override val headers: Headers = Headers.Builder()
+    // Use a local variable instead of overriding 'headers'
+    private val docHeaders: Headers = Headers.Builder()
         .add("User-Agent", "Mozilla/5.0")
         .add("Referer", "https://hd.xmovix.net/")
         .build()
@@ -32,27 +30,20 @@ class Xmovix : AnimeHttpSource() {
     // Popular
     // =====================
     override fun popularAnimeRequest(page: Int): Request {
-        val url = if (page == 1) {
-            "$baseUrl/"
-        } else {
-            "$baseUrl/page/$page/"
-        }
-        return GET(url, headers)
+        val url = if (page == 1) "$baseUrl/" else "$baseUrl/page/$page/"
+        return GET(url, docHeaders)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
-
         val animeList = document.select("div.shortstory").mapNotNull { element ->
             val a = element.selectFirst("a") ?: return@mapNotNull null
-
             SAnime.create().apply {
                 title = a.text().trim()
                 setUrlWithoutDomain(a.attr("href"))
                 thumbnail_url = element.selectFirst("img")?.attr("abs:src")
             }
         }
-
         val hasNextPage = document.selectFirst("a.next") != null
         return AnimesPage(animeList, hasNextPage)
     }
@@ -74,9 +65,8 @@ class Xmovix : AnimeHttpSource() {
         query: String,
         filters: AnimeFilterList,
     ): Request {
-        val url =
-            "$baseUrl/index.php?do=search&subaction=search&story=$query"
-        return GET(url, headers)
+        val url = "$baseUrl/index.php?do=search&subaction=search&story=$query"
+        return GET(url, docHeaders)
     }
 
     override fun searchAnimeParse(response: Response): AnimesPage =
@@ -87,13 +77,10 @@ class Xmovix : AnimeHttpSource() {
     // =====================
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
-
         return SAnime.create().apply {
             title = document.selectFirst("h1")?.text()?.trim() ?: ""
-            description =
-                document.selectFirst("div.fullstory")?.text()?.trim()
-            thumbnail_url =
-                document.selectFirst("div.fullstory img")?.attr("abs:src")
+            description = document.selectFirst("div.fullstory")?.text()?.trim()
+            thumbnail_url = document.selectFirst("div.fullstory img")?.attr("abs:src")
             status = SAnime.UNKNOWN
         }
     }
