@@ -31,7 +31,7 @@ object EpornerApi {
         query: String,
         filters: AnimeFilterList,
         headers: Headers,
-        baseUrl: String
+        baseUrl: String,
     ): Request {
         val encodedQuery = if (query.isNotBlank()) URLEncoder.encode(query, "UTF-8") else "all"
         val url = "$baseUrl/api/v2/video/search/?query=$encodedQuery&page=$page&format=json"
