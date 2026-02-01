@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.all.pandamovies
 
+import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -10,6 +11,9 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import okhttp3.Request
 import okhttp3.Response
 
@@ -27,7 +31,7 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val json = response.body.string()
-        val animes = json.let { parseJsonToList(it) }
+        val animes = parseJsonToList(json)
         val animeList = animes.map { item ->
             SAnime.create().apply {
                 setUrlWithoutDomain(item.link)
@@ -35,19 +39,25 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
                 description = item.content
             }
         }
-        val hasNextPage = animes.size == 10
+        val hasNextPage = animes.size == 10 // WP REST API returns 10 per page by default
         return AnimesPage(animeList, hasNextPage)
     }
 
-    override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
+    override fun latestUpdatesRequest(page: Int): Request {
+        return popularAnimeRequest(page)
+    }
 
-    override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
+    override fun latestUpdatesParse(response: Response): AnimesPage {
+        return popularAnimeParse(response)
+    }
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         return GET("$baseUrl/wp-json/wp/v2/posts?search=$query&page=$page", headers)
     }
 
-    override fun searchAnimeParse(response: Response): AnimesPage = popularAnimeParse(response)
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        return popularAnimeParse(response)
+    }
 
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
@@ -79,23 +89,24 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
-    override fun List<Video>.sort(): List<Video> = this
+    override fun List<Video>.sort(): List<Video> {
+        return this
+    }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // No preferences for now
     }
 
+    // Helper to parse JSON from WP REST API using kotlinx.serialization
     private fun parseJsonToList(json: String): List<WpPost> {
         return try {
-            val moshi = com.squareup.moshi.Moshi.Builder().build()
-            val type = com.squareup.moshi.Types.newParameterizedType(List::class.java, WpPost::class.java)
-            val adapter = moshi.adapter<List<WpPost>>(type)
-            adapter.fromJson(json) ?: emptyList()
+            Json { ignoreUnknownKeys = true }.decodeFromString(json)
         } catch (e: Exception) {
             emptyList()
         }
     }
 
+    @Serializable
     data class WpPost(
         val link: String,
         val title: String,
