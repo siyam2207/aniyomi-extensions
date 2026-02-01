@@ -32,17 +32,27 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
     // ==================== Popular / Latest ====================
-    override fun popularAnimeRequest(page: Int): Request = EpornerApi.popularAnimeRequest(page, headers, baseUrl)
-    override fun popularAnimeParse(response: Response) = EpornerApi.popularAnimeParse(response, json, tag)
+    override fun popularAnimeRequest(page: Int): Request =
+        EpornerApi.popularAnimeRequest(page, headers, baseUrl)
 
-    override fun latestUpdatesRequest(page: Int): Request = EpornerApi.latestUpdatesRequest(page, headers, baseUrl)
-    override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+    override fun popularAnimeParse(response: Response) =
+        EpornerApi.popularAnimeParse(response, json, tag)
+
+    override fun latestUpdatesRequest(page: Int): Request =
+        EpornerApi.latestUpdatesRequest(page, headers, baseUrl)
+
+    override fun latestUpdatesParse(response: Response) =
+        popularAnimeParse(response)
 
     // ==================== Search ====================
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
-        EpornerApi.searchAnimeRequest(page, query, filters, headers, baseUrl)
+    override fun searchAnimeRequest(
+        page: Int,
+        query: String,
+        filters: AnimeFilterList,
+    ): Request = EpornerApi.searchAnimeRequest(page, query, filters, headers, baseUrl)
 
-    override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
+    override fun searchAnimeParse(response: Response) =
+        popularAnimeParse(response)
 
     // ==================== Anime Details ====================
     override fun animeDetailsRequest(anime: SAnime): Request =
@@ -58,20 +68,23 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Episodes ====================
     override fun episodeListRequest(anime: SAnime): Request = GET(anime.url, headers)
+
     override fun episodeListParse(response: Response): List<SEpisode> = listOf(
         SEpisode.create().apply {
             name = "Video"
             episode_number = 1F
             url = response.request.url.toString()
-        }
+        },
     )
 
     // ==================== Videos ====================
     override fun videoListRequest(episode: SEpisode): Request = GET(episode.url, headers)
+
     override fun videoListParse(response: Response): List<Video> =
         EpornerApi.videoListParse(response, client, headers)
 
-    override fun videoUrlParse(response: Response) = videoListParse(response).firstOrNull()?.videoUrl ?: ""
+    override fun videoUrlParse(response: Response): String =
+        videoListParse(response).firstOrNull()?.videoUrl ?: ""
 
     // ==================== Filters ====================
     override fun getFilterList() = EpornerFilters.filterList
