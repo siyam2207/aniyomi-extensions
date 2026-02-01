@@ -81,7 +81,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
 
         return SAnime.create().apply {
             title = document.selectFirst("h1")?.text().orEmpty()
-            description = document.selectFirst(".entry-content")?.text(), // ✅ trailing comma
+            description = document.selectFirst(".entry-content")?.text() // ✅ trailing comma
         }
     }
 
