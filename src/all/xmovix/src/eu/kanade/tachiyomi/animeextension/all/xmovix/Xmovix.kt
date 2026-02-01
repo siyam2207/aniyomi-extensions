@@ -17,7 +17,7 @@ class Xmovix : AnimeHttpSource() {
     override val supportsLatest = true
 
     // IMPORTANT: real browsing path
-    override val baseUrl = "https://hd.xmovix.net"
+    override val baseUrl = "https://hd.xmovix.net/en"
 
     override val client: OkHttpClient = OkHttpClient()
 
