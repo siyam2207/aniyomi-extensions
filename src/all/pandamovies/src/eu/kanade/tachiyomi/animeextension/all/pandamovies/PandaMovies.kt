@@ -44,7 +44,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
                 title = element.selectFirst("h3")?.text().orEmpty()
                 thumbnail_url = element.selectFirst("img")?.attr("src")
                 setUrlWithoutDomain(
-                    element.selectFirst("a")?.attr("href").orEmpty() // ✅ trailing comma
+                    element.selectFirst("a")?.attr("href").orEmpty(), // ✅ trailing comma
                 )
             }
         }
@@ -68,7 +68,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList,
     ): Request = popularAnimeRequest(page)
 
     override fun searchAnimeParse(response: Response): AnimesPage =
