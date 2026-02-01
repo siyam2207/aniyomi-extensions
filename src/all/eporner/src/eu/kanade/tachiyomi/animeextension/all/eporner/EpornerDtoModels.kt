@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 data class ApiSearchResponse(
     @SerialName("videos") val videos: List<ApiVideo>,
     @SerialName("page") val page: Int,
-    @SerialName("total_pages") val total_pages: Int
+    @SerialName("total_pages") val total_pages: Int,
 )
 
 @Serializable
@@ -17,7 +17,7 @@ data class ApiVideo(
     @SerialName("title") val title: String,
     @SerialName("keywords") val keywords: String,
     @SerialName("url") val url: String,
-    @SerialName("default_thumb") val defaultThumb: ApiThumbnail
+    @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
 ) {
     fun toSAnime(): SAnime = SAnime.create().apply {
         this.url = url
@@ -36,7 +36,7 @@ data class ApiVideoDetailResponse(
     @SerialName("views") val views: Long,
     @SerialName("url") val url: String,
     @SerialName("embed") val embed: String,
-    @SerialName("default_thumb") val defaultThumb: ApiThumbnail
+    @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
 ) {
     fun toSAnime(): SAnime = SAnime.create().apply {
         this.url = url
@@ -49,5 +49,5 @@ data class ApiVideoDetailResponse(
 
 @Serializable
 data class ApiThumbnail(
-    @SerialName("src") val src: String
+    @SerialName("src") val src: String,
 )
