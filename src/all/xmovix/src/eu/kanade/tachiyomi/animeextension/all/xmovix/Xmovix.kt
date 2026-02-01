@@ -1,13 +1,11 @@
 package eu.kanade.tachiyomi.animeextension.all.xmovix
 
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
-import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -15,79 +13,97 @@ import okhttp3.Response
 class Xmovix : AnimeHttpSource() {
 
     override val name = "Xmovix"
-    override val lang = "all"
+    override val lang = "en"
     override val supportsLatest = true
-    override val baseUrl = "https://hd.xmovix.net/en"
-    override val client = OkHttpClient()
 
-    // Use a local variable instead of overriding 'headers'
-    private val docHeaders: Headers = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0")
-        .add("Referer", "https://hd.xmovix.net/")
-        .build()
+    // IMPORTANT: real browsing path
+    override val baseUrl = "https://hd.xmovix.net"
 
-    // =====================
+    override val client: OkHttpClient = OkHttpClient()
+
+    // =======================
     // Popular
-    // =====================
+    // =======================
     override fun popularAnimeRequest(page: Int): Request {
-        val url = if (page == 1) "$baseUrl/" else "$baseUrl/page/$page/"
-        return GET(url, docHeaders)
+        return GET("$baseUrl/", headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
-        val document = response.asJsoup()
-        val animeList = document.select("div.shortstory").mapNotNull { element ->
-            val a = element.selectFirst("a") ?: return@mapNotNull null
-            SAnime.create().apply {
-                title = a.text().trim()
-                setUrlWithoutDomain(a.attr("href"))
-                thumbnail_url = element.selectFirst("img")?.attr("abs:src")
-            }
-        }
-        val hasNextPage = document.selectFirst("a.next") != null
-        return AnimesPage(animeList, hasNextPage)
+        return parseListing(response)
     }
 
-    // =====================
+    // =======================
     // Latest
-    // =====================
-    override fun latestUpdatesRequest(page: Int): Request =
-        popularAnimeRequest(page)
+    // =======================
+    override fun latestUpdatesRequest(page: Int): Request {
+        return GET("$baseUrl/", headers)
+    }
 
-    override fun latestUpdatesParse(response: Response): AnimesPage =
-        popularAnimeParse(response)
+    override fun latestUpdatesParse(response: Response): AnimesPage {
+        return parseListing(response)
+    }
 
-    // =====================
+    // =======================
     // Search
-    // =====================
+    // =======================
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: AnimeFilterList,
+        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList,
     ): Request {
-        val url = "$baseUrl/index.php?do=search&subaction=search&story=$query"
-        return GET(url, docHeaders)
+        val url =
+            "https://hd.xmovix.net/index.php?do=search&subaction=search&story=$query"
+        return GET(url, headers)
     }
 
-    override fun searchAnimeParse(response: Response): AnimesPage =
-        popularAnimeParse(response)
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        return parseListing(response)
+    }
 
-    // =====================
+    // =======================
+    // Shared listing parser
+    // =======================
+    private fun parseListing(response: Response): AnimesPage {
+        val document = response.asJsoup()
+
+        val items = document.select("div#dle-content > div")
+
+        val animeList = items.mapNotNull { element ->
+            val link = element.selectFirst("a") ?: return@mapNotNull null
+            val img = element.selectFirst("img")
+
+            SAnime.create().apply {
+                title = link.attr("title").ifBlank { link.text() }
+                setUrlWithoutDomain(link.attr("href"))
+
+                thumbnail_url =
+                    img?.attr("data-src")
+                        ?.takeIf { it.isNotBlank() }
+                        ?: img?.attr("src")
+            }
+        }
+
+        return AnimesPage(animeList, false)
+    }
+
+    // =======================
     // Details
-    // =====================
+    // =======================
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
+
         return SAnime.create().apply {
-            title = document.selectFirst("h1")?.text()?.trim() ?: ""
-            description = document.selectFirst("div.fullstory")?.text()?.trim()
-            thumbnail_url = document.selectFirst("div.fullstory img")?.attr("abs:src")
+            title = document.selectFirst("h1")?.text() ?: ""
+            description = document.selectFirst("div.fullstory")?.text()
+            thumbnail_url =
+                document.selectFirst("div.poster img")?.attr("src")
             status = SAnime.UNKNOWN
         }
     }
 
-    // =====================
-    // Episodes (single dummy)
-    // =====================
+    // =======================
+    // Episodes (single placeholder)
+    // =======================
     override fun episodeListParse(response: Response): List<SEpisode> {
         return listOf(
             SEpisode.create().apply {
