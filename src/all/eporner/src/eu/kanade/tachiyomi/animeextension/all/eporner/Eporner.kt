@@ -1,18 +1,3 @@
-package eu.kanade.tachiyomi.animeextension.all.eporner
-
-import android.util.Log
-import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
-import eu.kanade.tachiyomi.network.GET
-import kotlinx.serialization.json.Json
-import okhttp3.Headers
-import okhttp3.Request
-import okhttp3.Response
-
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override val name = "Eporner"
@@ -30,7 +15,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         .add("Referer", baseUrl)
         .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
-    // ==================== Popular / Latest ====================
+    // Popular / Latest
     override fun popularAnimeRequest(page: Int): Request =
         EpornerApi.popularAnimeRequest(page, headers, baseUrl)
 
@@ -43,17 +28,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun latestUpdatesParse(response: Response) =
         popularAnimeParse(response)
 
-    // ==================== Search ====================
-    override fun searchAnimeRequest(
-        page: Int,
-        query: String,
-        filters: AnimeFilterList,
-    ): Request = EpornerApi.searchAnimeRequest(page, query, filters, headers, baseUrl)
+    // Search
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
+        EpornerApi.searchAnimeRequest(page, query, filters, headers, baseUrl)
 
     override fun searchAnimeParse(response: Response) =
         popularAnimeParse(response)
 
-    // ==================== Anime Details ====================
+    // Anime Details
     override fun animeDetailsRequest(anime: SAnime): Request =
         EpornerApi.animeDetailsRequest(anime, headers, baseUrl)
 
@@ -65,7 +47,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             EpornerApi.htmlAnimeDetailsParse(response)
         }
 
-    // ==================== Episodes ====================
+    // Episodes
     override fun episodeListRequest(anime: SAnime): Request =
         GET(anime.url, headers)
 
@@ -75,10 +57,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 name = "Video"
                 episode_number = 1F
                 url = response.request.url.toString()
-            },
+            }
         )
 
-    // ==================== Videos ====================
+    // Videos
     override fun videoListRequest(episode: SEpisode): Request =
         GET(episode.url, headers)
 
@@ -88,6 +70,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun videoUrlParse(response: Response): String =
         videoListParse(response).firstOrNull()?.videoUrl ?: ""
 
-    // ==================== Filters ====================
+    // Filters
     override fun getFilterList() = EpornerFilters.filterList
+
+    // Preferences required by ConfigurableAnimeSource
+    override fun setupPreferenceScreen(screen: androidx.preference.PreferenceScreen) {
+        // No custom preferences yet
+    }
 }
