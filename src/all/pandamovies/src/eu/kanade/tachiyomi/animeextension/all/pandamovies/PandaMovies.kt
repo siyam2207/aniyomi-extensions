@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.pandamovies
 
-import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
