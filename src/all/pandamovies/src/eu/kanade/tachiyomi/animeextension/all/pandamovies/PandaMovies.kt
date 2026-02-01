@@ -98,16 +98,16 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
         val link: String,
         val title: RenderedText,
         val content: RenderedText,
-        val featured_media: Int = 0
+        val featured_media: Int = 0,
     )
 
     @Serializable
     data class RenderedText(
-        val rendered: String
+        val rendered: String,
     )
 
     @Serializable
     data class WpMedia(
-        val source_url: String
+        val source_url: String,
     )
 }
