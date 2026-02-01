@@ -18,11 +18,11 @@ import okhttp3.Response
 
 class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
 
-    override val name = "PandaMovies"
-    override val baseUrl = "https://pandamovies.pw"
-    override val lang = "all"
-    override val supportsLatest = true
-    override val supportsRelatedAnimes = false
+    override val name: String = "PandaMovies"
+    override val baseUrl: String = "https://pandamovies.pw"
+    override val lang: String = "all"
+    override val supportsLatest: Boolean = true
+    override val supportsRelatedAnimes: Boolean = false
 
     override fun popularAnimeRequest(page: Int): Request {
         return GET("$baseUrl/wp-json/wp/v2/posts?page=$page", headers)
@@ -34,11 +34,11 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
         val animeList = animes.map { item ->
             SAnime.create().apply {
                 setUrlWithoutDomain(item.link)
-                title = item.title
-                description = item.content
+                title = item.title.rendered
+                description = item.content.rendered
             }
         }
-        val hasNextPage = animes.size == 10 // WP REST API returns 10 per page by default
+        val hasNextPage = animes.size == 10
         return AnimesPage(animeList, hasNextPage)
     }
 
@@ -88,19 +88,17 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
-    override fun List<Video>.sort(): List<Video> {
-        return this
-    }
+    override fun List<Video>.sort(): List<Video> = this
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // No preferences for now
     }
 
-    // Helper to parse JSON from WP REST API using kotlinx.serialization
+    // Helper to parse JSON from WP REST API
     private fun parseJsonToList(json: String): List<WpPost> {
         return try {
             Json { ignoreUnknownKeys = true }.decodeFromString(json)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -108,7 +106,12 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
     @Serializable
     data class WpPost(
         val link: String,
-        val title: String,
-        val content: String,
+        val title: RenderedText,
+        val content: RenderedText,
+    )
+
+    @Serializable
+    data class RenderedText(
+        val rendered: String,
     )
 }
