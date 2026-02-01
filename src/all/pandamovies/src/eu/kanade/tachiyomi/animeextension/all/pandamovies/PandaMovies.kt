@@ -9,12 +9,12 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.Jsoup
 
 class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
 
@@ -24,36 +24,34 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
     override val supportsLatest: Boolean = true
     override val supportsRelatedAnimes: Boolean = false
 
-    override fun popularAnimeRequest(page: Int): Request {
-        return GET("$baseUrl/wp-json/wp/v2/posts?page=$page", headers)
-    }
+    override fun popularAnimeRequest(page: Int): Request = GET("$baseUrl/wp-json/wp/v2/posts?page=$page", headers)
 
     override fun popularAnimeParse(response: Response): AnimesPage {
-        val json = response.body.string()
-        val animes = parseJsonToList(json)
-        val animeList = animes.map { item ->
+        val json = response.body?.string().orEmpty()
+        val posts = parseJsonToList(json)
+        val animeList = posts.map { post ->
             SAnime.create().apply {
-                setUrlWithoutDomain(item.link)
-                title = item.title.rendered
-                description = item.content.rendered.asJsoup().text()
-                thumbnail_url = getThumbnailUrl(item.featured_media)
+                setUrlWithoutDomain(post.link)
+                title = post.title.rendered
+                description = post.content.rendered
+                if (post.featured_media != 0) {
+                    thumbnail_url = fetchThumbnail(post.featured_media)
+                }
             }
         }
-        val hasNextPage = animes.size == 10
-        return AnimesPage(animeList, hasNextPage)
+        return AnimesPage(animeList, posts.size == 10)
     }
 
     override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        return GET("$baseUrl/wp-json/wp/v2/posts?search=$query&page=$page", headers)
-    }
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
+        GET("$baseUrl/wp-json/wp/v2/posts?search=$query&page=$page", headers)
 
     override fun searchAnimeParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     override fun animeDetailsParse(response: Response): SAnime {
-        val document = response.asJsoup()
+        val document = Jsoup.parse(response.body?.string().orEmpty())
         return SAnime.create().apply {
             title = document.selectFirst("h1.entry-title")?.text().orEmpty()
             description = document.selectFirst("div.entry-content")?.text().orEmpty()
@@ -62,7 +60,7 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val document = response.asJsoup()
+        val document = Jsoup.parse(response.body?.string().orEmpty())
         val episode = SEpisode.create().apply {
             name = "Episode 1"
             episode_number = 1f
@@ -72,41 +70,27 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     override fun videoListParse(response: Response): List<Video> {
-        val document = response.asJsoup()
+        val document = Jsoup.parse(response.body?.string().orEmpty())
         val iframe = document.selectFirst("iframe")
         val videoUrl = iframe?.attr("src").orEmpty()
-        return if (videoUrl.isNotEmpty()) {
-            listOf(Video(videoUrl, "PandaMovies", videoUrl))
-        } else {
-            emptyList()
-        }
+        return if (videoUrl.isNotEmpty()) listOf(Video(videoUrl, "PandaMovies", videoUrl)) else emptyList()
     }
 
     override fun List<Video>.sort(): List<Video> = this
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {}
 
-    override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        // No preferences for now
+    private fun parseJsonToList(json: String): List<WpPost> = try {
+        Json { ignoreUnknownKeys = true }.decodeFromString(json)
+    } catch (_: Exception) {
+        emptyList()
     }
 
-    // Helper to parse JSON from WP REST API
-    private fun parseJsonToList(json: String): List<WpPost> {
-        return try {
-            Json { ignoreUnknownKeys = true }.decodeFromString(json)
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
-
-    // Fetch thumbnail URL using featured_media
-    private fun getThumbnailUrl(mediaId: Int): String? {
-        if (mediaId == 0) return null
-        return try {
-            val mediaJson = client.newCall(GET("$baseUrl/wp-json/wp/v2/media/$mediaId", headers))
-                .execute().body?.string()
-            mediaJson?.let { Json { ignoreUnknownKeys = true }.decodeFromString<WpMedia>(it).source_url }
-        } catch (_: Exception) {
-            null
-        }
+    private fun fetchThumbnail(mediaId: Int): String = try {
+        val response = client.newCall(GET("$baseUrl/wp-json/wp/v2/media/$mediaId", headers)).execute()
+        val json = response.body?.string().orEmpty()
+        Json { ignoreUnknownKeys = true }.decodeFromString<WpMedia>(json).source_url
+    } catch (_: Exception) {
+        ""
     }
 
     @Serializable
@@ -114,16 +98,16 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
         val link: String,
         val title: RenderedText,
         val content: RenderedText,
-        val featured_media: Int = 0,
+        val featured_media: Int = 0
     )
 
     @Serializable
     data class RenderedText(
-        val rendered: String,
+        val rendered: String
     )
 
     @Serializable
     data class WpMedia(
-        val source_url: String,
+        val source_url: String
     )
 }
