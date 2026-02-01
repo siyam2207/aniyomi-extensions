@@ -1,24 +1,35 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import android.util.Log
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.asJsoup
+import java.net.URLEncoder
 
 object EpornerApi {
 
-    fun popularAnimeRequest(page: Int, headers: Headers, baseUrl: String): Request {
+    fun popularAnimeRequest(
+        page: Int,
+        headers: Headers,
+        baseUrl: String,
+    ): Request {
         val url = "$baseUrl/api/v2/video/search/?query=all&page=$page&order=top-weekly&format=json"
         return GET(url, headers)
     }
 
-    fun latestUpdatesRequest(page: Int, headers: Headers, baseUrl: String): Request {
+    fun latestUpdatesRequest(
+        page: Int,
+        headers: Headers,
+        baseUrl: String,
+    ): Request {
         val url = "$baseUrl/api/v2/video/search/?query=all&page=$page&order=latest&format=json"
         return GET(url, headers)
     }
@@ -26,37 +37,50 @@ object EpornerApi {
     fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList,
+        filters: AnimeFilterList,
         headers: Headers,
-        baseUrl: String
+        baseUrl: String,
     ): Request {
-        val encodedQuery = if (query.isNotBlank()) java.net.URLEncoder.encode(query, "UTF-8") else "all"
+        val encodedQuery = if (query.isNotBlank()) URLEncoder.encode(query, "UTF-8") else "all"
         val url = "$baseUrl/api/v2/video/search/?query=$encodedQuery&page=$page&format=json"
         return GET(url, headers)
     }
 
-    fun popularAnimeParse(response: Response, json: Json, tag: String): eu.kanade.tachiyomi.animesource.model.AnimesPage {
+    fun popularAnimeParse(
+        response: Response,
+        json: Json,
+        tag: String,
+    ): AnimesPage {
         return try {
             val apiResponse = json.decodeFromString(ApiSearchResponse.serializer(), response.body!!.string())
             val animeList = apiResponse.videos.map { it.toSAnime() }
-            eu.kanade.tachiyomi.animesource.model.AnimesPage(animeList, apiResponse.page < apiResponse.total_pages)
+            AnimesPage(animeList, apiResponse.page < apiResponse.total_pages)
         } catch (e: Exception) {
             Log.e(tag, "Popular parse error", e)
-            eu.kanade.tachiyomi.animesource.model.AnimesPage(emptyList(), false)
+            AnimesPage(emptyList(), false)
         }
     }
 
-    fun animeDetailsRequest(anime: SAnime, headers: Headers, baseUrl: String): Request {
+    fun animeDetailsRequest(
+        anime: SAnime,
+        headers: Headers,
+        baseUrl: String,
+    ): Request {
         val videoId = anime.url.substringAfterLast("/").substringBefore("-")
         return GET("$baseUrl/api/v2/video/id/?id=$videoId&format=json", headers)
     }
 
-    fun animeDetailsParse(response: Response, json: Json): SAnime {
+    fun animeDetailsParse(
+        response: Response,
+        json: Json,
+    ): SAnime {
         val detail = json.decodeFromString(ApiVideoDetailResponse.serializer(), response.body!!.string())
         return detail.toSAnime()
     }
 
-    fun htmlAnimeDetailsParse(response: Response): SAnime {
+    fun htmlAnimeDetailsParse(
+        response: Response,
+    ): SAnime {
         return try {
             val doc = response.asJsoup()
             SAnime.create().apply {
@@ -69,7 +93,11 @@ object EpornerApi {
         }
     }
 
-    fun videoListParse(response: Response, client: OkHttpClient, headers: Headers): List<Video> {
+    fun videoListParse(
+        response: Response,
+        client: OkHttpClient,
+        headers: Headers,
+    ): List<Video> {
         return try {
             val doc = response.asJsoup()
             val embedUrl = doc.selectFirst("iframe")?.attr("src") ?: return emptyList()
