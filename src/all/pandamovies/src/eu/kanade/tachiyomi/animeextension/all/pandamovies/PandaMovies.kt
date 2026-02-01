@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.pandamovies
 
-import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -36,25 +35,19 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
                 description = item.content
             }
         }
-        val hasNextPage = animes.size == 10 // WP REST API returns 10 per page by default
+        val hasNextPage = animes.size == 10
         return AnimesPage(animeList, hasNextPage)
     }
 
-    override fun latestUpdatesRequest(page: Int): Request {
-        return popularAnimeRequest(page)
-    }
+    override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
 
-    override fun latestUpdatesParse(response: Response): AnimesPage {
-        return popularAnimeParse(response)
-    }
+    override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         return GET("$baseUrl/wp-json/wp/v2/posts?search=$query&page=$page", headers)
     }
 
-    override fun searchAnimeParse(response: Response): AnimesPage {
-        return popularAnimeParse(response)
-    }
+    override fun searchAnimeParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
@@ -86,15 +79,12 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
-    override fun List<Video>.sort(): List<Video> {
-        return this
-    }
+    override fun List<Video>.sort(): List<Video> = this
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // No preferences for now
     }
 
-    // Helper to parse JSON from WP REST API
     private fun parseJsonToList(json: String): List<WpPost> {
         return try {
             val moshi = com.squareup.moshi.Moshi.Builder().build()
@@ -106,7 +96,6 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
-    // Data class for WP REST API posts
     data class WpPost(
         val link: String,
         val title: String,
