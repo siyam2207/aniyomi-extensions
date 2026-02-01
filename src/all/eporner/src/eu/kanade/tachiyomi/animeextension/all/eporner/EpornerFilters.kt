@@ -8,7 +8,7 @@ object EpornerFilters {
     val filterList = AnimeFilterList(
         CategoryFilter(),
         DurationFilter(),
-        QualityFilter()
+        QualityFilter(),
     )
 
     public open class UriPartFilter(
@@ -39,8 +39,8 @@ object EpornerFilters {
             "Masturbation" to "masturbation",
             "Mature" to "mature",
             "Milf" to "milf",
-            "Teen" to "teen"
-        )
+            "Teen" to "teen",
+        ),
     )
 
     public class DurationFilter : UriPartFilter(
@@ -49,8 +49,8 @@ object EpornerFilters {
             "Any" to "0",
             "10+ min" to "10",
             "20+ min" to "20",
-            "30+ min" to "30"
-        )
+            "30+ min" to "30",
+        ),
     )
 
     public class QualityFilter : UriPartFilter(
@@ -59,7 +59,7 @@ object EpornerFilters {
             "Any" to "0",
             "HD 1080" to "1080",
             "HD 720" to "720",
-            "HD 480" to "480"
-        )
+            "HD 480" to "480",
+        ),
     )
 }
