@@ -1,0 +1,12 @@
+ext {
+    extName = 'PandaMovies'          // Extension name
+    extClass = '.PandaMovies'        // Main class with dot
+    extVersionCode = 1                // Version code
+    isNsfw = true                     // Set true for adult content
+}
+
+apply from: "$rootDir/common.gradle"
+
+dependencies {
+    // No extra dependencies, core Tachiyomi + Jsoup + Kotlin already included
+}
