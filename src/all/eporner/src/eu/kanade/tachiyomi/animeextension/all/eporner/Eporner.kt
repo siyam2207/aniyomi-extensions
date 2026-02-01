@@ -47,7 +47,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: AnimeFilterList
+        filters: AnimeFilterList,
     ): Request = EpornerApi.searchAnimeRequest(page, query, filters, headers, baseUrl)
 
     override fun searchAnimeParse(response: Response) =
@@ -75,7 +75,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 name = "Video"
                 episode_number = 1F
                 url = response.request.url.toString()
-            }
+            },
         )
 
     // ==================== Videos ====================
