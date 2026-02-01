@@ -35,28 +35,22 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
             SAnime.create().apply {
                 setUrlWithoutDomain(item.link)
                 title = item.title.rendered
-                description = item.content.rendered
+                description = item.content.rendered.asJsoup().text()
+                thumbnail_url = getThumbnailUrl(item.featured_media)
             }
         }
         val hasNextPage = animes.size == 10
         return AnimesPage(animeList, hasNextPage)
     }
 
-    override fun latestUpdatesRequest(page: Int): Request {
-        return popularAnimeRequest(page)
-    }
-
-    override fun latestUpdatesParse(response: Response): AnimesPage {
-        return popularAnimeParse(response)
-    }
+    override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
+    override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         return GET("$baseUrl/wp-json/wp/v2/posts?search=$query&page=$page", headers)
     }
 
-    override fun searchAnimeParse(response: Response): AnimesPage {
-        return popularAnimeParse(response)
-    }
+    override fun searchAnimeParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
@@ -103,15 +97,33 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
+    // Fetch thumbnail URL using featured_media
+    private fun getThumbnailUrl(mediaId: Int): String? {
+        if (mediaId == 0) return null
+        return try {
+            val mediaJson = client.newCall(GET("$baseUrl/wp-json/wp/v2/media/$mediaId", headers))
+                .execute().body?.string()
+            mediaJson?.let { Json { ignoreUnknownKeys = true }.decodeFromString<WpMedia>(it).source_url }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     @Serializable
     data class WpPost(
         val link: String,
         val title: RenderedText,
         val content: RenderedText,
+        val featured_media: Int = 0
     )
 
     @Serializable
     data class RenderedText(
-        val rendered: String,
+        val rendered: String
+    )
+
+    @Serializable
+    data class WpMedia(
+        val source_url: String
     )
 }
