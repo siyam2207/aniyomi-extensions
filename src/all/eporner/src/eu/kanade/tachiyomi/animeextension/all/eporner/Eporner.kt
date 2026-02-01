@@ -8,7 +8,6 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.Request
@@ -48,7 +47,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: AnimeFilterList,
+        filters: AnimeFilterList
     ): Request = EpornerApi.searchAnimeRequest(page, query, filters, headers, baseUrl)
 
     override fun searchAnimeParse(response: Response) =
@@ -67,18 +66,21 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
 
     // ==================== Episodes ====================
-    override fun episodeListRequest(anime: SAnime): Request = GET(anime.url, headers)
+    override fun episodeListRequest(anime: SAnime): Request =
+        GET(anime.url, headers)
 
-    override fun episodeListParse(response: Response): List<SEpisode> = listOf(
-        SEpisode.create().apply {
-            name = "Video"
-            episode_number = 1F
-            url = response.request.url.toString()
-        },
-    )
+    override fun episodeListParse(response: Response): List<SEpisode> =
+        listOf(
+            SEpisode.create().apply {
+                name = "Video"
+                episode_number = 1F
+                url = response.request.url.toString()
+            }
+        )
 
     // ==================== Videos ====================
-    override fun videoListRequest(episode: SEpisode): Request = GET(episode.url, headers)
+    override fun videoListRequest(episode: SEpisode): Request =
+        GET(episode.url, headers)
 
     override fun videoListParse(response: Response): List<Video> =
         EpornerApi.videoListParse(response, client, headers)
