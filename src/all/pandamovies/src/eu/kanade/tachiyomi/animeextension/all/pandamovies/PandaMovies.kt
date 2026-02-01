@@ -31,7 +31,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
         return POST(
             "$baseUrl/wp-admin/admin-ajax.php",
             headers,
-            body
+            body,
         )
     }
 
@@ -44,7 +44,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
                 title = element.selectFirst("h3")?.text().orEmpty()
                 thumbnail_url = element.selectFirst("img")?.attr("src")
                 setUrlWithoutDomain(
-                    element.selectFirst("a")?.attr("href").orEmpty()
+                    element.selectFirst("a")?.attr("href").orEmpty(),
                 )
             }
         }
@@ -78,7 +78,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
 
         return SAnime.create().apply {
             title = document.selectFirst("h1")?.text().orEmpty()
-            description = document.selectFirst(".entry-content")?.text()
+            description = document.selectFirst(".entry-content")?.text(),
         }
     }
 
