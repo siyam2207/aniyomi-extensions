@@ -99,6 +99,6 @@ class PandaMovies : ConfigurableAnimeSource, AnimeHttpSource() {
     data class WpPost(
         val link: String,
         val title: String,
-        val content: String
+        val content: String,
     )
 }
