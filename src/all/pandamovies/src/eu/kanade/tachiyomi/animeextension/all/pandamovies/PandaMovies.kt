@@ -31,7 +31,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
         return POST(
             "$baseUrl/wp-admin/admin-ajax.php",
             headers,
-            body
+            body, // ✅ trailing comma
         )
     }
 
@@ -44,12 +44,15 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
                 title = element.selectFirst("h3")?.text().orEmpty()
                 thumbnail_url = element.selectFirst("img")?.attr("src")
                 setUrlWithoutDomain(
-                    element.selectFirst("a")?.attr("href").orEmpty()
+                    element.selectFirst("a")?.attr("href").orEmpty(), // ✅ trailing comma
                 )
             }
         }
 
-        return AnimesPage(animeList, hasNextPage = true)
+        return AnimesPage(
+            animeList,
+            hasNextPage = true, // ✅ trailing comma
+        )
     }
 
     // ============================== Latest ==============================
@@ -78,7 +81,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
 
         return SAnime.create().apply {
             title = document.selectFirst("h1")?.text().orEmpty()
-            description = document.selectFirst(".entry-content")?.text()
+            description = document.selectFirst(".entry-content")?.text(), // ✅ trailing comma
         }
     }
 
@@ -90,7 +93,7 @@ class PandaMovies : AnimeHttpSource(), ConfigurableAnimeSource {
                 name = "Episode"
                 episode_number = 1f
                 setUrlWithoutDomain(response.request.url.toString())
-            }
+            },
         )
 
     // ============================== Video ==============================
