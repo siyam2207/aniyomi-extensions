@@ -57,7 +57,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val body = response.body.string()
             Log.d(tag, "Popular API response length: ${body.length}")
             val apiResponse = json.decodeFromString<ApiSearchResponse>(body)
-            val animeList = apiResponse.videos.map { it.toSAnime() }
+            val animeList = apiResponse.videos.map { it.toSAnime(baseUrl, tag) }
             val hasNextPage = apiResponse.page < apiResponse.total_pages
             Log.d(tag, "Parsed ${animeList.size} anime, hasNext: $hasNextPage")
             AnimesPage(animeList, hasNextPage)
@@ -164,7 +164,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 try {
                     val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(body)
                     Log.d(tag, "Successfully parsed API response for ID: ${videoDetail.id}")
-                    return videoDetail.toSAnime()
+                    return videoDetail.toSAnime(tag)
                 } catch (e: Exception) {
                     Log.w(tag, "Failed to parse API response, trying HTML: ${e.message}")
                 }
@@ -479,7 +479,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
         @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
     ) {
-        fun toSAnime(): SAnime = SAnime.create().apply {
+        fun toSAnime(tag: String): SAnime = SAnime.create().apply {
             // ALWAYS assign title - never leave lateinit var uninitialized
             this.title = this@ApiVideoDetailResponse.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
 
@@ -511,7 +511,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("url") val url: String,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
     ) {
-        fun toSAnime(): SAnime = SAnime.create().apply {
+        fun toSAnime(baseUrl: String, tag: String): SAnime = SAnime.create().apply {
             // ALWAYS assign title - never leave lateinit var uninitialized
             this.title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
 
