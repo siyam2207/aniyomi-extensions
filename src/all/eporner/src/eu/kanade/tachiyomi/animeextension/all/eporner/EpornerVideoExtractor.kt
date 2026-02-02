@@ -12,7 +12,7 @@ import okhttp3.Response
 internal class EpornerVideoExtractor(
     private val client: OkHttpClient,
     private val headers: Headers,
-    private val preferences: SharedPreferences,
+    private val preferences: SharedPreferences
 ) {
 
     private val tag = "EpornerExtractor"
@@ -49,8 +49,8 @@ internal class EpornerVideoExtractor(
                                     playlistUtils.extractFromHls(
                                         url,
                                         response.request.url.toString(),
-                                        videoNameGen = { q -> "HLS - $q" },
-                                    ),
+                                        videoNameGen = { q -> "HLS - $q" }
+                                    )
                                 )
                             } catch (e: Exception) {
                                 Log.e(tag, "HLS extraction failed: ${e.message}")
@@ -64,7 +64,7 @@ internal class EpornerVideoExtractor(
             if (videos.isEmpty()) {
                 val mp4Patterns = listOf(
                     Regex("""src\s*:\s*["'](https?://[^"']+\.mp4[^"']*)["']"""),
-                    Regex("""(https?://[^"'\s]+\.mp4)"""),
+                    Regex("""(https?://[^"'\s]+\.mp4)""")
                 )
                 val html = document.html()
                 mp4Patterns.forEach { pattern ->
@@ -77,7 +77,7 @@ internal class EpornerVideoExtractor(
                 }
             }
 
-            videos.distinctBy { it.videoUrl }.sortedByPreference()
+            videos.distinctBy { it.videoUrl }
         } catch (e: Exception) {
             Log.e(tag, "Video extraction error: ${e.message}", e)
             emptyList()
@@ -94,18 +94,5 @@ internal class EpornerVideoExtractor(
             else -> "Unknown"
         }
         videos.add(Video(url, "Direct - $quality", url))
-    }
-
-    private fun List<Video>.sortedByPreference(): List<Video> {
-        val qualityPref = preferences.getString(EpornerPreferences.PREF_QUALITY_KEY, "720p")!!
-        return sortedWith(
-            compareByDescending {
-                when {
-                    qualityPref == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
-                    it.quality.contains(qualityPref) -> 1000
-                    else -> 0
-                }
-            },
-        )
     }
 }
