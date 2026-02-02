@@ -14,13 +14,13 @@ internal object EpornerApi {
     fun popularRequest(apiUrl: String, page: Int, headers: Headers): Request =
         GET(
             "$apiUrl/video/search/?query=all&page=$page&order=top-weekly&thumbsize=big&format=json",
-            headers
+            headers,
         )
 
     fun latestRequest(apiUrl: String, page: Int, headers: Headers): Request =
         GET(
             "$apiUrl/video/search/?query=all&page=$page&order=latest&thumbsize=big&format=json",
-            headers
+            headers,
         )
 
     fun searchRequest(
@@ -28,7 +28,7 @@ internal object EpornerApi {
         page: Int,
         query: String,
         filters: Any,
-        headers: Headers
+        headers: Headers,
     ): Request {
         val parsed = if (filters is eu.kanade.tachiyomi.animesource.model.AnimeFilterList) {
             EpornerFilters.parse(filters)
@@ -44,7 +44,7 @@ internal object EpornerApi {
 
         return GET(
             url,
-            headers
+            headers,
         )
     }
 
@@ -52,7 +52,7 @@ internal object EpornerApi {
         val data = json.decodeFromString(ApiSearchResponse.serializer(), response.body.string())
         return AnimesPage(
             data.videos.map { it.toSAnime() },
-            data.page < data.total_pages
+            data.page < data.total_pages,
         )
     }
 
@@ -60,7 +60,7 @@ internal object EpornerApi {
         val id = anime.url.substringAfterLast("/").substringBefore("-")
         return GET(
             "$apiUrl/video/id/?id=$id&format=json",
-            headers
+            headers,
         )
     }
 
