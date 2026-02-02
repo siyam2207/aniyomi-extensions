@@ -1,168 +1,312 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import android.util.Log
+import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.util.asJsoup
 import extensions.utils.getPreferencesLazy
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import uy.kohesive.injekt.injectLazy
+import java.net.URLEncoder
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
-
     override val name = "Eporner"
     override val baseUrl = "https://www.eporner.com"
+    private val apiUrl = "https://www.eporner.com/api/v2"
     override val lang = "all"
     override val supportsLatest = true
 
-    internal val apiUrl = "$baseUrl/api/v2"
-    internal val json: Json by injectLazy()
-    internal val preferences by getPreferencesLazy()
+    private val json: Json by injectLazy()
+    private val preferences by getPreferencesLazy()
     private val tag = "EpornerExtension"
 
-    // ==================== Safe URL Accessor ====================
-    private fun SAnime.getSafeUrl(): String {
-        return try {
-            this.url // Will throw if 'lateinit var url' is not initialized
-        } catch (e: kotlin.UninitializedPropertyAccessException) {
-            Log.e(tag, "CRITICAL: Intercepted UninitializedPropertyAccessException for SAnime.url", e)
-            "$baseUrl/" // Ultimate fallback to prevent crash
-        }
-    }
-
-    override fun headersBuilder(): Headers.Builder =
-        Headers.Builder()
-            .add(
-                "Accept",
-                "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            )
+    // ==================== Headers ====================
+    override fun headersBuilder(): Headers.Builder {
+        return Headers.Builder()
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .add("Accept", "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .add("Accept-Language", "en-US,en;q=0.5")
-            .add("Origin", baseUrl)
             .add("Referer", baseUrl)
-            .add(
-                "User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            )
-
-    // ===== Popular / Latest / Search =====
-    override fun popularAnimeRequest(page: Int): Request =
-        EpornerApi.popularRequest(
-            apiUrl,
-            page,
-            headers,
-        )
-
-    override fun popularAnimeParse(response: Response): AnimesPage =
-        EpornerApi.parseSearch(
-            json,
-            response,
-        )
-
-    override fun latestUpdatesRequest(page: Int): Request =
-        EpornerApi.latestRequest(
-            apiUrl,
-            page,
-            headers,
-        )
-
-    override fun latestUpdatesParse(response: Response): AnimesPage =
-        EpornerApi.parseSearch(
-            json,
-            response,
-        )
-
-    override fun searchAnimeRequest(
-        page: Int,
-        query: String,
-        filters: AnimeFilterList,
-    ): Request =
-        EpornerApi.searchRequest(
-            apiUrl,
-            page,
-            query,
-            filters,
-            headers,
-        )
-
-    override fun searchAnimeParse(response: Response): AnimesPage =
-        EpornerApi.parseSearch(
-            json,
-            response,
-        )
-
-    // ===== Details =====
-    override fun animeDetailsRequest(anime: SAnime): Request {
-        val safeUrl = anime.getSafeUrl()
-        val videoId = try {
-            safeUrl.substringAfterLast("/").substringBefore("-")
-        } catch (e: Exception) {
-            Log.w(tag, "Could not extract ID from URL: $safeUrl", e)
-            "0"
-        }
-        return GET("$apiUrl/video/id/?id=$videoId&format=json", headers)
+            .add("Origin", baseUrl)
     }
 
-    override fun animeDetailsParse(response: Response): SAnime =
-        EpornerApi.parseDetails(
-            json,
-            response,
-        )
+    // ==================== Popular Anime ====================
+    override fun popularAnimeRequest(page: Int): Request {
+        val url = "$apiUrl/video/search/?query=all&page=$page&order=top-weekly&thumbsize=big&format=json"
+        return GET(url, headers)
+    }
 
-    // ===== Episodes =====
-    override fun episodeListRequest(anime: SAnime): Request =
-        GET(
-            anime.getSafeUrl(),
-            headers,
-        )
+    override fun popularAnimeParse(response: Response): AnimesPage {
+        return try {
+            val apiResponse = json.decodeFromString<ApiSearchResponse>(response.body.string())
+            val animeList = apiResponse.videos.map { it.toSAnime() }
+            val hasNextPage = apiResponse.page < apiResponse.total_pages
+            AnimesPage(animeList, hasNextPage)
+        } catch (e: Exception) {
+            Log.e(tag, "Popular parse error", e)
+            AnimesPage(emptyList(), false)
+        }
+    }
 
-    override fun episodeListParse(response: Response): List<SEpisode> =
-        listOf(
+    // ==================== Latest Updates ====================
+    override fun latestUpdatesRequest(page: Int): Request {
+        val url = "$apiUrl/video/search/?query=all&page=$page&order=latest&thumbsize=big&format=json"
+        return GET(url, headers)
+    }
+
+    override fun latestUpdatesParse(response: Response): AnimesPage {
+        return popularAnimeParse(response)
+    }
+
+    // ==================== Search ====================
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        val encodedQuery = if (query.isNotBlank()) {
+            URLEncoder.encode(query, "UTF-8")
+        } else {
+            "all"
+        }
+
+        var category = "all"
+        var duration = "0"
+        var quality = "0"
+
+        filters.forEach { filter ->
+            when (filter) {
+                is CategoryFilter -> {
+                    if (filter.state != 0) category = filter.toUriPart()
+                }
+                is DurationFilter -> {
+                    if (filter.state != 0) duration = filter.toUriPart()
+                }
+                is QualityFilter -> {
+                    if (filter.state != 0) quality = filter.toUriPart()
+                }
+                is AnimeFilter.Header,
+                is AnimeFilter.Separator,
+                is AnimeFilter.Group<*>,
+                is AnimeFilter.CheckBox,
+                is AnimeFilter.TriState,
+                is AnimeFilter.Select<*>,
+                is AnimeFilter.Text,
+                is AnimeFilter.Sort,
+                -> {
+                    // Do nothing for these filter types
+                }
+            }
+        }
+
+        val url = "$apiUrl/video/search/?query=$encodedQuery&page=$page&categories=$category&duration=$duration&quality=$quality&thumbsize=big&format=json"
+        Log.d(tag, "Search URL: $url")
+        return GET(url, headers)
+    }
+
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        return popularAnimeParse(response)
+    }
+
+    // ==================== Anime Details ====================
+    override fun animeDetailsParse(response: Response): SAnime {
+        return try {
+            val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(response.body.string())
+            videoDetail.toSAnime()
+        } catch (e: Exception) {
+            Log.w(tag, "API details failed, trying HTML fallback: ${e.message}")
+            htmlAnimeDetailsParse(response)
+        }
+    }
+
+    private fun htmlAnimeDetailsParse(response: Response): SAnime {
+        return try {
+            val document = response.asJsoup()
+            SAnime.create().apply {
+                url = response.request.url.toString()
+                title = document.selectFirst("h1")?.text() ?: "Unknown Title"
+                thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")
+                    ?: document.selectFirst("img.thumb")?.attr("src")
+
+                val viewsText = document.selectFirst("div.views")?.text() ?: ""
+                val durationText = document.selectFirst("div.length")?.text() ?: ""
+
+                description = buildString {
+                    if (viewsText.isNotEmpty()) append("Views: $viewsText\n")
+                    if (durationText.isNotEmpty()) append("Duration: $durationText\n")
+
+                    val tags = document.select("a.tag").map { it.text() }
+                    if (tags.isNotEmpty()) {
+                        append("Tags: ${tags.joinToString(", ")}")
+                    }
+                }
+
+                genre = document.select("a.tag").map { it.text() }.joinToString(", ")
+                status = SAnime.COMPLETED
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "HTML details parse error: ${e.message}")
+            SAnime.create().apply {
+                title = "Error loading details"
+                status = SAnime.COMPLETED
+            }
+        }
+    }
+
+    // ==================== Required Methods ====================
+    override fun videoUrlParse(response: Response): String {
+        return videoListParse(response).firstOrNull()?.videoUrl ?: ""
+    }
+
+    override fun animeDetailsRequest(anime: SAnime): Request {
+        val videoId = anime.url.substringAfterLast("/").substringBefore("-")
+        val url = "$apiUrl/video/id/?id=$videoId&format=json"
+        return GET(url, headers)
+    }
+
+    override fun episodeListRequest(anime: SAnime): Request {
+        return GET(anime.url, headers)
+    }
+
+    override fun videoListRequest(episode: SEpisode): Request {
+        return GET(episode.url, headers)
+    }
+
+    // ==================== Episodes ====================
+    override fun episodeListParse(response: Response): List<SEpisode> {
+        return listOf(
             SEpisode.create().apply {
                 name = "Video"
                 episode_number = 1F
                 url = response.request.url.toString()
             },
         )
-
-    // ===== Videos =====
-    override fun videoListRequest(episode: SEpisode): Request =
-        GET(
-            episode.url,
-            headers,
-        )
-
-    override fun videoListParse(response: Response): List<Video> =
-        EpornerVideoExtractor(
-            client,
-            headers,
-            preferences,
-        ).extract(response)
-
-    override fun videoUrlParse(response: Response): String {
-        return videoListParse(response).firstOrNull()?.videoUrl ?: ""
     }
 
-    // ===== Preferences =====
-    override fun setupPreferenceScreen(screen: PreferenceScreen) =
-        EpornerPreferences.setup(
-            screen,
-            preferences,
-        )
+    // ==================== Video Extraction (Enhanced) ====================
+    override fun videoListParse(response: Response): List<Video> {
+        return try {
+            val document = response.asJsoup()
+            val videos = mutableListOf<Video>()
 
-    override fun getFilterList() =
-        EpornerFilters.filterList()
+            // METHOD 1: Eporner JavaScript pattern
+            document.select("script").forEach { script ->
+                val scriptText = script.html()
+                val pattern = Regex("""quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']""")
+                pattern.findAll(scriptText).forEach { match ->
+                    val quality = match.groupValues[1]
+                    val videoUrl = match.groupValues[2]
+                    if (videoUrl.isNotBlank()) {
+                        videos.add(Video(videoUrl, "Eporner - ${quality}p", videoUrl))
+                        Log.d(tag, "Found video: ${quality}p")
+                    }
+                }
+            }
+
+            // METHOD 2: HLS streams
+            if (videos.isEmpty()) {
+                document.select("script").forEach { script ->
+                    val scriptText = script.html()
+                    val hlsPattern = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""")
+                    hlsPattern.findAll(scriptText).forEach { match ->
+                        val url = match.value
+                        if (url.contains(".m3u8")) {
+                            try {
+                                val playlistUtils = PlaylistUtils(client, headers)
+                                val hlsVideos = playlistUtils.extractFromHls(
+                                    url,
+                                    response.request.url.toString(),
+                                    videoNameGen = { quality -> "HLS - $quality" },
+                                )
+                                videos.addAll(hlsVideos)
+                            } catch (e: Exception) {
+                                Log.e(tag, "HLS extraction failed: ${e.message}")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // METHOD 3: Direct MP4 fallback
+            if (videos.isEmpty()) {
+                val html = document.html()
+                val mp4Patterns = listOf(
+                    Regex("""src\s*:\s*["'](https?://[^"']+\.mp4[^"']*)["']"""),
+                    Regex("""(https?://[^"'\s]+\.mp4)"""),
+                )
+
+                mp4Patterns.forEach { pattern ->
+                    pattern.findAll(html).forEach { match ->
+                        val url = match.groupValues.getOrNull(1) ?: match.value
+                        if (url.isNotBlank() && url.startsWith("http") && !videos.any { it.videoUrl == url }) {
+                            addVideoWithQuality(videos, url)
+                        }
+                    }
+                }
+            }
+
+            Log.d(tag, "Total videos found: ${videos.size}")
+            videos.distinctBy { it.videoUrl }
+        } catch (e: Exception) {
+            Log.e(tag, "Video list parse error: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    private fun addVideoWithQuality(videos: MutableList<Video>, url: String) {
+        val quality = when {
+            url.contains("1080") -> "1080p"
+            url.contains("720") -> "720p"
+            url.contains("480") -> "480p"
+            url.contains("360") -> "360p"
+            url.contains("240") -> "240p"
+            else -> "Unknown"
+        }
+        videos.add(Video(url, "Direct - $quality", url))
+    }
+
+    // ==================== Settings ====================
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY_KEY
+            title = "Preferred video quality"
+            entries = QUALITY_LIST
+            entryValues = QUALITY_LIST
+            setDefaultValue(PREF_QUALITY_DEFAULT)
+            summary = "%s"
+
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putString(key, newValue as String).commit()
+            }
+        }.also(screen::addPreference)
+
+        ListPreference(screen.context).apply {
+            key = PREF_SORT_KEY
+            title = "Default sort order"
+            entries = SORT_LIST
+            entryValues = SORT_LIST
+            setDefaultValue(PREF_SORT_DEFAULT)
+            summary = "%s"
+
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putString(key, newValue as String).commit()
+            }
+        }.also(screen::addPreference)
+    }
 
     override fun List<Video>.sort(): List<Video> {
-        val qualityPref = preferences.getString(EpornerPreferences.PREF_QUALITY_KEY, EpornerPreferences.PREF_QUALITY_DEFAULT)!!
+        val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
         return sortedWith(
             compareByDescending<Video> {
                 when {
@@ -173,4 +317,130 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             },
         )
     }
+
+    override fun getFilterList() = AnimeFilterList(
+        CategoryFilter(),
+        DurationFilter(),
+        QualityFilter(),
+    )
+
+    // ==================== Filter Classes ====================
+    private open class UriPartFilter(
+        displayName: String,
+        private val vals: Array<Pair<String, String>>,
+    ) : AnimeFilter.Select<String>(
+        displayName,
+        vals.map { it.first }.toTypedArray(),
+    ) {
+        fun toUriPart() = vals[state].second
+    }
+
+    private class CategoryFilter : UriPartFilter(
+        "Category",
+        arrayOf(
+            Pair("All", "all"),
+            Pair("Anal", "anal"),
+            Pair("Asian", "asian"),
+            Pair("Big Dick", "big-dick"),
+            Pair("Blowjob", "blowjob"),
+            Pair("Brunette", "brunette"),
+            Pair("Creampie", "creampie"),
+            Pair("Cumshot", "cumshot"),
+            Pair("Doggystyle", "doggystyle"),
+            Pair("Ebony", "ebony"),
+            Pair("Facial", "facial"),
+            Pair("Gangbang", "gangbang"),
+            Pair("HD", "hd"),
+            Pair("Interracial", "interracial"),
+            Pair("Lesbian", "lesbian"),
+            Pair("Masturbation", "masturbation"),
+            Pair("Mature", "mature"),
+            Pair("Milf", "milf"),
+            Pair("Teen", "teen"),
+        ),
+    )
+
+    private class DurationFilter : UriPartFilter(
+        "Duration",
+        arrayOf(
+            Pair("Any", "0"),
+            Pair("10+ min", "10"),
+            Pair("20+ min", "20"),
+            Pair("30+ min", "30"),
+        ),
+    )
+
+    private class QualityFilter : UriPartFilter(
+        "Quality",
+        arrayOf(
+            Pair("Any", "0"),
+            Pair("HD 1080", "1080"),
+            Pair("HD 720", "720"),
+            Pair("HD 480", "480"),
+        ),
+    )
+
+    companion object {
+        private const val PREF_QUALITY_KEY = "preferred_quality"
+        private const val PREF_QUALITY_DEFAULT = "720p"
+        private val QUALITY_LIST = arrayOf("best", "1080p", "720p", "480p", "360p")
+
+        private const val PREF_SORT_KEY = "default_sort"
+        private const val PREF_SORT_DEFAULT = "top-weekly"
+        private val SORT_LIST = arrayOf("latest", "top-weekly", "top-monthly", "most-viewed", "top-rated")
+    }
+
+    // ==================== API Data Classes ====================
+    @Serializable
+    private data class ApiSearchResponse(
+        @SerialName("videos") val videos: List<ApiVideo>,
+        @SerialName("page") val page: Int,
+        @SerialName("total_pages") val total_pages: Int,
+    )
+
+    @Serializable
+    private data class ApiVideoDetailResponse(
+        @SerialName("id") val id: String,
+        @SerialName("title") val title: String,
+        @SerialName("keywords") val keywords: String,
+        @SerialName("views") val views: Long,
+        @SerialName("url") val url: String,
+        @SerialName("added") val added: String,
+        @SerialName("length_sec") val lengthSec: Int,
+        @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
+        @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
+    ) {
+        fun toSAnime(): SAnime = SAnime.create().apply {
+            this.url = this@ApiVideoDetailResponse.url
+            this.title = this@ApiVideoDetailResponse.title
+            this.thumbnail_url = this@ApiVideoDetailResponse.defaultThumb.src
+            this.genre = this@ApiVideoDetailResponse.keywords
+            this.description = "Views: $views | Length: ${lengthSec / 60}min"
+            this.status = SAnime.COMPLETED
+        }
+    }
+
+    @Serializable
+    private data class ApiVideo(
+        @SerialName("id") val id: String,
+        @SerialName("title") val title: String,
+        @SerialName("keywords") val keywords: String,
+        @SerialName("url") val url: String,
+        @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
+    ) {
+        fun toSAnime(): SAnime = SAnime.create().apply {
+            this.url = this@ApiVideo.url
+            this.title = this@ApiVideo.title
+            this.thumbnail_url = this@ApiVideo.defaultThumb.src
+            this.genre = this@ApiVideo.keywords
+            this.status = SAnime.COMPLETED
+        }
+    }
+
+    @Serializable
+    private data class ApiThumbnail(
+        @SerialName("src") val src: String,
+        @SerialName("width") val width: Int,
+        @SerialName("height") val height: Int,
+    )
 }
