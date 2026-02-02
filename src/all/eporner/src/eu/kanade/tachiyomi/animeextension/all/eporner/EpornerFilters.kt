@@ -1,8 +1,8 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter.Select
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 
 internal object EpornerFilters {
 
