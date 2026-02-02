@@ -55,7 +55,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun popularAnimeParse(response: Response): AnimesPage {
         val body = response.body.string()
         val data = json.decodeFromString(ApiSearchResponse.serializer(), body)
-        val list = data.videos.map { it.toSAnime() }
+        val list = data.videos.map { it.toSAnime(baseUrl) }
         return AnimesPage(list, data.page < data.total_pages)
     }
 
@@ -195,7 +195,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("views") val views: Long,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
     ) {
-        fun toSAnime(): SAnime = SAnime.create().apply {
+        fun toSAnime(baseUrl: String): SAnime = SAnime.create().apply {
             // Safe URL assignment
             this.url = embed.takeIf { it.isNotBlank() } ?: baseUrl
 
