@@ -115,7 +115,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // MP4 sources
             Regex("""videoUrl['"]?\s*:\s*['"]([^'"]+\.mp4)['"]""").findAll(js).forEach { match ->
                 val url = match.groupValues[1]
-                if (url.isNotBlank()) videos.add(Video(url, "MP4 - ${url.extractQuality()}", url,))
+                if (url.isNotBlank()) videos.add(Video(url, "MP4 - ${url.extractQuality()}", url))
             }
         }
 
@@ -167,5 +167,5 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     @Serializable
-    data class ApiThumbnail(@SerialName("src") val src: String,)
+    data class ApiThumbnail(@SerialName("src") val src: String)
 }
