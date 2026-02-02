@@ -11,8 +11,6 @@ import extensions.utils.getPreferencesLazy
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.Request
-import okhttp3.Response
-import uy.kohesive.injekt.injectLazy
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
@@ -25,18 +23,19 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     internal val json: Json by injectLazy()
     internal val preferences by getPreferencesLazy()
 
-    override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("Accept", "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        .add("Accept-Language", "en-US,en;q=0.5")
-        .add("Origin", baseUrl)
-        .add("Referer", baseUrl)
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    override fun headersBuilder(): Headers.Builder =
+        Headers.Builder()
+            .add("Accept", "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .add("Accept-Language", "en-US,en;q=0.5")
+            .add("Origin", baseUrl)
+            .add("Referer", baseUrl)
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
     // ===== Popular / Latest / Search =====
     override fun popularAnimeRequest(page: Int): Request =
         EpornerApi.popularRequest(apiUrl, page, headers)
 
-    override fun popularAnimeParse(response: Response) =
+    override fun popularAnimeParse(response: okhttp3.Response) =
         EpornerApi.parseSearch(json, response)
 
     override fun latestUpdatesRequest(page: Int): Request =
@@ -45,14 +44,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
         EpornerApi.searchRequest(apiUrl, page, query, filters, headers)
 
-    override fun searchAnimeParse(response: Response) =
+    override fun searchAnimeParse(response: okhttp3.Response) =
         EpornerApi.parseSearch(json, response)
 
     // ===== Details =====
     override fun animeDetailsRequest(anime: SAnime): Request =
         EpornerApi.detailsRequest(apiUrl, anime, headers)
 
-    override fun animeDetailsParse(response: Response): SAnime =
+    override fun animeDetailsParse(response: okhttp3.Response): SAnime =
         EpornerApi.parseDetails(json, response)
 
     // ===== Episodes =====
@@ -61,13 +60,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         headers,
     )
 
-    override fun episodeListParse(response: Response): List<SEpisode> =
-        listOf(SEpisode.create().apply {
-            name = "Video"
-            episode_number = 1F
-            url = response.request.url.toString()
-        },
-              )
+    override fun episodeListParse(response: okhttp3.Response): List<SEpisode> =
+        listOf(
+            SEpisode.create().apply {
+                name = "Video"
+                episode_number = 1F
+                url = response.request.url.toString()
+            },
+        )
 
     // ===== Videos =====
     override fun videoListRequest(episode: SEpisode): Request = GET(
@@ -75,7 +75,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         headers,
     )
 
-    override fun videoListParse(response: Response): List<Video> =
+    override fun videoListParse(response: okhttp3.Response): List<Video> =
         EpornerVideoExtractor(client, headers, preferences).extract(response)
 
     // ===== Preferences =====
