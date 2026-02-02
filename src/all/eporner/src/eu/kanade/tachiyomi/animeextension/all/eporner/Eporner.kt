@@ -106,8 +106,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         playlistUtils.extractFromHls(
                             hlsUrl,
                             response.request.url.toString(),
-                            videoNameGen = { q -> "HLS - $q" }
-                        )
+                            videoNameGen = { q -> "HLS - $q" },
+                        ),
                     )
                 }
             }
@@ -115,7 +115,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // MP4 sources
             Regex("""videoUrl['"]?\s*:\s*['"]([^'"]+\.mp4)['"]""").findAll(js).forEach { match ->
                 val url = match.groupValues[1]
-                if (url.isNotBlank()) videos.add(Video(url, "MP4 - ${url.extractQuality()}", url))
+                if (url.isNotBlank()) videos.add(Video(url, "MP4 - ${url.extractQuality()}", url,))
             }
         }
 
@@ -144,7 +144,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     data class ApiSearchResponse(
         @SerialName("videos") val videos: List<ApiVideo>,
         @SerialName("page") val page: Int,
-        @SerialName("total_pages") val total_pages: Int
+        @SerialName("total_pages") val total_pages: Int,
     )
 
     @Serializable
@@ -154,7 +154,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("embed") val embed: String,
         @SerialName("keywords") val keywords: String,
         @SerialName("views") val views: Long,
-        @SerialName("default_thumb") val defaultThumb: ApiThumbnail
+        @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
     ) {
         fun toSAnime(): SAnime = SAnime.create().apply {
             this.url = embed
@@ -167,5 +167,5 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     @Serializable
-    data class ApiThumbnail(@SerialName("src") val src: String)
+    data class ApiThumbnail(@SerialName("src") val src: String,)
 }
