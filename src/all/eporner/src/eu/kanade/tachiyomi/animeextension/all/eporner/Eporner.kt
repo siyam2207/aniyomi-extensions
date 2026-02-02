@@ -126,32 +126,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Anime Details ====================
     override fun animeDetailsRequest(anime: SAnime): Request {
         Log.d(tag, "Details request for URL: ${anime.url}")
-
-        // Try to extract video ID from URL for API call
-        val videoId = try {
-            // Handle both formats: /video/ID/title/ and full URL
-            val path = if (anime.url.startsWith("http")) {
-                anime.url.substringAfter(baseUrl)
-            } else {
-                anime.url
-            }
-            path.substringAfter("/video/").substringBefore("/").takeIf { it.isNotBlank() }
-        } catch (e: Exception) {
-            Log.w(tag, "Could not extract video ID from URL: ${anime.url}", e)
-            null
-        }
-
-        return if (videoId != null && videoId.length > 5) {
-            // Use API for details
-            val url = "$apiUrl/video/id/?id=$videoId&format=json"
-            Log.d(tag, "Using API URL: $url")
-            GET(url, headers)
-        } else {
-            // Fall back to HTML page
-            val url = if (anime.url.startsWith("http")) anime.url else "$baseUrl${anime.url}"
-            Log.d(tag, "Using HTML URL: $url")
-            GET(url, headers)
-        }
+        
+        // Use the embed URL directly for video extraction
+        val url = if (anime.url.startsWith("http")) anime.url else "$baseUrl${anime.url}"
+        Log.d(tag, "Using embed URL: $url")
+        return GET(url, headers)
     }
 
     override fun animeDetailsParse(response: Response): SAnime {
@@ -166,24 +145,24 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     Log.d(tag, "Successfully parsed API response for ID: ${videoDetail.id}")
                     return videoDetail.toSAnime(tag)
                 } catch (e: Exception) {
-                    Log.w(tag, "Failed to parse API response, trying HTML: ${e.message}")
+                    Log.w(tag, "Failed to parse API response, using embed page: ${e.message}")
                 }
             }
 
-            // Fall back to HTML parsing
-            htmlAnimeDetailsParse(response)
+            // Use embed page parsing for details
+            embedPageAnimeDetailsParse(response)
         } catch (e: Exception) {
             Log.e(tag, "Details parse error", e)
-            htmlAnimeDetailsParse(response)
+            embedPageAnimeDetailsParse(response)
         }
     }
 
-    private fun htmlAnimeDetailsParse(response: Response): SAnime {
+    private fun embedPageAnimeDetailsParse(response: Response): SAnime {
         return try {
             val document = response.asJsoup()
             SAnime.create().apply {
                 url = response.request.url.toString()
-
+                
                 // ALWAYS assign title - never leave lateinit var uninitialized
                 title = document.selectFirst("h1")?.text()?.takeIf { it.isNotBlank() }
                     ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.takeIf { it.isNotBlank() }
@@ -194,29 +173,18 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     ?: document.selectFirst("img.thumb")?.attr("src")?.takeIf { it.isNotBlank() }
                     ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
 
-                val viewsText = document.selectFirst("div.views")?.text()?.takeIf { it.isNotBlank() } ?: ""
-                val durationText = document.selectFirst("div.length")?.text()?.takeIf { it.isNotBlank() } ?: ""
-
-                description = buildString {
-                    if (viewsText.isNotEmpty()) append("Views: $viewsText\n")
-                    if (durationText.isNotEmpty()) append("Duration: $durationText\n")
-
-                    val tags = document.select("a.tag").mapNotNull { it.text().takeIf { text -> text.isNotBlank() } }
-                    if (tags.isNotEmpty()) {
-                        append("Tags: ${tags.joinToString(", ")}")
-                    }
-                    if (isEmpty()) append("No description available")
-                }
-
+                description = "Eporner Video"
+                
+                // Try to extract tags from page
                 val tags = document.select("a.tag").mapNotNull { it.text().takeIf { text -> text.isNotBlank() } }
                 genre = if (tags.isNotEmpty()) tags.joinToString(", ") else null
 
                 status = SAnime.COMPLETED
-
-                Log.d(tag, "HTML parsed: title='$title', thumbnail=${thumbnail_url != null}, genre=${genre != null}")
+                
+                Log.d(tag, "Embed page parsed: title='$title', thumbnail=${thumbnail_url != null}, genre=${genre != null}")
             }
         } catch (e: Exception) {
-            Log.e(tag, "HTML details parse error", e)
+            Log.e(tag, "Embed page details parse error", e)
             SAnime.create().apply {
                 title = "Unknown Title"
                 status = SAnime.COMPLETED
@@ -249,89 +217,126 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         )
     }
 
-    // ==================== Video Extraction (Enhanced) ====================
+    // ==================== Video Extraction (Fixed and Simplified) ====================
     override fun videoListParse(response: Response): List<Video> {
         return try {
-            val document = response.asJsoup()
+            val html = response.body.string()
             val videos = mutableListOf<Video>()
-
-            // METHOD 1: Eporner JavaScript pattern
-            document.select("script").forEach { script ->
-                val scriptText = script.html()
-                // Look for quality and videoUrl patterns
-                val patterns = listOf(
-                    Regex("""quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']"""),
-                    Regex("""videoUrl["']?\s*:\s*["']([^"']+)["']\s*,\s*quality["']?\s*:\s*["']?(\d+)["']?"""),
-                    Regex("""['"]src['"]\s*:\s*['"]([^"']+\.mp4)['"]"""),
-                )
-
-                patterns.forEach { pattern ->
-                    pattern.findAll(scriptText).forEach { match ->
-                        val quality = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "unknown"
-                        val videoUrl = match.groupValues.getOrNull(2)?.takeIf { it.isNotBlank() } ?: match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() }
-
-                        if (videoUrl != null && videoUrl.isNotBlank()) {
-                            val displayQuality = if (quality == "unknown") {
-                                videoUrl.extractQualityFromUrl()
-                            } else {
-                                "${quality}p"
-                            }
-                            videos.add(Video(videoUrl, "Eporner - $displayQuality", videoUrl))
-                            Log.d(tag, "Found video: $displayQuality")
+            
+            Log.d(tag, "Parsing embed page for video sources (HTML length: ${html.length})")
+            
+            // METHOD 1: Extract from Eporner videoSources array (most reliable)
+            // Pattern to match: {file:"https://cdn.eporner.com/video.mp4?token=abc", label:"720p"}
+            val videoSourcesPattern = Regex("""['"]?file['"]?\s*:\s*['"]([^'"]+)['"][^}]*?['"]?label['"]?\s*:\s*['"]([^'"]+)['"]""")
+            videoSourcesPattern.findAll(html).forEach { match ->
+                val url = match.groupValues[1]
+                val label = match.groupValues[2]
+                if (url.isNotBlank() && url.contains("http")) {
+                    videos.add(Video(url, "Eporner - $label", url))
+                    Log.d(tag, "Found video source: $label - URL: ${url.take(50)}...")
+                }
+            }
+            
+            // METHOD 2: Alternative pattern for video sources
+            if (videos.isEmpty()) {
+                val altPattern = Regex("""\{[^{}]*?file[^{}]*?label[^{}]*?\}""")
+                altPattern.findAll(html).forEach { match ->
+                    val objText = match.value
+                    val urlMatch = Regex("""['"]?file['"]?\s*:\s*['"]([^'"]+)['"]""").find(objText)
+                    val labelMatch = Regex("""['"]?label['"]?\s*:\s*['"]([^'"]+)['"]""").find(objText)
+                    
+                    if (urlMatch != null && labelMatch != null) {
+                        val url = urlMatch.groupValues[1]
+                        val label = labelMatch.groupValues[1]
+                        if (url.isNotBlank() && url.contains("http")) {
+                            videos.add(Video(url, "Eporner - $label", url))
+                            Log.d(tag, "Found alt video source: $label")
                         }
                     }
                 }
             }
-
-            // METHOD 2: HLS streams
-            if (videos.isEmpty()) {
-                document.select("script").forEach { script ->
-                    val scriptText = script.html()
-                    val hlsPattern = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""")
-                    hlsPattern.findAll(scriptText).forEach { match ->
-                        val url = match.value
-                        if (url.contains(".m3u8")) {
-                            try {
-                                val playlistUtils = PlaylistUtils(client, headers)
-                                val hlsVideos = playlistUtils.extractFromHls(
-                                    url,
-                                    response.request.url.toString(),
-                                    videoNameGen = { quality -> "HLS - $quality" },
-                                )
-                                videos.addAll(hlsVideos)
-                                Log.d(tag, "Found ${hlsVideos.size} HLS streams")
-                            } catch (e: Exception) {
-                                Log.e(tag, "HLS extraction failed", e)
-                            }
-                        }
+            
+            // METHOD 3: HLS streams (.m3u8)
+            val hlsPattern = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""")
+            hlsPattern.findAll(html).forEach { match ->
+                val url = match.value
+                if (url.isNotBlank() && url.contains(".m3u8")) {
+                    try {
+                        val playlistUtils = PlaylistUtils(client, headers)
+                        Log.d(tag, "Extracting HLS from: $url")
+                        val hlsVideos = playlistUtils.extractFromHls(
+                            url,
+                            response.request.url.toString(),
+                            videoNameGen = { quality -> "HLS - $quality" },
+                        )
+                        videos.addAll(hlsVideos)
+                        Log.d(tag, "Found ${hlsVideos.size} HLS streams")
+                    } catch (e: Exception) {
+                        Log.e(tag, "HLS extraction failed: ${e.message}")
                     }
                 }
             }
-
-            // METHOD 3: Direct MP4 fallback
+            
+            // METHOD 4: Direct MP4 links as fallback
             if (videos.isEmpty()) {
-                val html = document.html()
                 val mp4Patterns = listOf(
-                    Regex("""src\s*:\s*["'](https?://[^"']+\.mp4[^"']*)["']"""),
+                    Regex("""src\s*:\s*['"](https?://[^'"]+\.mp4[^'"]*)['"]"""),
                     Regex("""(https?://[^"'\s]+\.mp4)"""),
+                    Regex("""['"]?videoUrl['"]?\s*:\s*['"]([^'"]+\.mp4)['"]"""),
                 )
-
-                mp4Patterns.forEach { pattern ->
+                
+                for (pattern in mp4Patterns) {
                     pattern.findAll(html).forEach { match ->
                         val url = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() } ?: match.value.takeIf { it.isNotBlank() }
-                        if (url != null && url.startsWith("http") && !videos.any { it.videoUrl == url }) {
+                        if (url != null && url.startsWith("http") && url.contains(".mp4") && !videos.any { it.videoUrl == url }) {
                             val quality = url.extractQualityFromUrl()
-                            videos.add(Video(url, "Direct - $quality", url))
+                            videos.add(Video(url, "MP4 - $quality", url))
                             Log.d(tag, "Found MP4: $quality")
                         }
                     }
+                    if (videos.isNotEmpty()) break
                 }
             }
-
+            
+            // METHOD 5: Look for video URLs in specific script blocks
+            if (videos.isEmpty()) {
+                val scriptPattern = Regex("""<script[^>]*>(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
+                scriptPattern.findAll(html).forEach { scriptMatch ->
+                    val scriptContent = scriptMatch.groupValues[1]
+                    
+                    // Look for URLs with quality indicators
+                    val urlPattern = Regex("""['"](https?://[^'"]+(?:1080|720|480|360|240)[^'"]*\.mp4)['"]""")
+                    urlPattern.findAll(scriptContent).forEach { urlMatch ->
+                        val url = urlMatch.groupValues[1]
+                        if (url.isNotBlank() && !videos.any { it.videoUrl == url }) {
+                            val quality = url.extractQualityFromUrl()
+                            videos.add(Video(url, "Script - $quality", url))
+                            Log.d(tag, "Found script MP4: $quality")
+                        }
+                    }
+                }
+            }
+            
             Log.d(tag, "Total videos found: ${videos.size}")
-            videos.distinctBy { it.videoUrl }
+            
+            if (videos.isEmpty()) {
+                Log.w(tag, "No videos found in HTML. First 500 chars of HTML: ${html.take(500)}")
+            }
+            
+            // Sort by quality (highest first)
+            videos.sortedByDescending { video ->
+                val quality = video.quality
+                when {
+                    quality.contains("1080") -> 1080
+                    quality.contains("720") -> 720
+                    quality.contains("480") -> 480
+                    quality.contains("360") -> 360
+                    quality.contains("240") -> 240
+                    else -> 0
+                }
+            }
         } catch (e: Exception) {
-            Log.e(tag, "Video list parse error", e)
+            Log.e(tag, "Video list parse error: ${e.message}", e)
             emptyList()
         }
     }
@@ -483,8 +488,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // ALWAYS assign title - never leave lateinit var uninitialized
             this.title = this@ApiVideoDetailResponse.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
 
-            // URL is already full URL from API
-            this.url = this@ApiVideoDetailResponse.url
+            // IMPORTANT: Use embed URL for video extraction
+            this.url = "https://www.eporner.com/embed/${this@ApiVideoDetailResponse.id}/"
 
             // Safe thumbnail (can be null)
             this.thumbnail_url = this@ApiVideoDetailResponse.defaultThumb.src.takeIf { it.isNotBlank() }
@@ -499,7 +504,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             this.status = SAnime.COMPLETED
 
-            Log.d(tag, "API parsed: title='$title', views=${this@ApiVideoDetailResponse.views}")
+            Log.d(tag, "API parsed: title='$title', embedURL='$url'")
         }
     }
 
@@ -515,17 +520,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // ALWAYS assign title - never leave lateinit var uninitialized
             this.title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
 
-            // Ensure URL is compatible with details request
-            // API returns relative URL like "/video/abc123/title/"
-            // Convert to full URL that can be used for both API and HTML requests
-            val relativeUrl = this@ApiVideo.url
-            this.url = if (relativeUrl.startsWith("http")) {
-                relativeUrl
-            } else if (relativeUrl.startsWith("/")) {
-                "$baseUrl$relativeUrl"
-            } else {
-                "$baseUrl/$relativeUrl"
-            }
+            // IMPORTANT: Use embed URL for video extraction
+            this.url = "https://www.eporner.com/embed/${this@ApiVideo.id}/"
 
             // Safe thumbnail (can be null)
             this.thumbnail_url = this@ApiVideo.defaultThumb.src.takeIf { it.isNotBlank() }
@@ -535,7 +531,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             this.status = SAnime.COMPLETED
 
-            Log.d(tag, "Search result: title='$title', url='$url'")
+            Log.d(tag, "Search result: title='$title', embedURL='$url'")
         }
     }
 
