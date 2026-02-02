@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import android.util.Log
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
