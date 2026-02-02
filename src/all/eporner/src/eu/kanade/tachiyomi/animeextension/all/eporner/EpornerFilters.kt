@@ -1,42 +1,49 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import eu.kanade.tachiyomi.animesource.model.AnimeFilter.Select
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 
 internal object EpornerFilters {
 
-    data class Parsed(
-        val category: String,
-        val duration: String,
-        val quality: String,
-    )
-
     fun filterList() = AnimeFilterList(
-        Category(),
-        Duration(),
-        Quality(),
+        CategoryFilter(),
+        DurationFilter(),
+        QualityFilter(),
     )
 
     fun parse(filters: AnimeFilterList): Parsed {
         var category = "all"
         var duration = "0"
         var quality = "0"
+
         filters.forEach { filter ->
             when (filter) {
-                is Category -> category = filter.toUriPart()
-                is Duration -> duration = filter.toUriPart()
-                is Quality -> quality = filter.toUriPart()
+                is CategoryFilter -> if (filter.state != 0) category = filter.toUriPart()
+                is DurationFilter -> if (filter.state != 0) duration = filter.toUriPart()
+                is QualityFilter -> if (filter.state != 0) quality = filter.toUriPart()
             }
         }
+
         return Parsed(category, duration, quality)
     }
 
-    abstract class UriPartFilter(name: String, private val values: Array<Pair<String, String>>) :
-        Select<String>(name, values.map { it.first }.toTypedArray()) {
-        fun toUriPart() = values[state].second
+    internal data class Parsed(
+        val category: String,
+        val duration: String,
+        val quality: String,
+    )
+
+    private open class UriPartFilter(
+        displayName: String,
+        private val vals: Array<Pair<String, String>>,
+    ) : AnimeFilter.Select<String>(
+        displayName,
+        vals.map { it.first }.toTypedArray(),
+    ) {
+        fun toUriPart() = vals[state].second
     }
 
-    class Category : UriPartFilter(
+    private class CategoryFilter : UriPartFilter(
         "Category",
         arrayOf(
             "All" to "all",
@@ -61,7 +68,7 @@ internal object EpornerFilters {
         ),
     )
 
-    class Duration : UriPartFilter(
+    private class DurationFilter : UriPartFilter(
         "Duration",
         arrayOf(
             "Any" to "0",
@@ -71,7 +78,7 @@ internal object EpornerFilters {
         ),
     )
 
-    class Quality : UriPartFilter(
+    private class QualityFilter : UriPartFilter(
         "Quality",
         arrayOf(
             "Any" to "0",
