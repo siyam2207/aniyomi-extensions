@@ -2,23 +2,42 @@ package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter.Select
 
-object EpornerFilters {
+internal object EpornerFilters {
 
-    val filterList = AnimeFilterList(
-        CategoryFilter(),
-        DurationFilter(),
-        QualityFilter(),
+    data class Parsed(
+        val category: String,
+        val duration: String,
+        val quality: String,
     )
 
-    public open class UriPartFilter(
-        displayName: String,
-        private val vals: Array<Pair<String, String>>,
-    ) : AnimeFilter.Select<String>(displayName, vals.map { it.first }.toTypedArray()) {
-        fun toUriPart() = vals[state].second
+    fun filterList() = AnimeFilterList(
+        Category(),
+        Duration(),
+        Quality(),
+    )
+
+    fun parse(filters: AnimeFilterList): Parsed {
+        var category = "all"
+        var duration = "0"
+        var quality = "0"
+        filters.forEach { filter ->
+            when (filter) {
+                is Category -> category = filter.toUriPart()
+                is Duration -> duration = filter.toUriPart()
+                is Quality -> quality = filter.toUriPart()
+            }
+        }
+        return Parsed(category, duration, quality)
     }
 
-    public class CategoryFilter : UriPartFilter(
+    abstract class UriPartFilter(name: String, private val values: Array<Pair<String, String>>) :
+        Select<String>(name, values.map { it.first }.toTypedArray()) {
+        fun toUriPart() = values[state].second
+    }
+
+    class Category : UriPartFilter(
         "Category",
         arrayOf(
             "All" to "all",
@@ -43,7 +62,7 @@ object EpornerFilters {
         ),
     )
 
-    public class DurationFilter : UriPartFilter(
+    class Duration : UriPartFilter(
         "Duration",
         arrayOf(
             "Any" to "0",
@@ -53,7 +72,7 @@ object EpornerFilters {
         ),
     )
 
-    public class QualityFilter : UriPartFilter(
+    class Quality : UriPartFilter(
         "Quality",
         arrayOf(
             "Any" to "0",
