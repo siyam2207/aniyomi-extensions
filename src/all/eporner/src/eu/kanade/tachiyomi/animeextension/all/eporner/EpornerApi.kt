@@ -36,7 +36,11 @@ internal object EpornerApi {
         headers: Headers,
     ): Request {
         val parsed = if (filters is eu.kanade.tachiyomi.animesource.model.AnimeFilterList)
-            EpornerFilters.parse(filters) else EpornerFilters.Parsed("all", "0", "0")
+        {
+            EpornerFilters.parse(filters)
+        }else{
+            EpornerFilters.Parsed("all", "0", "0")
+        }
         val q = if (query.isBlank()) "all" else URLEncoder.encode(query, "UTF-8")
         val url =
             "$apiUrl/video/search/?query=$q&page=$page&categories=${parsed.category}" +
