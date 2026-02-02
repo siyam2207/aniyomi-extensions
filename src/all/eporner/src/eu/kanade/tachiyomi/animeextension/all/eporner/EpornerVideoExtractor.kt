@@ -104,6 +104,7 @@ internal class EpornerVideoExtractor(
                 it.quality.contains(qualityPref) -> 1000
                 else -> 0
             }
-        })
+        },
+                         )
     }
 }
