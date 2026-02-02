@@ -70,33 +70,24 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             url = response.request.url.toString()
             val doc = response.asJsoup()
 
-            // Safe title assignment with fallback
-            val metaTitle = doc.selectFirst("meta[property=og:title]")?.attr("content")
-            title = if (metaTitle.isNullOrBlank()) {
-                doc.selectFirst("h1")?.text()?.takeIf { it.isNotBlank() } ?: "Unknown Title"
-            } else {
-                metaTitle
-            }
+            // ALWAYS assign title - never leave lateinit var uninitialized
+            title = doc.selectFirst("meta[property=og:title]")?.attr("content")
+                ?.takeIf { it.isNotBlank() }
+                ?: doc.selectFirst("h1")?.text()
+                ?.takeIf { it.isNotBlank() }
+                ?: "Unknown Title"
 
-            // Safe thumbnail assignment
+            // Safe thumbnail (nullable is OK for thumbnail_url)
             thumbnail_url = doc.selectFirst("meta[property=og:image]")?.attr("content")
                 ?.takeIf { it.isNotBlank() }
 
-            // Safe description assignment
-            val metaDesc = doc.selectFirst("meta[name=description]")?.attr("content")
-            description = if (metaDesc.isNullOrBlank()) {
-                "No description available"
-            } else {
-                metaDesc
-            }
+            // ALWAYS assign description
+            description = doc.selectFirst("meta[name=description]")?.attr("content")
+                ?.takeIf { it.isNotBlank() } ?: "No description available"
 
-            // Safe genre assignment
-            val tags = doc.select("a.tag").mapNotNull { it.text().takeIf { text -> text.isNotBlank() } }
-            genre = if (tags.isNotEmpty()) {
-                tags.joinToString(", ")
-            } else {
-                null
-            }
+            // Genre can be null (lateinit var can handle null)
+            val tags = doc.select("a.tag").mapNotNull { it.text().takeIf { t -> t.isNotBlank() } }
+            genre = if (tags.isNotEmpty()) tags.joinToString(", ") else null
 
             status = SAnime.COMPLETED
         }
@@ -196,19 +187,19 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
     ) {
         fun toSAnime(baseUrl: String): SAnime = SAnime.create().apply {
+            // ALWAYS assign title - never leave lateinit var uninitialized
+            this.title = title.takeIf { it.isNotBlank() } ?: "Unknown Title"
+            
             // Safe URL assignment
             this.url = embed.takeIf { it.isNotBlank() } ?: baseUrl
 
-            // Safe title assignment with fallback
-            this.title = if (title.isNotBlank()) title else "Unknown Title"
-
-            // Safe thumbnail assignment
+            // Safe thumbnail (nullable is OK)
             this.thumbnail_url = defaultThumb.src.takeIf { it.isNotBlank() }
 
-            // Safe description assignment
+            // ALWAYS assign description
             this.description = if (views > 0) "Views: $views" else "No view count available"
 
-            // Safe genre assignment
+            // Genre can be null (lateinit var can handle null)
             this.genre = keywords.takeIf { it.isNotBlank() }
 
             this.status = SAnime.COMPLETED
