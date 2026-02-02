@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import android.util.Log
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -85,7 +84,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             name = "Full Video"
             url = response.request.url.toString()
             episode_number = 1F
-        }
+        },
     )
 
     // ==================== Video Extraction ====================
