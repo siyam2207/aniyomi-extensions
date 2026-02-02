@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
+import android.util.Log
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.network.GET
@@ -10,6 +11,7 @@ import okhttp3.Response
 import java.net.URLEncoder
 
 internal object EpornerApi {
+    private val tag = "EpornerApi"
 
     fun popularRequest(apiUrl: String, page: Int, headers: Headers): Request =
         GET(
@@ -49,22 +51,44 @@ internal object EpornerApi {
     }
 
     fun parseSearch(json: Json, response: Response): AnimesPage {
-        val data = json.decodeFromString(ApiSearchResponse.serializer(), response.body.string())
-        return AnimesPage(
-            data.videos.map { it.toSAnime() },
-            data.page < data.total_pages,
-        )
+        return try {
+            val data = json.decodeFromString(ApiSearchResponse.serializer(), response.body.string())
+            AnimesPage(
+                data.videos.map { it.toSAnime() },
+                data.page < data.total_pages,
+            )
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to parse search JSON", e)
+            AnimesPage(emptyList(), false)
+        }
     }
 
     fun detailsRequest(apiUrl: String, anime: SAnime, headers: Headers): Request {
-        val id = anime.url.substringAfterLast("/").substringBefore("-")
+        val safeUrl = try {
+            anime.url
+        } catch (e: kotlin.UninitializedPropertyAccessException) {
+            Log.e(tag, "detailsRequest: URL was uninitialized!", e)
+            "https://www.eporner.com/"
+        }
+        val id = safeUrl.substringAfterLast("/").substringBefore("-")
         return GET(
             "$apiUrl/video/id/?id=$id&format=json",
             headers,
         )
     }
 
-    fun parseDetails(json: Json, response: Response): SAnime =
-        json.decodeFromString(ApiVideoDetailResponse.serializer(), response.body.string())
-            .toSAnime()
+    fun parseDetails(json: Json, response: Response): SAnime {
+        return try {
+            val detail = json.decodeFromString(ApiVideoDetailResponse.serializer(), response.body.string())
+            detail.toSAnime()
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to parse video details from API", e)
+            // Create a basic valid SAnime as fallback
+            SAnime.create().apply {
+                url = response.request.url.toString()
+                title = "Error Loading Details"
+                status = SAnime.COMPLETED
+            }
+        }
+    }
 }
