@@ -11,7 +11,6 @@ import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import extensions.utils.getPreferencesLazy
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import uy.kohesive.injekt.injectLazy
@@ -28,11 +27,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     internal val preferences by getPreferencesLazy()
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         .add("Accept", "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         .add("Accept-Language", "en-US,en;q=0.5")
-        .add("Referer", baseUrl)
         .add("Origin", baseUrl)
+        .add("Referer", baseUrl)
+        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
     // ===== Popular / Latest / Search =====
     override fun popularAnimeRequest(page: Int): Request =
@@ -58,7 +57,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         EpornerApi.parseDetails(json, response)
 
     // ===== Episodes =====
-    override fun episodeListRequest(anime: SAnime): Request = GET(anime.url, headers)
+    override fun episodeListRequest(anime: SAnime): Request = GET(
+        anime.url,
+        headers,
+    )
 
     override fun episodeListParse(response: Response): List<SEpisode> =
         listOf(SEpisode.create().apply {
@@ -68,11 +70,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         })
 
     // ===== Videos =====
-    override fun videoListRequest(episode: SEpisode): Request = GET(episode.url, headers)
+    override fun videoListRequest(episode: SEpisode): Request = GET(
+        episode.url,
+        headers,
+    )
 
     override fun videoListParse(response: Response): List<Video> =
-        EpornerVideoExtractor(client, headers, preferences)
-            .extract(response)
+        EpornerVideoExtractor(client, headers, preferences).extract(response)
 
     // ===== Preferences =====
     override fun setupPreferenceScreen(screen: PreferenceScreen) =
