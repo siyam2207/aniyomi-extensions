@@ -24,8 +24,9 @@ internal class EpornerVideoExtractor(
 
             // JS pattern
             document.select("script").forEach { script ->
-                val pattern =
-                    Regex("""quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']""")
+                val pattern = Regex(
+                    """quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']"""
+                )
                 pattern.findAll(script.html()).forEach { match ->
                     val quality = match.groupValues[1]
                     val videoUrl = match.groupValues[2]
@@ -48,9 +49,7 @@ internal class EpornerVideoExtractor(
                                     playlistUtils.extractFromHls(
                                         url,
                                         response.request.url.toString(),
-                                        videoNameGen = { q ->
-                                            "HLS - $q"
-                                        },
+                                        videoNameGen = { q -> "HLS - $q" },
                                     ),
                                 )
                             } catch (e: Exception) {
