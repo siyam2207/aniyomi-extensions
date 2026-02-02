@@ -20,7 +20,12 @@ internal data class ApiVideo(
     @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
 ) {
     fun toSAnime(): SAnime = SAnime.create().apply {
-        this.url = url
+        // Ensure we have a valid URL, fallback to constructing one from ID if needed
+        this.url = if (url.isNotBlank()) {
+            url
+        } else {
+            "https://www.eporner.com/video/$id/"
+        }
         this.title = title
         this.thumbnail_url = defaultThumb.src
         this.genre = keywords
@@ -39,7 +44,11 @@ internal data class ApiVideoDetailResponse(
     @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
 ) {
     fun toSAnime(): SAnime = SAnime.create().apply {
-        this.url = url
+        this.url = if (url.isNotBlank()) {
+            url
+        } else {
+            "https://www.eporner.com/video/$id/"
+        }
         this.title = title
         this.thumbnail_url = defaultThumb.src
         this.genre = keywords
