@@ -13,20 +13,20 @@ internal data class ApiSearchResponse(
 
 @Serializable
 internal data class ApiVideo(
-    val id: String,
-    val title: String,
-    val keywords: String,
-    val url: String,
-    @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
+    val id: String = "",
+    val title: String = "",
+    val keywords: String = "",
+    val url: String = "",
+    @SerialName("default_thumb") val defaultThumb: ApiThumbnail = ApiThumbnail(),
 ) {
     fun toSAnime(): SAnime = SAnime.create().apply {
-        // Ensure we have a valid URL, fallback to constructing one from ID if needed
-        this.url = if (url.isNotBlank()) {
-            url
-        } else {
-            "https://www.eporner.com/video/$id/"
+        // ABSOLUTELY GUARANTEE the URL is set
+        this.url = when {
+            url.isNotBlank() -> url
+            id.isNotBlank() -> "https://www.eporner.com/video-$id/"
+            else -> "https://www.eporner.com/"
         }
-        this.title = title
+        this.title = if (title.isNotBlank()) title else "Untitled Video"
         this.thumbnail_url = defaultThumb.src
         this.genre = keywords
         status = SAnime.COMPLETED
@@ -35,21 +35,22 @@ internal data class ApiVideo(
 
 @Serializable
 internal data class ApiVideoDetailResponse(
-    val id: String,
-    val title: String,
-    val keywords: String,
-    val views: Long,
-    val url: String,
-    @SerialName("length_sec") val lengthSec: Int,
-    @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
+    val id: String = "",
+    val title: String = "",
+    val keywords: String = "",
+    val views: Long = 0,
+    val url: String = "",
+    @SerialName("length_sec") val lengthSec: Int = 0,
+    @SerialName("default_thumb") val defaultThumb: ApiThumbnail = ApiThumbnail(),
 ) {
     fun toSAnime(): SAnime = SAnime.create().apply {
-        this.url = if (url.isNotBlank()) {
-            url
-        } else {
-            "https://www.eporner.com/video/$id/"
+        // ABSOLUTELY GUARANTEE the URL is set
+        this.url = when {
+            url.isNotBlank() -> url
+            id.isNotBlank() -> "https://www.eporner.com/video-$id/"
+            else -> "https://www.eporner.com/"
         }
-        this.title = title
+        this.title = if (title.isNotBlank()) title else "Unknown Title"
         this.thumbnail_url = defaultThumb.src
         this.genre = keywords
         description = "Views: $views | Length: ${lengthSec / 60}min"
@@ -59,7 +60,7 @@ internal data class ApiVideoDetailResponse(
 
 @Serializable
 internal data class ApiThumbnail(
-    val src: String,
-    val width: Int,
-    val height: Int,
+    val src: String = "",
+    val width: Int = 0,
+    val height: Int = 0,
 )
