@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
+import android.util.Log
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -26,6 +27,17 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     internal val apiUrl = "$baseUrl/api/v2"
     internal val json: Json by injectLazy()
     internal val preferences by getPreferencesLazy()
+    private val tag = "EpornerExtension"
+
+    // ==================== Safe URL Accessor ====================
+    private fun SAnime.getSafeUrl(): String {
+        return try {
+            this.url // Will throw if 'lateinit var url' is not initialized
+        } catch (e: kotlin.UninitializedPropertyAccessException) {
+            Log.e(tag, "CRITICAL: Intercepted UninitializedPropertyAccessException for SAnime.url", e)
+            "$baseUrl/" // Ultimate fallback to prevent crash
+        }
+    }
 
     override fun headersBuilder(): Headers.Builder =
         Headers.Builder()
@@ -89,14 +101,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ===== Details =====
     override fun animeDetailsRequest(anime: SAnime): Request {
-        // Try to extract ID from URL, fallback to using the full URL
-        val id = try {
-            anime.url.substringAfterLast("/").substringBefore("-")
+        val safeUrl = anime.getSafeUrl()
+        val videoId = try {
+            safeUrl.substringAfterLast("/").substringBefore("-")
         } catch (e: Exception) {
-            // If we can't extract ID, use a placeholder
+            Log.w(tag, "Could not extract ID from URL: $safeUrl", e)
             "0"
         }
-        return GET("$apiUrl/video/id/?id=$id&format=json", headers)
+        return GET("$apiUrl/video/id/?id=$videoId&format=json", headers)
     }
 
     override fun animeDetailsParse(response: Response): SAnime =
@@ -108,7 +120,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ===== Episodes =====
     override fun episodeListRequest(anime: SAnime): Request =
         GET(
-            anime.url,
+            anime.getSafeUrl(),
             headers,
         )
 
