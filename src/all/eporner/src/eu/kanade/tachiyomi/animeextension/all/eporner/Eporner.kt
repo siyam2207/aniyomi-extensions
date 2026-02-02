@@ -57,7 +57,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val body = response.body.string()
             Log.d(tag, "Popular API response length: ${body.length}")
             val apiResponse = json.decodeFromString<ApiSearchResponse>(body)
-            val animeList = apiResponse.videos.map { it.toSAnime(baseUrl, tag) }
+            val animeList = apiResponse.videos.map { it.toSAnime(tag) }
             val hasNextPage = apiResponse.page < apiResponse.total_pages
             Log.d(tag, "Parsed ${animeList.size} anime, hasNext: $hasNextPage")
             AnimesPage(animeList, hasNextPage)
@@ -126,14 +126,21 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Anime Details ====================
     override fun animeDetailsRequest(anime: SAnime): Request {
         Log.d(tag, "Details request for URL: ${anime.url}")
-
+        
         // Use the embed URL directly for video extraction
         val url = if (anime.url.startsWith("http")) anime.url else "$baseUrl${anime.url}"
         Log.d(tag, "Using embed URL: $url")
-        return GET(url, headers)
+        
+        // Set the anime as a tag to preserve it
+        val request = GET(url, headers)
+        request.tag(SAnime::class.java, anime)
+        return request
     }
 
     override fun animeDetailsParse(response: Response): SAnime {
+        // Get the existing anime from the request tag
+        val anime = response.request.tag(SAnime::class.java) ?: SAnime.create()
+        
         return try {
             val body = response.body.string()
             Log.d(tag, "Details response length: ${body.length}")
@@ -143,54 +150,107 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 try {
                     val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(body)
                     Log.d(tag, "Successfully parsed API response for ID: ${videoDetail.id}")
-                    return videoDetail.toSAnime(tag)
+                    return updateAnimeFromApi(anime, videoDetail, tag)
                 } catch (e: Exception) {
                     Log.w(tag, "Failed to parse API response, using embed page: ${e.message}")
                 }
             }
 
             // Use embed page parsing for details
-            embedPageAnimeDetailsParse(response)
+            updateAnimeFromEmbedPage(response, anime)
         } catch (e: Exception) {
             Log.e(tag, "Details parse error", e)
-            embedPageAnimeDetailsParse(response)
+            ensureAnimeBasics(anime)
         }
     }
 
-    private fun embedPageAnimeDetailsParse(response: Response): SAnime {
+    private fun updateAnimeFromApi(anime: SAnime, videoDetail: ApiVideoDetailResponse, tag: String): SAnime {
+        return anime.apply {
+            // Only update title if it's empty or "Unknown Title"
+            if (title.isBlank() || title == "Unknown Title") {
+                this.title = videoDetail.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
+            }
+            
+            // IMPORTANT: Use embed URL for video extraction
+            this.url = "https://www.eporner.com/embed/${videoDetail.id}/"
+
+            // Update thumbnail if missing
+            if (thumbnail_url.isNullOrBlank()) {
+                this.thumbnail_url = videoDetail.defaultThumb.src.takeIf { it.isNotBlank() }
+            }
+
+            // Update genre if missing
+            if (genre.isNullOrBlank()) {
+                this.genre = videoDetail.keywords.takeIf { it.isNotBlank() }
+            }
+
+            // ALWAYS assign description
+            val lengthMin = videoDetail.lengthSec / 60
+            val lengthSec = videoDetail.lengthSec % 60
+            this.description = "Views: ${videoDetail.views} | Length: ${lengthMin}m ${lengthSec}s"
+
+            this.status = SAnime.COMPLETED
+
+            Log.d(tag, "API updated: title='$title', embedURL='$url'")
+        }
+    }
+
+    private fun updateAnimeFromEmbedPage(response: Response, anime: SAnime): SAnime {
         return try {
             val document = response.asJsoup()
-            SAnime.create().apply {
-                url = response.request.url.toString()
+            anime.apply {
+                // Only update title if it's empty or "Unknown Title"
+                if (title.isBlank() || title == "Unknown Title") {
+                    title = document.selectFirst("h1")?.text()?.takeIf { it.isNotBlank() }
+                        ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.takeIf { it.isNotBlank() }
+                        ?: "Unknown Title"
+                }
 
-                // ALWAYS assign title - never leave lateinit var uninitialized
-                title = document.selectFirst("h1")?.text()?.takeIf { it.isNotBlank() }
-                    ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.takeIf { it.isNotBlank() }
-                    ?: "Unknown Title"
+                // Update thumbnail if missing
+                if (thumbnail_url.isNullOrBlank()) {
+                    thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")?.takeIf { it.isNotBlank() }
+                        ?: document.selectFirst("img.thumb")?.attr("src")?.takeIf { it.isNotBlank() }
+                        ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
+                }
 
-                // Safe thumbnail assignment (can be null)
-                thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")?.takeIf { it.isNotBlank() }
-                    ?: document.selectFirst("img.thumb")?.attr("src")?.takeIf { it.isNotBlank() }
-                    ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
+                // Update description if missing
+                if (description.isNullOrBlank()) {
+                    description = "Eporner Video"
+                }
 
-                description = "Eporner Video"
-
-                // Try to extract tags from page
-                val tags = document.select("a.tag").mapNotNull { it.text().takeIf { text -> text.isNotBlank() } }
-                genre = if (tags.isNotEmpty()) tags.joinToString(", ") else null
+                // Update genre if missing
+                if (genre.isNullOrBlank()) {
+                    val tags = document.select("a.tag").mapNotNull { it.text().takeIf { text -> text.isNotBlank() } }
+                    if (tags.isNotEmpty()) {
+                        genre = tags.joinToString(", ")
+                    }
+                }
 
                 status = SAnime.COMPLETED
 
-                Log.d(tag, "Embed page parsed: title='$title', thumbnail=${thumbnail_url != null}, genre=${genre != null}")
+                Log.d(tag, "Embed page updated: title='$title', thumbnail=${thumbnail_url != null}, genre=${genre != null}")
             }
         } catch (e: Exception) {
             Log.e(tag, "Embed page details parse error", e)
-            SAnime.create().apply {
-                title = "Unknown Title"
-                status = SAnime.COMPLETED
-                description = "Failed to load details"
-            }
+            ensureAnimeBasics(anime)
         }
+    }
+
+    private fun ensureAnimeBasics(anime: SAnime): SAnime {
+        return anime.apply {
+            if (title.isBlank()) title = "Unknown Title"
+            if (description.isNullOrBlank()) description = "Eporner Video"
+            status = SAnime.COMPLETED
+        }
+    }
+
+    // ==================== Video Headers for 403 Fix ====================
+    private fun videoHeaders(): Headers {
+        return Headers.Builder()
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .add("Referer", baseUrl)
+            .add("Origin", baseUrl)
+            .build()
     }
 
     // ==================== Required Methods ====================
@@ -226,13 +286,12 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Log.d(tag, "Parsing embed page for video sources (HTML length: ${html.length})")
 
             // METHOD 1: Extract from Eporner videoSources array (most reliable)
-            // Pattern to match: {file:"https://cdn.eporner.com/video.mp4?token=abc", label:"720p"}
             val videoSourcesPattern = Regex("""['"]?file['"]?\s*:\s*['"]([^'"]+)['"][^}]*?['"]?label['"]?\s*:\s*['"]([^'"]+)['"]""")
             videoSourcesPattern.findAll(html).forEach { match ->
                 val url = match.groupValues[1]
                 val label = match.groupValues[2]
                 if (url.isNotBlank() && url.contains("http")) {
-                    videos.add(Video(url, "Eporner - $label", url))
+                    videos.add(Video(url, "Eporner - $label", url, videoHeaders()))
                     Log.d(tag, "Found video source: $label - URL: ${url.take(50)}...")
                 }
             }
@@ -249,7 +308,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val url = urlMatch.groupValues[1]
                         val label = labelMatch.groupValues[1]
                         if (url.isNotBlank() && url.contains("http")) {
-                            videos.add(Video(url, "Eporner - $label", url))
+                            videos.add(Video(url, "Eporner - $label", url, videoHeaders()))
                             Log.d(tag, "Found alt video source: $label")
                         }
                     }
@@ -268,6 +327,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                             url,
                             response.request.url.toString(),
                             videoNameGen = { quality -> "HLS - $quality" },
+                            headers = videoHeaders()  // FIX: Pass headers to HLS extraction
                         )
                         videos.addAll(hlsVideos)
                         Log.d(tag, "Found ${hlsVideos.size} HLS streams")
@@ -290,7 +350,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val url = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() } ?: match.value.takeIf { it.isNotBlank() }
                         if (url != null && url.startsWith("http") && url.contains(".mp4") && !videos.any { it.videoUrl == url }) {
                             val quality = url.extractQualityFromUrl()
-                            videos.add(Video(url, "MP4 - $quality", url))
+                            videos.add(Video(url, "MP4 - $quality", url, videoHeaders()))  // FIX: Add headers
                             Log.d(tag, "Found MP4: $quality")
                         }
                     }
@@ -310,7 +370,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val url = urlMatch.groupValues[1]
                         if (url.isNotBlank() && !videos.any { it.videoUrl == url }) {
                             val quality = url.extractQualityFromUrl()
-                            videos.add(Video(url, "Script - $quality", url))
+                            videos.add(Video(url, "Script - $quality", url, videoHeaders()))  // FIX: Add headers
                             Log.d(tag, "Found script MP4: $quality")
                         }
                     }
@@ -483,30 +543,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("length_sec") val lengthSec: Int,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
         @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
-    ) {
-        fun toSAnime(tag: String): SAnime = SAnime.create().apply {
-            // ALWAYS assign title - never leave lateinit var uninitialized
-            this.title = this@ApiVideoDetailResponse.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
-
-            // IMPORTANT: Use embed URL for video extraction
-            this.url = "https://www.eporner.com/embed/${this@ApiVideoDetailResponse.id}/"
-
-            // Safe thumbnail (can be null)
-            this.thumbnail_url = this@ApiVideoDetailResponse.defaultThumb.src.takeIf { it.isNotBlank() }
-
-            // Genre can be null
-            this.genre = this@ApiVideoDetailResponse.keywords.takeIf { it.isNotBlank() }
-
-            // ALWAYS assign description
-            val lengthMin = this@ApiVideoDetailResponse.lengthSec / 60
-            val lengthSec = this@ApiVideoDetailResponse.lengthSec % 60
-            this.description = "Views: ${this@ApiVideoDetailResponse.views} | Length: ${lengthMin}m ${lengthSec}s"
-
-            this.status = SAnime.COMPLETED
-
-            Log.d(tag, "API parsed: title='$title', embedURL='$url'")
-        }
-    }
+    )
 
     @Serializable
     private data class ApiVideo(
@@ -514,14 +551,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("title") val title: String,
         @SerialName("keywords") val keywords: String,
         @SerialName("url") val url: String,
+        @SerialName("embed") val embed: String,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
     ) {
-        fun toSAnime(baseUrl: String, tag: String): SAnime = SAnime.create().apply {
+        fun toSAnime(tag: String): SAnime = SAnime.create().apply {
             // ALWAYS assign title - never leave lateinit var uninitialized
             this.title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
 
             // IMPORTANT: Use embed URL for video extraction
-            this.url = "https://www.eporner.com/embed/${this@ApiVideo.id}/"
+            this.url = this@ApiVideo.embed
 
             // Safe thumbnail (can be null)
             this.thumbnail_url = this@ApiVideo.defaultThumb.src.takeIf { it.isNotBlank() }
