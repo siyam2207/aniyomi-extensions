@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.animeextension.all.eporner
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -48,7 +49,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             headers,
         )
 
-    override fun popularAnimeParse(response: okhttp3.Response) =
+    override fun popularAnimeParse(response: Response): AnimesPage =
         EpornerApi.parseSearch(
             json,
             response,
@@ -61,7 +62,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             headers,
         )
 
-    override fun latestUpdatesParse(response: okhttp3.Response) =
+    override fun latestUpdatesParse(response: Response): AnimesPage =
         EpornerApi.parseSearch(
             json,
             response,
@@ -80,21 +81,25 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             headers,
         )
 
-    override fun searchAnimeParse(response: okhttp3.Response) =
+    override fun searchAnimeParse(response: Response): AnimesPage =
         EpornerApi.parseSearch(
             json,
             response,
         )
 
     // ===== Details =====
-    override fun animeDetailsRequest(anime: SAnime): Request =
-        EpornerApi.detailsRequest(
-            apiUrl,
-            anime,
-            headers,
-        )
+    override fun animeDetailsRequest(anime: SAnime): Request {
+        // Try to extract ID from URL, fallback to using the full URL
+        val id = try {
+            anime.url.substringAfterLast("/").substringBefore("-")
+        } catch (e: Exception) {
+            // If we can't extract ID, use a placeholder
+            "0"
+        }
+        return GET("$apiUrl/video/id/?id=$id&format=json", headers)
+    }
 
-    override fun animeDetailsParse(response: okhttp3.Response): SAnime =
+    override fun animeDetailsParse(response: Response): SAnime =
         EpornerApi.parseDetails(
             json,
             response,
@@ -107,7 +112,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             headers,
         )
 
-    override fun episodeListParse(response: okhttp3.Response): List<SEpisode> =
+    override fun episodeListParse(response: Response): List<SEpisode> =
         listOf(
             SEpisode.create().apply {
                 name = "Video"
