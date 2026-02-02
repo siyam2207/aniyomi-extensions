@@ -17,12 +17,12 @@ import java.net.URLEncoder
 object EpornerApi {
 
     fun popularAnimeRequest(page: Int, headers: Headers, baseUrl: String): Request {
-        val url = "$baseUrl/api/v2/video/search/?query=all&page=$page&order=top-weekly&format=json"
+        val url = "$baseUrl/api/v2/video/search/?query=hd&page=$page&order=top-weekly&format=json"
         return GET(url, headers)
     }
 
     fun latestUpdatesRequest(page: Int, headers: Headers, baseUrl: String): Request {
-        val url = "$baseUrl/api/v2/video/search/?query=all&page=$page&order=latest&format=json"
+        val url = "$baseUrl/api/v2/video/search/?query=hd&page=$page&order=latest&format=json"
         return GET(url, headers)
     }
 
@@ -33,11 +33,35 @@ object EpornerApi {
         headers: Headers,
         baseUrl: String,
     ): Request {
-        val encodedQuery = if (query.isNotBlank()) URLEncoder.encode(query, "UTF-8") else "all"
-        val url = "$baseUrl/api/v2/video/search/?query=$encodedQuery&page=$page&format=json"
+        
+        var category = "hd"
+        var duration = "0"
+        var quality = "0"
+        
+        filters.forEach { filter ->
+            when (filter) {
+                is EpornerFilters.CategoryFilter -> category = filter.toUriPart()
+                is EpornerFilters.DurationFilter -> duration = filter.toUriPart()
+                is EpornerFilters.QualityFilter -> quality = filter.toUriPart()
+            }
+        }
+        
+        val finalQuery =
+            if (query.isNotBlank())
+    URLEncoder.encode(query, "UTF-8")
+            else category
+        
+        val url =
+            "$baseUrl/api/v2/video/search/?" +
+            "query=$finalQuery" +
+            "&page=$page" +
+            "&min_duration=$duration" +
+            "&quality=$quality" +
+            "&format=json"
+        
         return GET(url, headers)
     }
-
+    
     fun popularAnimeParse(response: Response, json: Json, tag: String): AnimesPage {
         return try {
             val apiResponse = json.decodeFromString(ApiSearchResponse.serializer(), response.body!!.string())
