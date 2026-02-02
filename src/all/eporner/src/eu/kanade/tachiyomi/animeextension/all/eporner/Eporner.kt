@@ -53,7 +53,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
-        val data = json.decodeFromString(ApiSearchResponse.serializer(), response.body!!.string())
+        val body = response.body.string()
+        val data = json.decodeFromString(ApiSearchResponse.serializer(), body)
         val list = data.videos.map { it.toSAnime() }
         return AnimesPage(list, data.page < data.total_pages)
     }
@@ -68,10 +69,35 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return SAnime.create().apply {
             url = response.request.url.toString()
             val doc = response.asJsoup()
-            title = doc.selectFirst("meta[property=og:title]")?.attr("content") ?: "Unknown Title"
+            
+            // Safe title assignment with fallback
+            val metaTitle = doc.selectFirst("meta[property=og:title]")?.attr("content")
+            title = if (metaTitle.isNullOrBlank()) {
+                doc.selectFirst("h1")?.text()?.takeIf { it.isNotBlank() } ?: "Unknown Title"
+            } else {
+                metaTitle
+            }
+            
+            // Safe thumbnail assignment
             thumbnail_url = doc.selectFirst("meta[property=og:image]")?.attr("content")
-            description = doc.selectFirst("meta[name=description]")?.attr("content") ?: ""
-            genre = doc.select("a.tag").joinToString(", ") { it.text() }
+                ?.takeIf { it.isNotBlank() }
+            
+            // Safe description assignment
+            val metaDesc = doc.selectFirst("meta[name=description]")?.attr("content")
+            description = if (metaDesc.isNullOrBlank()) {
+                "No description available"
+            } else {
+                metaDesc
+            }
+            
+            // Safe genre assignment
+            val tags = doc.select("a.tag").mapNotNull { it.text().takeIf { text -> text.isNotBlank() } }
+            genre = if (tags.isNotEmpty()) {
+                tags.joinToString(", ")
+            } else {
+                null
+            }
+            
             status = SAnime.COMPLETED
         }
     }
@@ -115,11 +141,23 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // MP4 sources
             Regex("""videoUrl['"]?\s*:\s*['"]([^'"]+\.mp4)['"]""").findAll(js).forEach { match ->
                 val url = match.groupValues[1]
-                if (url.isNotBlank()) videos.add(Video(url, "MP4 - ${url.extractQuality()}", url))
+                if (url.isNotBlank()) {
+                    val quality = url.extractQuality()
+                    videos.add(Video(url, "MP4 - $quality", url))
+                }
+            }
+            
+            // Alternative MP4 pattern
+            Regex("""['"]?src['"]?\s*:\s*['"]([^'"]+\.mp4[^'"]*)['"]""").findAll(js).forEach { match ->
+                val url = match.groupValues[1]
+                if (url.isNotBlank()) {
+                    val quality = url.extractQuality()
+                    videos.add(Video(url, "MP4 - $quality", url))
+                }
             }
         }
 
-        return videos.sortedByDescending { it.quality.extractInt() }
+        return videos.distinctBy { it.quality }.sortedByDescending { it.quality.extractInt() }
     }
 
     override fun videoUrlParse(response: Response): String = videoListParse(response).firstOrNull()?.videoUrl ?: ""
@@ -130,6 +168,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         contains("720") -> "720p"
         contains("480") -> "480p"
         contains("360") -> "360p"
+        contains("240") -> "240p"
         else -> "Unknown"
     }
 
@@ -157,11 +196,21 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
     ) {
         fun toSAnime(): SAnime = SAnime.create().apply {
-            this.url = embed
-            this.title = title
-            this.thumbnail_url = defaultThumb.src
-            this.description = "Views: $views"
-            this.genre = keywords
+            // Safe URL assignment
+            this.url = embed.takeIf { it.isNotBlank() } ?: baseUrl
+            
+            // Safe title assignment with fallback
+            this.title = if (title.isNotBlank()) title else "Unknown Title"
+            
+            // Safe thumbnail assignment
+            this.thumbnail_url = defaultThumb.src.takeIf { it.isNotBlank() }
+            
+            // Safe description assignment
+            this.description = if (views > 0) "Views: $views" else "No view count available"
+            
+            // Safe genre assignment
+            this.genre = keywords.takeIf { it.isNotBlank() }
+            
             this.status = SAnime.COMPLETED
         }
     }
