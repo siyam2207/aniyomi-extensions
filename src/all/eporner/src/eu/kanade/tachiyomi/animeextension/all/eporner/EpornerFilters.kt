@@ -21,10 +21,15 @@ internal object EpornerFilters {
                 is CategoryFilter -> if (filter.state != 0) category = filter.toUriPart()
                 is DurationFilter -> if (filter.state != 0) duration = filter.toUriPart()
                 is QualityFilter -> if (filter.state != 0) quality = filter.toUriPart()
+                else -> {} // exhaustive
             }
         }
 
-        return Parsed(category, duration, quality)
+        return Parsed(
+            category,
+            duration,
+            quality,
+        )
     }
 
     internal data class Parsed(
