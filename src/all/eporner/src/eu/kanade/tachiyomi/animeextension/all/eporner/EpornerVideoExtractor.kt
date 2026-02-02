@@ -49,8 +49,8 @@ internal class EpornerVideoExtractor(
                                     playlistUtils.extractFromHls(
                                         url,
                                         response.request.url.toString(),
-                                        videoNameGen = { q -> "HLS - $q" },
-                                    ),
+                                        videoNameGen = { q -> "HLS - $q" }
+                                    )
                                 )
                             } catch (e: Exception) {
                                 Log.e(tag, "HLS extraction failed: ${e.message}")
@@ -105,7 +105,7 @@ internal class EpornerVideoExtractor(
                     it.quality.contains(qualityPref) -> 1000
                     else -> 0
                 }
-            },
+            }
         )
     }
 }
