@@ -24,7 +24,8 @@ internal class EpornerVideoExtractor(
 
             // JS pattern
             document.select("script").forEach { script ->
-                val pattern = Regex("""quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']""")
+                val pattern =
+                    Regex("""quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']""")
                 pattern.findAll(script.html()).forEach { match ->
                     val quality = match.groupValues[1]
                     val videoUrl = match.groupValues[2]
@@ -98,13 +99,14 @@ internal class EpornerVideoExtractor(
 
     private fun List<Video>.sortedByPreference(): List<Video> {
         val qualityPref = preferences.getString(EpornerPreferences.PREF_QUALITY_KEY, "720p")!!
-        return sortedWith(compareByDescending {
-            when {
-                qualityPref == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
-                it.quality.contains(qualityPref) -> 1000
-                else -> 0
-            }
-        },
-                         )
+        return sortedWith(
+            compareByDescending {
+                when {
+                    qualityPref == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
+                    it.quality.contains(qualityPref) -> 1000
+                    else -> 0
+                }
+            },
+        )
     }
 }
