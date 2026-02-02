@@ -10,25 +10,41 @@ import java.net.URLEncoder
 
 internal object EpornerApi {
 
-    fun popularRequest(apiUrl: String, page: Int, headers: Headers): Request =
-        GET("$apiUrl/video/search/?query=all&page=$page&order=top-weekly&thumbsize=big&format=json", headers)
+    fun popularRequest(
+        apiUrl: String,
+        page: Int,
+        headers: Headers,
+    ): Request = GET(
+        "$apiUrl/video/search/?query=all&page=$page&order=top-weekly&thumbsize=big&format=json",
+        headers,
+    )
 
-    fun latestRequest(apiUrl: String, page: Int, headers: Headers): Request =
-        GET("$apiUrl/video/search/?query=all&page=$page&order=latest&thumbsize=big&format=json", headers)
+    fun latestRequest(
+        apiUrl: String,
+        page: Int,
+        headers: Headers,
+    ): Request = GET(
+        "$apiUrl/video/search/?query=all&page=$page&order=latest&thumbsize=big&format=json",
+        headers,
+    )
 
-    fun searchRequest(apiUrl: String, page: Int, query: String, filters: EpornerFilters.Parsed, headers: Headers): Request {
-        val q = if (query.isBlank()) "all" else URLEncoder.encode(query, "UTF-8")
-        val url =
-            "$apiUrl/video/search/?query=$q&page=$page&categories=${filters.category}" +
-            "&duration=${filters.duration}&quality=${filters.quality}&thumbsize=big&format=json"
-        return GET(url, headers)
-    }
-
-    fun searchRequest(apiUrl: String, page: Int, query: String, filters: Any, headers: Headers): Request {
-        // overload for AnimeFilterList parsing
+    fun searchRequest(
+        apiUrl: String,
+        page: Int,
+        query: String,
+        filters: Any,
+        headers: Headers,
+    ): Request {
         val parsed = if (filters is eu.kanade.tachiyomi.animesource.model.AnimeFilterList)
             EpornerFilters.parse(filters) else EpornerFilters.Parsed("all", "0", "0")
-        return searchRequest(apiUrl, page, query, parsed, headers)
+        val q = if (query.isBlank()) "all" else URLEncoder.encode(query, "UTF-8")
+        val url =
+            "$apiUrl/video/search/?query=$q&page=$page&categories=${parsed.category}" +
+                "&duration=${parsed.duration}&quality=${parsed.quality}&thumbsize=big&format=json"
+        return GET(
+            url,
+            headers,
+        )
     }
 
     fun parseSearch(json: Json, response: Response): AnimesPage {
@@ -39,9 +55,16 @@ internal object EpornerApi {
         )
     }
 
-    fun detailsRequest(apiUrl: String, anime: SAnime, headers: Headers): Request {
+    fun detailsRequest(
+        apiUrl: String,
+        anime: SAnime,
+        headers: Headers,
+    ): Request {
         val id = anime.url.substringAfterLast("/").substringBefore("-")
-        return GET("$apiUrl/video/id/?id=$id&format=json", headers)
+        return GET(
+            "$apiUrl/video/id/?id=$id&format=json",
+            headers,
+        )
     }
 
     fun parseDetails(json: Json, response: Response): SAnime =
