@@ -112,7 +112,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 name = "Video"
                 episode_number = 1F
                 url = response.request.url.toString()
-            },
+            }
         )
 
     // ===== Videos =====
