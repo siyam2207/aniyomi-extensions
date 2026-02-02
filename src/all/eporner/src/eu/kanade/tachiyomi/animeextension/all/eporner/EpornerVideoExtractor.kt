@@ -25,7 +25,7 @@ internal class EpornerVideoExtractor(
             // JS pattern
             document.select("script").forEach { script ->
                 val pattern = Regex(
-                    """quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']"""
+                    """quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']""",
                 )
                 pattern.findAll(script.html()).forEach { match ->
                     val quality = match.groupValues[1]
@@ -45,13 +45,12 @@ internal class EpornerVideoExtractor(
                         if (url.contains(".m3u8")) {
                             try {
                                 val playlistUtils = PlaylistUtils(client, headers)
-                                videos.addAll(
-                                    playlistUtils.extractFromHls(
-                                        url,
-                                        response.request.url.toString(),
-                                        videoNameGen = { q -> "HLS - $q" },
-                                    ),
+                                val hlsVideos = playlistUtils.extractFromHls(
+                                    url,
+                                    response.request.url.toString(),
+                                    videoNameGen = { q -> "HLS - $q" },
                                 )
+                                videos.addAll(hlsVideos)
                             } catch (e: Exception) {
                                 Log.e(tag, "HLS extraction failed: ${e.message}")
                             }
