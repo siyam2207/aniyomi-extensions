@@ -12,6 +12,7 @@ import extensions.utils.getPreferencesLazy
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.Request
+import okhttp3.Response
 import uy.kohesive.injekt.injectLazy
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
@@ -44,45 +45,45 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         EpornerApi.popularRequest(
             apiUrl,
             page,
-            headers,
+            headers
         )
 
     override fun popularAnimeParse(response: okhttp3.Response) =
         EpornerApi.parseSearch(
             json,
-            response,
+            response
         )
 
     override fun latestUpdatesRequest(page: Int): Request =
         EpornerApi.latestRequest(
             apiUrl,
             page,
-            headers,
+            headers
         )
 
     override fun latestUpdatesParse(response: okhttp3.Response) =
         EpornerApi.parseSearch(
             json,
-            response,
+            response
         )
 
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: AnimeFilterList,
+        filters: AnimeFilterList
     ): Request =
         EpornerApi.searchRequest(
             apiUrl,
             page,
             query,
             filters,
-            headers,
+            headers
         )
 
     override fun searchAnimeParse(response: okhttp3.Response) =
         EpornerApi.parseSearch(
             json,
-            response,
+            response
         )
 
     // ===== Details =====
@@ -90,20 +91,20 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         EpornerApi.detailsRequest(
             apiUrl,
             anime,
-            headers,
+            headers
         )
 
     override fun animeDetailsParse(response: okhttp3.Response): SAnime =
         EpornerApi.parseDetails(
             json,
-            response,
+            response
         )
 
     // ===== Episodes =====
     override fun episodeListRequest(anime: SAnime): Request =
         GET(
             anime.url,
-            headers,
+            headers
         )
 
     override fun episodeListParse(response: okhttp3.Response): List<SEpisode> =
@@ -112,32 +113,47 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 name = "Video"
                 episode_number = 1F
                 url = response.request.url.toString()
-            },
+            }
         )
 
     // ===== Videos =====
     override fun videoListRequest(episode: SEpisode): Request =
         GET(
             episode.url,
-            headers,
+            headers
         )
 
-    override fun videoListParse(response: okhttp3.Response): List<Video> =
+    override fun videoListParse(response: Response): List<Video> =
         EpornerVideoExtractor(
             client,
             headers,
-            preferences,
-        ).extract(
-            response,
-        )
+            preferences
+        ).extract(response)
+
+    override fun videoUrlParse(response: Response): String {
+        return videoListParse(response).firstOrNull()?.videoUrl ?: ""
+    }
 
     // ===== Preferences =====
     override fun setupPreferenceScreen(screen: PreferenceScreen) =
         EpornerPreferences.setup(
             screen,
-            preferences,
+            preferences
         )
 
     override fun getFilterList() =
         EpornerFilters.filterList()
+
+    override fun List<Video>.sort(): List<Video> {
+        val qualityPref = preferences.getString(EpornerPreferences.PREF_QUALITY_KEY, EpornerPreferences.PREF_QUALITY_DEFAULT)!!
+        return sortedWith(
+            compareByDescending<Video> {
+                when {
+                    qualityPref == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
+                    it.quality.contains(qualityPref) -> 1000
+                    else -> 0
+                }
+            }
+        )
+    }
 }
