@@ -3,9 +3,9 @@ package eu.kanade.tachiyomi.animeextension.all.eporner
 import android.content.SharedPreferences
 import android.util.Log
 import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
-import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -23,17 +23,19 @@ internal class EpornerVideoExtractor(
             val document = response.asJsoup()
             val videos = mutableListOf<Video>()
 
-            // METHOD 1: JS pattern
+            // JS pattern
             document.select("script").forEach { script ->
                 val pattern = Regex("""quality["']?\s*:\s*["']?(\d+)["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']""")
                 pattern.findAll(script.html()).forEach { match ->
                     val quality = match.groupValues[1]
                     val videoUrl = match.groupValues[2]
-                    if (videoUrl.isNotBlank()) videos.add(Video(videoUrl, "Eporner - ${quality}p", videoUrl))
+                    if (videoUrl.isNotBlank()) {
+                        videos.add(Video(videoUrl, "Eporner - ${quality}p", videoUrl))
+                    }
                 }
             }
 
-            // METHOD 2: HLS
+            // HLS streams
             if (videos.isEmpty()) {
                 document.select("script").forEach { script ->
                     val hlsPattern = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""")
@@ -46,7 +48,9 @@ internal class EpornerVideoExtractor(
                                     playlistUtils.extractFromHls(
                                         url,
                                         response.request.url.toString(),
-                                        videoNameGen = { q -> "HLS - $q" },
+                                        videoNameGen = { q ->
+                                            "HLS - $q"
+                                        },
                                     ),
                                 )
                             } catch (e: Exception) {
@@ -57,7 +61,7 @@ internal class EpornerVideoExtractor(
                 }
             }
 
-            // METHOD 3: Direct MP4 fallback
+            // Direct MP4 fallback
             if (videos.isEmpty()) {
                 val mp4Patterns = listOf(
                     Regex("""src\s*:\s*["'](https?://[^"']+\.mp4[^"']*)["']"""),
@@ -81,7 +85,7 @@ internal class EpornerVideoExtractor(
         }
     }
 
-    private fun MutableList<Video>.addVideoWithQuality(url: String) {
+    private fun addVideoWithQuality(videos: MutableList<Video>, url: String) {
         val quality = when {
             url.contains("1080") -> "1080p"
             url.contains("720") -> "720p"
@@ -90,7 +94,7 @@ internal class EpornerVideoExtractor(
             url.contains("240") -> "240p"
             else -> "Unknown"
         }
-        add(Video(url, "Direct - $quality", url))
+        videos.add(Video(url, "Direct - $quality", url))
     }
 
     private fun List<Video>.sortedByPreference(): List<Video> {
