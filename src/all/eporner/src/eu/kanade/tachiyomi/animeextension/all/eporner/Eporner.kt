@@ -168,46 +168,38 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // NEW METHOD: Parse the embed page for video sources
             document.select("script").forEach { script ->
                 val scriptText = script.html()
-                
                 // Pattern 1: Look for video sources array in JS
                 val sourcesPattern = Regex("""sources\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL)
                 val sourcesMatch = sourcesPattern.find(scriptText)
-                
                 if (sourcesMatch != null) {
                     val sourcesJson = sourcesMatch.groupValues[1]
                     val videoPattern = Regex("""\{\s*"quality"\s*:\s*"(\d+)""?\s*,\s*"videoUrl"\s*:\s*"([^"]+)"\s*\}""")
-                    
                     videoPattern.findAll(sourcesJson).forEach { match ->
                         val quality = match.groupValues[1]
                         var videoUrl = match.groupValues[2].replace("\\/", "/") // Unescape slashes
-                        
                         // Some URLs might be relative
                         if (videoUrl.startsWith("//")) {
                             videoUrl = "https:" + videoUrl
                         } else if (videoUrl.startsWith("/")) {
                             videoUrl = "https://www.eporner.com" + videoUrl
                         }
-                        
                         if (videoUrl.isNotBlank() && (videoUrl.endsWith(".mp4") || videoUrl.contains(".mp4?"))) {
                             videos.add(Video(videoUrl, "Eporner - ${quality}p", videoUrl))
                             Log.d(tag, "Found video: ${quality}p - $videoUrl")
                         }
                     }
                 }
-                
                 // Pattern 2: Direct quality/videoUrl pairs
                 if (videos.isEmpty()) {
                     val directPattern = Regex("""quality["']?\s*:\s*["']?(\d+)""?["']?\s*,\s*videoUrl["']?\s*:\s*["']([^"']+)["']""")
                     directPattern.findAll(scriptText).forEach { match ->
                         val quality = match.groupValues[1]
                         var videoUrl = match.groupValues[2].replace("\\/", "/")
-                        
                         if (videoUrl.startsWith("//")) {
                             videoUrl = "https:" + videoUrl
                         } else if (videoUrl.startsWith("/")) {
                             videoUrl = "https://www.eporner.com" + videoUrl
                         }
-                        
                         if (videoUrl.isNotBlank() && (videoUrl.endsWith(".mp4") || videoUrl.contains(".mp4?"))) {
                             videos.add(Video(videoUrl, "Eporner - ${quality}p", videoUrl))
                         }
