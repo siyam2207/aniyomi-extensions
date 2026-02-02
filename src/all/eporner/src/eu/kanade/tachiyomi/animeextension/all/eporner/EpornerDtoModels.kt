@@ -5,18 +5,18 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class ApiSearchResponse(
-    @SerialName("videos") val videos: List<ApiVideo>,
-    @SerialName("page") val page: Int,
-    @SerialName("total_pages") val total_pages: Int,
+internal data class ApiSearchResponse(
+    val videos: List<ApiVideo>,
+    val page: Int,
+    val total_pages: Int,
 )
 
 @Serializable
-data class ApiVideo(
-    @SerialName("id") val id: String,
-    @SerialName("title") val title: String,
-    @SerialName("keywords") val keywords: String,
-    @SerialName("url") val url: String,
+internal data class ApiVideo(
+    val id: String,
+    val title: String,
+    val keywords: String,
+    val url: String,
     @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
 ) {
     fun toSAnime(): SAnime = SAnime.create().apply {
@@ -24,18 +24,18 @@ data class ApiVideo(
         this.title = title
         this.thumbnail_url = defaultThumb.src
         this.genre = keywords
-        this.status = SAnime.COMPLETED
+        status = SAnime.COMPLETED
     }
 }
 
 @Serializable
-data class ApiVideoDetailResponse(
-    @SerialName("id") val id: String,
-    @SerialName("title") val title: String,
-    @SerialName("keywords") val keywords: String,
-    @SerialName("views") val views: Long,
-    @SerialName("url") val url: String,
-    @SerialName("embed") val embed: String,
+internal data class ApiVideoDetailResponse(
+    val id: String,
+    val title: String,
+    val keywords: String,
+    val views: Long,
+    val url: String,
+    @SerialName("length_sec") val lengthSec: Int,
     @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
 ) {
     fun toSAnime(): SAnime = SAnime.create().apply {
@@ -43,11 +43,14 @@ data class ApiVideoDetailResponse(
         this.title = title
         this.thumbnail_url = defaultThumb.src
         this.genre = keywords
-        this.status = SAnime.COMPLETED
+        description = "Views: $views | Length: ${lengthSec / 60}min"
+        status = SAnime.COMPLETED
     }
 }
 
 @Serializable
-data class ApiThumbnail(
-    @SerialName("src") val src: String,
+internal data class ApiThumbnail(
+    val src: String,
+    val width: Int,
+    val height: Int,
 )
