@@ -55,7 +55,7 @@ internal object EpornerApi {
             val data = json.decodeFromString(ApiSearchResponse.serializer(), response.body.string())
             AnimesPage(
                 data.videos.map { it.toSAnime() },
-                data.page < data.total_pages,
+                data.page < data.totalpages,
             )
         } catch (e: Exception) {
             Log.e(tag, "Failed to parse search JSON", e)
