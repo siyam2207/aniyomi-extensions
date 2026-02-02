@@ -126,7 +126,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Anime Details ====================
     override fun animeDetailsRequest(anime: SAnime): Request {
         Log.d(tag, "Details request for URL: ${anime.url}")
-        
+
         // Try to extract video ID from URL for API call
         val videoId = try {
             // Handle both formats: /video/ID/title/ and full URL
@@ -158,7 +158,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val body = response.body.string()
             Log.d(tag, "Details response length: ${body.length}")
-            
+
             // Try to parse as API response first
             if (body.startsWith("{") && body.contains("\"id\"")) {
                 try {
@@ -169,7 +169,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     Log.w(tag, "Failed to parse API response, trying HTML: ${e.message}")
                 }
             }
-            
+
             // Fall back to HTML parsing
             htmlAnimeDetailsParse(response)
         } catch (e: Exception) {
@@ -183,12 +183,12 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val document = response.asJsoup()
             SAnime.create().apply {
                 url = response.request.url.toString()
-                
+
                 // ALWAYS assign title - never leave lateinit var uninitialized
                 title = document.selectFirst("h1")?.text()?.takeIf { it.isNotBlank() }
                     ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.takeIf { it.isNotBlank() }
                     ?: "Unknown Title"
-                
+
                 // Safe thumbnail assignment (can be null)
                 thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")?.takeIf { it.isNotBlank() }
                     ?: document.selectFirst("img.thumb")?.attr("src")?.takeIf { it.isNotBlank() }
@@ -212,7 +212,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 genre = if (tags.isNotEmpty()) tags.joinToString(", ") else null
 
                 status = SAnime.COMPLETED
-                
+
                 Log.d(tag, "HTML parsed: title='$title', thumbnail=${thumbnail_url != null}, genre=${genre != null}")
             }
         } catch (e: Exception) {
@@ -264,12 +264,12 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     Regex("""videoUrl["']?\s*:\s*["']([^"']+)["']\s*,\s*quality["']?\s*:\s*["']?(\d+)["']?"""),
                     Regex("""['"]src['"]\s*:\s*['"]([^"']+\.mp4)['"]"""),
                 )
-                
+
                 patterns.forEach { pattern ->
                     pattern.findAll(scriptText).forEach { match ->
                         val quality = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "unknown"
                         val videoUrl = match.groupValues.getOrNull(2)?.takeIf { it.isNotBlank() } ?: match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() }
-                        
+
                         if (videoUrl != null && videoUrl.isNotBlank()) {
                             val displayQuality = if (quality == "unknown") {
                                 videoUrl.extractQualityFromUrl()
@@ -482,23 +482,23 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         fun toSAnime(): SAnime = SAnime.create().apply {
             // ALWAYS assign title - never leave lateinit var uninitialized
             this.title = this@ApiVideoDetailResponse.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
-            
+
             // URL is already full URL from API
             this.url = this@ApiVideoDetailResponse.url
-            
+
             // Safe thumbnail (can be null)
             this.thumbnail_url = this@ApiVideoDetailResponse.defaultThumb.src.takeIf { it.isNotBlank() }
-            
+
             // Genre can be null
             this.genre = this@ApiVideoDetailResponse.keywords.takeIf { it.isNotBlank() }
-            
+
             // ALWAYS assign description
             val lengthMin = this@ApiVideoDetailResponse.lengthSec / 60
             val lengthSec = this@ApiVideoDetailResponse.lengthSec % 60
             this.description = "Views: ${this@ApiVideoDetailResponse.views} | Length: ${lengthMin}m ${lengthSec}s"
-            
+
             this.status = SAnime.COMPLETED
-            
+
             Log.d(tag, "API parsed: title='$title', views=${this@ApiVideoDetailResponse.views}")
         }
     }
@@ -514,7 +514,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         fun toSAnime(): SAnime = SAnime.create().apply {
             // ALWAYS assign title - never leave lateinit var uninitialized
             this.title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
-            
+
             // Ensure URL is compatible with details request
             // API returns relative URL like "/video/abc123/title/"
             // Convert to full URL that can be used for both API and HTML requests
@@ -526,15 +526,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             } else {
                 "$baseUrl/$relativeUrl"
             }
-            
+
             // Safe thumbnail (can be null)
             this.thumbnail_url = this@ApiVideo.defaultThumb.src.takeIf { it.isNotBlank() }
-            
+
             // Genre can be null
             this.genre = this@ApiVideo.keywords.takeIf { it.isNotBlank() }
-            
+
             this.status = SAnime.COMPLETED
-            
+
             Log.d(tag, "Search result: title='$title', url='$url'")
         }
     }
