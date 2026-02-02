@@ -15,7 +15,7 @@ internal data class ApiSearchResponse(
     val page: Int = 1,
     @SerialName("time_ms") val timeMs: Int = 0,
     @SerialName("total_count") val totalCount: Long = 0,
-    @SerialName("total_pages") val totalPages: Int = 1,
+    @SerialName("total_pages") val totalPages: Long = 1,
     val videos: List<ApiVideo> = emptyList(), // The actual list of videos
 )
 
