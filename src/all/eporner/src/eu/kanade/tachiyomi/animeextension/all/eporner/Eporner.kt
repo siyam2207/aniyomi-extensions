@@ -1,6 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import android.content.SharedPreferences
+import android.content.Context
 import android.util.Log
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
@@ -21,6 +21,8 @@ import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
+import uy.kohesive.injekt.Injekt
+import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
 
@@ -38,23 +40,20 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // User agent constant
     private val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
-    // Store preferences instance
-    private var preferences: SharedPreferences? = null
+    // ==================== Preferences ====================
+    private val preferences by lazy {
+        @Suppress("DEPRECATION")
+        android.preference.PreferenceManager.getDefaultSharedPreferences(
+            Injekt.get<Context>(),
+        )
+    }
 
     // ==================== Headers ====================
     override fun headersBuilder(): Headers.Builder {
         return Headers.Builder()
             .add("User-Agent", USER_AGENT)
-            .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
-            .add("Accept-Language", "en-US,en;q=0.9")
-            .add("Accept-Encoding", "gzip, deflate, br")
-            .add("Connection", "keep-alive")
-            .add("Upgrade-Insecure-Requests", "1")
-            .add("Sec-Fetch-Site", "same-origin")
-            .add("Sec-Fetch-Mode", "navigate")
-            .add("Sec-Fetch-User", "?1")
-            .add("Sec-Fetch-Dest", "document")
-            .add("Cache-Control", "max-age=0")
+            .add("Accept", "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .add("Accept-Language", "en-US,en;q=0.5")
             .add("Referer", baseUrl)
             .add("Origin", baseUrl)
     }
@@ -259,11 +258,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Origin", "https://www.eporner.com")
             .add("Accept", "*/*")
             .add("Accept-Language", "en-US,en;q=0.9")
-            .add("Accept-Encoding", "gzip, deflate, br")
             .add("Connection", "keep-alive")
-            .add("Sec-Fetch-Site", "same-site")
-            .add("Sec-Fetch-Mode", "no-cors")
-            .add("Sec-Fetch-Dest", "empty")
             .build()
     }
 
@@ -297,200 +292,72 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val html = response.body.string()
             val embedUrl = response.request.url.toString()
 
-            // Try multiple methods to extract the master playlist URL
-            val masterUrl = extractMasterPlaylistUrl(html, embedUrl) ?: return emptyList()
+            val masterUrl = findMasterUrl(html) ?: return emptyList()
 
-            Log.d(tag, "Extracted master URL: $masterUrl")
-
-            // Use PlaylistUtils with proper parameters
+            // Use PlaylistUtils with proper parameters based on other extensions
             PlaylistUtils(client, videoHeaders(embedUrl))
                 .extractFromHls(masterUrl, embedUrl) { quality -> quality.toString() }
                 .sortedByDescending { video ->
                     video.quality.replace("p", "").toIntOrNull() ?: 0
                 }
         } catch (e: Exception) {
-            Log.e(tag, "Video list parse error", e)
             emptyList()
         }
     }
 
-    private fun extractMasterPlaylistUrl(html: String, embedUrl: String): String? {
-        // Method 1: Look for master playlist URL in JavaScript variables
-        val masterUrlRegexes = listOf(
-            Regex("""var\s+master\s*=\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]"""),
-            Regex("""masterUrl\s*:\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]"""),
-            Regex("""hlsUrl\s*:\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]"""),
-            Regex("""source\s*=\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]"""),
-            Regex(""""videoUrl"\s*:\s*"([^"]+\.m3u8[^"]*)"""),
-            Regex("""hls:\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]"""),
+    private fun findMasterUrl(html: String): String? {
+        val regexes = listOf(
+            Regex("""https://[^"' ]+master\.m3u8[^"' ]*"""),
+            Regex("""var\s+master\s*=\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
+            Regex("""masterUrl\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
+            Regex("""hlsUrl\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
         )
 
-        for (regex in masterUrlRegexes) {
-            val match = regex.find(html)
-            if (match != null) {
-                val url = match.groupValues[1]
-                if (url.contains("master.m3u8") || url.contains(".m3u8?")) {
-                    Log.d(tag, "Found master URL via regex: $url")
-                    return url
-                }
-            }
+        for (regex in regexes) {
+            val match = regex.find(html) ?: continue
+            val url = match.groups[1]?.value ?: match.value
+            return url
         }
-
-        // Method 2: Look for JSON data containing video URLs
-        val jsonRegexes = listOf(
-            Regex(""""sources"\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL),
-            Regex(""""video"\s*:\s*\{.*?"sources"\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL),
-        )
-
-        for (regex in jsonRegexes) {
-            val match = regex.find(html)
-            if (match != null) {
-                val jsonArray = match.groupValues[1]
-                // Try to find the highest quality m3u8 URL
-                val urls = Regex(""""(https?://[^"]+\.m3u8[^"]*)"""").findAll(jsonArray)
-                    .map { it.groupValues[1] }
-                    .toList()
-
-                if (urls.isNotEmpty()) {
-                    // Prefer master.m3u8 or the highest quality
-                    val masterUrl = urls.find { it.contains("master.m3u8") }
-                        ?: urls.maxByOrNull { extractQualityFromUrl(it) }
-                    if (masterUrl != null) {
-                        Log.d(tag, "Found master URL via JSON: $masterUrl")
-                        return masterUrl
-                    }
-                }
-            }
-        }
-
-        // Method 3: Look for <source> tags in video players
-        if (html.contains("<video") || html.contains("videojs") || html.contains("jwplayer")) {
-            val sourceRegex = Regex("""<source[^>]+src=["'](https?://[^'"]+\.m3u8[^'"]*)["'][^>]*>""")
-            val match = sourceRegex.find(html)
-            if (match != null) {
-                val url = match.groupValues[1]
-                Log.d(tag, "Found master URL via source tag: $url")
-                return url
-            }
-        }
-
-        // Method 4: Try to extract from player configuration
-        val playerConfigRegexes = listOf(
-            Regex("""player\.setup\((\{.*?\})\)""", RegexOption.DOT_MATCHES_ALL),
-            Regex("""jwplayer\(".*?"\)\.setup\((\{.*?\})\)""", RegexOption.DOT_MATCHES_ALL),
-        )
-
-        for (regex in playerConfigRegexes) {
-            val match = regex.find(html)
-            if (match != null) {
-                val config = match.groupValues[1]
-                // Look for file/sources in config
-                val fileMatch = Regex(""""file"\s*:\s*"(https?://[^"]+\.m3u8[^"]*)"""").find(config)
-                if (fileMatch != null) {
-                    val url = fileMatch.groupValues[1]
-                    Log.d(tag, "Found master URL via player config: $url")
-                    return url
-                }
-                val sourcesMatch = Regex(""""sources"\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(config)
-                if (sourcesMatch != null) {
-                    val sources = sourcesMatch.groupValues[1]
-                    val urls = Regex(""""(https?://[^"]+\.m3u8[^"]*)"""").findAll(sources)
-                        .map { it.groupValues[1] }
-                        .toList()
-                    if (urls.isNotEmpty()) {
-                        val masterUrl = urls.find { it.contains("master.m3u8") }
-                            ?: urls.maxByOrNull { extractQualityFromUrl(it) }
-                        if (masterUrl != null) {
-                            Log.d(tag, "Found master URL via player sources: $masterUrl")
-                            return masterUrl
-                        }
-                    }
-                }
-            }
-        }
-
-        Log.w(tag, "Could not find master playlist URL in HTML")
         return null
-    }
-
-    private fun extractQualityFromUrl(url: String): Int {
-        // Try to extract quality from URL (e.g., .../720p/..., .../1080/..., ...-720.m3u8)
-        val qualityRegexes = listOf(
-            Regex("""/(\d+)p?/"""),
-            Regex("""-(\d+)\.m3u8"""),
-            Regex("""_(\d+)\.m3u8"""),
-        )
-        for (regex in qualityRegexes) {
-            val match = regex.find(url)
-            if (match != null) {
-                return match.groupValues[1].toIntOrNull() ?: 0
-            }
-        }
-        return 0
     }
 
     // ==================== Settings ====================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        // Initialize preferences with the context from the screen
-        preferences = android.preference.PreferenceManager.getDefaultSharedPreferences(screen.context)
-
-        // Create quality preference
         ListPreference(screen.context).apply {
             key = PREF_QUALITY_KEY
             title = "Preferred video quality"
             entries = QUALITY_LIST
             entryValues = QUALITY_LIST
             setDefaultValue(PREF_QUALITY_DEFAULT)
-
-            // Set current value
-            val currentValue = preferences?.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
-            setValueIndex(QUALITY_LIST.indexOf(currentValue).coerceAtLeast(0))
-            summary = when (currentValue) {
-                "best" -> "Best available quality"
-                else -> currentValue
-            }
+            summary = "%s"
 
             setOnPreferenceChangeListener { _, newValue ->
                 val selected = newValue as String
-                preferences?.edit()?.putString(PREF_QUALITY_KEY, selected)?.apply()
-                this.summary = when (selected) {
+                val summary = when (selected) {
                     "best" -> "Best available quality"
-                    else -> selected
+                    else -> "$selected"
                 }
+                this.summary = summary
                 true
             }
         }.also(screen::addPreference)
 
-        // Create sort preference
         ListPreference(screen.context).apply {
             key = PREF_SORT_KEY
             title = "Default sort order"
             entries = SORT_LIST
             entryValues = SORT_LIST
             setDefaultValue(PREF_SORT_DEFAULT)
-
-            // Set current value
-            val currentValue = preferences?.getString(PREF_SORT_KEY, PREF_SORT_DEFAULT) ?: PREF_SORT_DEFAULT
-            setValueIndex(SORT_LIST.indexOf(currentValue).coerceAtLeast(0))
-            summary = currentValue
+            summary = "%s"
 
             setOnPreferenceChangeListener { _, newValue ->
-                val selected = newValue as String
-                preferences?.edit()?.putString(PREF_SORT_KEY, selected)?.apply()
-                this.summary = selected
                 true
             }
         }.also(screen::addPreference)
     }
 
     override fun List<Video>.sort(): List<Video> {
-        // Get quality preference safely
-        val qualityPref = try {
-            preferences?.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
-        } catch (e: Exception) {
-            PREF_QUALITY_DEFAULT
-        }
-
+        val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
         return sortedWith(
             compareByDescending<Video> {
                 when {
