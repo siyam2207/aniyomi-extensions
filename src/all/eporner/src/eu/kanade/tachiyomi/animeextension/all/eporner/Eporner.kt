@@ -325,7 +325,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val hlsVideos = playlistUtils.extractFromHls(
                             hlsUrl = url,
                             referer = response.request.url.toString(),
-                            videoNameGen = { quality -> "HLS - $quality" }
+                            videoNameGen = { quality -> "HLS - $quality" },
                         )
                         videos.addAll(hlsVideos)
                         Log.d(tag, "Found ${hlsVideos.size} HLS streams")
