@@ -314,21 +314,16 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 }
             }
 
-            // METHOD 3: HLS streams (.m3u8)
+            // METHOD 3: HLS streams (.m3u8) - Simplified approach
             val hlsPattern = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""")
             hlsPattern.findAll(html).forEach { match ->
                 val url = match.value
                 if (url.isNotBlank() && url.contains(".m3u8")) {
                     try {
-                        val playlistUtils = PlaylistUtils(client, headers)
-                        Log.d(tag, "Extracting HLS from: $url")
-                        val hlsVideos = playlistUtils.extractFromHls(
-                            url,
-                            headers,
-                            videoHeaders(),
-                        ) { quality -> "HLS - $quality" }
-                        videos.addAll(hlsVideos)
-                        Log.d(tag, "Found ${hlsVideos.size} HLS streams")
+                        // Try to extract HLS streams with a simplified approach
+                        Log.d(tag, "Found HLS stream: $url")
+                        // Create a simple video entry for HLS
+                        videos.add(Video(url, "HLS Stream", url, videoHeaders()))
                     } catch (e: Exception) {
                         Log.e(tag, "HLS extraction failed: ${e.message}")
                     }
