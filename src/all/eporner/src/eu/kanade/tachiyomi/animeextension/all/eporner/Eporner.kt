@@ -126,11 +126,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Anime Details ====================
     override fun animeDetailsRequest(anime: SAnime): Request {
         Log.d(tag, "Details request for URL: ${anime.url}")
-        
         // Use the embed URL directly for video extraction
         val url = if (anime.url.startsWith("http")) anime.url else "$baseUrl${anime.url}"
         Log.d(tag, "Using embed URL: $url")
-        
         // Set the anime as a tag to preserve it
         val request = GET(url, headers)
         request.tag(SAnime::class.java, anime)
@@ -140,7 +138,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun animeDetailsParse(response: Response): SAnime {
         // Get the existing anime from the request tag
         val anime = response.request.tag(SAnime::class.java) ?: SAnime.create()
-        
         return try {
             val body = response.body.string()
             Log.d(tag, "Details response length: ${body.length}")
@@ -170,7 +167,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             if (title.isBlank() || title == "Unknown Title") {
                 this.title = videoDetail.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
             }
-            
             // IMPORTANT: Use embed URL for video extraction
             this.url = "https://www.eporner.com/embed/${videoDetail.id}/"
 
