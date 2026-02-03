@@ -137,16 +137,16 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         } else {
             SAnime.create()
         }
-          
+
         ensureTitleInitialized(anime)
-          
+
         return try {
             val body = response.body.string()
 
             // Better API detection using Content-Type
             val contentType = response.header("Content-Type", "")
-            val isLikelyJson = contentType.contains("application/json") || 
-                              (body.startsWith("{") && body.contains("\"id\""))
+            val isLikelyJson = contentType.contains("application/json") ||
+                    (body.startsWith("{") && body.contains("\"id\""))
 
             if (isLikelyJson) {
                 try {
@@ -201,16 +201,16 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val document = Jsoup.parse(html)
             anime.apply {
                 val pageTitle = document.selectFirst("h1")?.text()?.takeIf { it.isNotBlank() }
-                    ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.takeIf { it.isNotBlank() }
-                  
+                        ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.takeIf { it.isNotBlank() }
+
                 if (pageTitle != null) {
                     this.title = pageTitle
                 }
 
                 if (thumbnail_url.isNullOrBlank()) {
                     thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")?.takeIf { it.isNotBlank() }
-                        ?: document.selectFirst("img.thumb")?.attr("src")?.takeIf { it.isNotBlank() }
-                        ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
+                            ?: document.selectFirst("img.thumb")?.attr("src")?.takeIf { it.isNotBlank() }
+                            ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
                 }
 
                 if (description.isNullOrBlank()) {
@@ -242,13 +242,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Clean Video Headers ====================
     private fun videoHeaders(embedUrl: String): Headers {
         return Headers.Builder()
-            .add("User-Agent", USER_AGENT)
-            .add("Referer", embedUrl)
-            .add("Origin", "https://www.eporner.com")
-            .add("Accept", "*/*")
-            .add("Accept-Language", "en-US,en;q=0.9")
-            .add("Connection", "keep-alive")
-            .build()
+                .add("User-Agent", USER_AGENT)
+                .add("Referer", embedUrl)
+                .add("Origin", "https://www.eporner.com")
+                .add("Accept", "*/*")
+                .add("Accept-Language", "en-US,en;q=0.9")
+                .add("Connection", "keep-alive")
+                .build()
     }
 
     // ==================== Required Methods ====================
@@ -267,11 +267,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Episodes ====================
     override fun episodeListParse(response: Response): List<SEpisode> {
         return listOf(
-            SEpisode.create().apply {
-                name = "Video"
-                episode_number = 1F
-                url = response.request.url.toString()
-            },
+                SEpisode.create().apply {
+                    name = "Video"
+                    episode_number = 1F
+                    url = response.request.url.toString()
+                },
         )
     }
 
@@ -291,10 +291,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun findMasterUrl(html: String): String? {
         val regexes = listOf(
-            Regex("""https://[^"' ]+master\.m3u8[^"' ]*"""),
-            Regex("""var\s+master\s*=\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
-            Regex("""masterUrl\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
-            Regex("""hlsUrl\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
+                Regex("""https://[^"' ]+master\.m3u8[^"' ]*"""),
+                Regex("""var\s+master\s*=\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
+                Regex("""masterUrl\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
+                Regex("""hlsUrl\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
         )
 
         for (regex in regexes) {
@@ -308,27 +308,27 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun extractVideosWithRetry(masterUrl: String, embedUrl: String): List<Video> {
         return try {
             PlaylistUtils(client, headers)
-                .extractFromHls(
-                    masterUrl,
-                    headers,
-                    videoHeaders(embedUrl),
-                    videoNameGen = { quality -> "$quality" }
-                )
-                .sortedByDescending {
-                    it.quality.replace("p", "").toIntOrNull() ?: 0
-                }
-        } catch (e: Exception) {
-            try {
-                PlaylistUtils(client, videoHeaders(embedUrl))
                     .extractFromHls(
-                        masterUrl,
-                        videoHeaders(embedUrl),
-                        videoHeaders(embedUrl),
-                        videoNameGen = { quality -> "$quality" }
+                            masterUrl,
+                            headers,
+                            videoHeaders(embedUrl),
+                            videoNameGen = { quality -> "$quality" },
                     )
                     .sortedByDescending {
                         it.quality.replace("p", "").toIntOrNull() ?: 0
                     }
+        } catch (e: Exception) {
+            try {
+                PlaylistUtils(client, videoHeaders(embedUrl))
+                        .extractFromHls(
+                                masterUrl,
+                                videoHeaders(embedUrl),
+                                videoHeaders(embedUrl),
+                                videoNameGen = { quality -> "$quality" },
+                        )
+                        .sortedByDescending {
+                            it.quality.replace("p", "").toIntOrNull() ?: 0
+                        }
             } catch (e2: Exception) {
                 emptyList()
             }
@@ -373,117 +373,117 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun List<Video>.sort(): List<Video> {
         val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
         return sortedWith(
-            compareByDescending<Video> {
-                when {
-                    qualityPref == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
-                    it.quality.contains(qualityPref) -> 1000
-                    else -> 0
-                }
-            },
+                compareByDescending<Video> {
+                    when {
+                        qualityPref == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
+                        it.quality.contains(qualityPref) -> 1000
+                        else -> 0
+                    }
+                },
         )
     }
 
     override fun getFilterList() = AnimeFilterList(
-        CategoryFilter(),
-        DurationFilter(),
-        QualityFilter(),
+            CategoryFilter(),
+            DurationFilter(),
+            QualityFilter(),
     )
 
     // ==================== Filter Classes ====================
     private open class UriPartFilter(
-        displayName: String,
-        private val vals: Array<Pair<String, String>>,
+            displayName: String,
+            private val vals: Array<Pair<String, String>>,
     ) : AnimeFilter.Select<String>(
-        displayName,
-        vals.map { it.first }.toTypedArray(),
+            displayName,
+            vals.map { it.first }.toTypedArray(),
     ) {
         fun toUriPart() = vals[state].second
     }
 
     private class CategoryFilter : UriPartFilter(
-        "Category",
-        arrayOf(
-            Pair("All", "all"),
-            Pair("Anal", "anal"),
-            Pair("Asian", "asian"),
-            Pair("Big Dick", "big-dick"),
-            Pair("Blowjob", "blowjob"),
-            Pair("Brunette", "brunette"),
-            Pair("Creampie", "creampie"),
-            Pair("Cumshot", "cumshot"),
-            Pair("Doggystyle", "doggystyle"),
-            Pair("Ebony", "ebony"),
-            Pair("Facial", "facial"),
-            Pair("Gangbang", "gangbang"),
-            Pair("HD", "hd"),
-            Pair("Interracial", "interracial"),
-            Pair("Lesbian", "lesbian"),
-            Pair("Masturbation", "masturbation"),
-            Pair("Mature", "mature"),
-            Pair("Milf", "milf"),
-            Pair("Teen", "teen"),
-        ),
+            "Category",
+            arrayOf(
+                    Pair("All", "all"),
+                    Pair("Anal", "anal"),
+                    Pair("Asian", "asian"),
+                    Pair("Big Dick", "big-dick"),
+                    Pair("Blowjob", "blowjob"),
+                    Pair("Brunette", "brunette"),
+                    Pair("Creampie", "creampie"),
+                    Pair("Cumshot", "cumshot"),
+                    Pair("Doggystyle", "doggystyle"),
+                    Pair("Ebony", "ebony"),
+                    Pair("Facial", "facial"),
+                    Pair("Gangbang", "gangbang"),
+                    Pair("HD", "hd"),
+                    Pair("Interracial", "interracial"),
+                    Pair("Lesbian", "lesbian"),
+                    Pair("Masturbation", "masturbation"),
+                    Pair("Mature", "mature"),
+                    Pair("Milf", "milf"),
+                    Pair("Teen", "teen"),
+            ),
     )
 
     private class DurationFilter : UriPartFilter(
-        "Duration",
-        arrayOf(
-            Pair("Any", "0"),
-            Pair("10+ min", "10"),
-            Pair("20+ min", "20"),
-            Pair("30+ min", "30"),
-        ),
+            "Duration",
+            arrayOf(
+                    Pair("Any", "0"),
+                    Pair("10+ min", "10"),
+                    Pair("20+ min", "20"),
+                    Pair("30+ min", "30"),
+            ),
     )
 
     private class QualityFilter : UriPartFilter(
-        "Quality",
-        arrayOf(
-            Pair("Any", "0"),
-            Pair("HD 1080", "1080"),
-            Pair("HD 720", "720"),
-            Pair("HD 480", "480"),
-        ),
+            "Quality",
+            arrayOf(
+                    Pair("Any", "0"),
+                    Pair("HD 1080", "1080"),
+                    Pair("HD 720", "720"),
+                    Pair("HD 480", "480"),
+            ),
     )
 
     companion object {
         private const val PREF_QUALITY_KEY = "preferred_quality"
         private const val PREF_QUALITY_DEFAULT = "720p"
-        private val QUALITY_LIST = arrayOf("best", "1080p", "720p", "480p", "360p")
+        private val QUALITY_LIST = arrayOf("best", "1080p", "720p", "480p", "360p",)
 
         private const val PREF_SORT_KEY = "default_sort"
         private const val PREF_SORT_DEFAULT = "top-weekly"
-        private val SORT_LIST = arrayOf("latest", "top-weekly", "top-monthly", "most-viewed", "top-rated")
+        private val SORT_LIST = arrayOf("latest", "top-weekly", "top-monthly", "most-viewed", "top-rated",)
     }
 
     // ==================== API Data Classes ====================
     @Serializable
     private data class ApiSearchResponse(
-        @SerialName("videos") val videos: List<ApiVideo>,
-        @SerialName("page") val page: Int,
-        @SerialName("total_pages") val total_pages: Int,
+            @SerialName("videos") val videos: List<ApiVideo>,
+            @SerialName("page") val page: Int,
+            @SerialName("total_pages") val total_pages: Int,
     )
 
     @Serializable
     private data class ApiVideoDetailResponse(
-        @SerialName("id") val id: String,
-        @SerialName("title") val title: String,
-        @SerialName("keywords") val keywords: String,
-        @SerialName("views") val views: Long,
-        @SerialName("url") val url: String,
-        @SerialName("added") val added: String,
-        @SerialName("length_sec") val lengthSec: Int,
-        @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
-        @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
+            @SerialName("id") val id: String,
+            @SerialName("title") val title: String,
+            @SerialName("keywords") val keywords: String,
+            @SerialName("views") val views: Long,
+            @SerialName("url") val url: String,
+            @SerialName("added") val added: String,
+            @SerialName("length_sec") val lengthSec: Int,
+            @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
+            @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
     )
 
     @Serializable
     private data class ApiVideo(
-        @SerialName("id") val id: String,
-        @SerialName("title") val title: String,
-        @SerialName("keywords") val keywords: String,
-        @SerialName("url") val url: String,
-        @SerialName("embed") val embed: String,
-        @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
+            @SerialName("id") val id: String,
+            @SerialName("title") val title: String,
+            @SerialName("keywords") val keywords: String,
+            @SerialName("url") val url: String,
+            @SerialName("embed") val embed: String,
+            @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
     ) {
         fun toSAnime(): SAnime = SAnime.create().apply {
             this.title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
@@ -496,8 +496,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     @Serializable
     private data class ApiThumbnail(
-        @SerialName("src") val src: String,
-        @SerialName("width") val width: Int,
-        @SerialName("height") val height: Int,
+            @SerialName("src") val src: String,
+            @SerialName("width") val width: Int,
+            @SerialName("height") val height: Int,
     )
 }
