@@ -143,8 +143,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val body = response.body.string()
 
-            // Better API detection using Content-Type
-            val contentType = response.header("Content-Type", "")
+            // Better API detection using Content-Type - use safe call
+            val contentType = response.header("Content-Type") ?: ""
             val isLikelyJson = contentType.contains("application/json") ||
                 (body.startsWith("{") && body.contains("\"id\""))
 
@@ -310,9 +310,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             PlaylistUtils(client, headers)
                 .extractFromHls(
                     masterUrl,
-                    headers,
-                    videoHeaders(embedUrl),
-                    videoNameGen = { quality -> "$quality" },
+                    referer = embedUrl,
+                    qualityCallback = { it.quality },
+                    headers = videoHeaders(embedUrl),
                 )
                 .sortedByDescending {
                     it.quality.replace("p", "").toIntOrNull() ?: 0
@@ -322,9 +322,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 PlaylistUtils(client, videoHeaders(embedUrl))
                     .extractFromHls(
                         masterUrl,
-                        videoHeaders(embedUrl),
-                        videoHeaders(embedUrl),
-                        videoNameGen = { quality -> "$quality" },
+                        referer = embedUrl,
+                        qualityCallback = { it.quality },
+                        headers = videoHeaders(embedUrl),
                     )
                     .sortedByDescending {
                         it.quality.replace("p", "").toIntOrNull() ?: 0
@@ -376,7 +376,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             compareByDescending<Video> {
                 when {
                     qualityPref == "best" -> it.quality.replace("p", "").toIntOrNull() ?: 0
-                    it.quality.contains(qualityPref) -> 1000
+                    it.quality.contains(qualityPref, ignoreCase = false) -> 1000
                     else -> 0
                 }
             },
@@ -388,6 +388,12 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         DurationFilter(),
         QualityFilter(),
     )
+
+    // ==================== Preferences ====================
+    private val preferences by lazy {
+        @Suppress("DEPRECATION")
+        android.preference.PreferenceManager.getDefaultSharedPreferences(context)
+    }
 
     // ==================== Filter Classes ====================
     private open class UriPartFilter(
