@@ -257,36 +257,36 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val html = response.body.string()
             val embedUrl = response.request.url.toString()
-            
+
             // Extract videoId from embed URL
             val videoId = extractVideoId(embedUrl) ?: return emptyList()
-            
+
             // Extract hash token from HTML
             val hash = extractHashToken(html) ?: return emptyList()
-            
+
             // Call the xhr API endpoint
             val videoSources = fetchVideoSources(videoId, hash, embedUrl)
-            
+
             // Parse HLS from API response
             val videos = mutableListOf<Video>()
-            
+
             // Add HLS sources if available
             videoSources.hlsUrl?.let { hlsUrl ->
                 videos.addAll(
                     PlaylistUtils(client, videoHeaders(embedUrl))
                         .extractFromHls(hlsUrl, embedUrl) { quality ->
                             "${quality.height}p"
-                        }
+                        },
                 )
             }
-            
+
             // Add MP4 fallback sources
             videoSources.mp4Sources?.forEach { (quality, url) ->
                 videos.add(Video(url, "MP4 $quality", url, videoHeaders(embedUrl)))
             }
-            
-            videos.sortedByDescending { 
-                it.quality.replace("p", "").toIntOrNull() ?: 0 
+
+            videos.sortedByDescending {
+                it.quality.replace("p", "").toIntOrNull() ?: 0
             }
         } catch (e: Exception) {
             Log.e(tag, "Video list parse error", e)
@@ -304,7 +304,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             """hash["']?\s*[:=]\s*["']([^"']+)["']""",
             """var\s+hash\s*=\s*["']([^"']+)["']""",
         )
-        
+
         patterns.forEach { pattern ->
             val regex = pattern.toRegex(RegexOption.IGNORE_CASE)
             val match = regex.find(html)
@@ -318,7 +318,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun fetchVideoSources(videoId: String, hash: String, referer: String): VideoSources {
         val xhrUrl = "$baseUrl/xhr/video/$videoId?hash=$hash"
         val request = GET(xhrUrl, xhrHeaders(referer))
-        
+
         return try {
             val response = client.newCall(request).execute()
             val jsonResponse = response.body.string()
