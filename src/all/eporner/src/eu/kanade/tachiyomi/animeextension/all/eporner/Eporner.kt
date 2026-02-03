@@ -294,12 +294,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val masterUrl = findMasterUrl(html) ?: return emptyList()
 
-            // Use the correct PlaylistUtils API
-            PlaylistUtils(client).extractFromHls(
-                masterUrl,
-                videoHeaders(embedUrl),
-                videoHeaders(embedUrl),
-            ) { quality -> quality.toString() }
+            // Use PlaylistUtils with proper parameters based on other extensions
+            PlaylistUtils(client, videoHeaders(embedUrl))
+                .extractFromHls(masterUrl, embedUrl) { quality -> quality.toString() }
                 .sortedByDescending { video ->
                     video.quality.replace("p", "").toIntOrNull() ?: 0
                 }
