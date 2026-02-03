@@ -44,7 +44,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private val preferences by lazy {
         @Suppress("DEPRECATION")
         android.preference.PreferenceManager.getDefaultSharedPreferences(
-            Injekt.get<Context>()
+            Injekt.get<Context>(),
         )
     }
 
