@@ -355,7 +355,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     // Prefer master.m3u8 or the highest quality
                     val masterUrl = urls.find { it.contains("master.m3u8") }
                         ?: urls.maxByOrNull { extractQualityFromUrl(it) }
-                    
                     if (masterUrl != null) {
                         Log.d(tag, "Found master URL via JSON: $masterUrl")
                         return masterUrl
@@ -392,18 +391,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     Log.d(tag, "Found master URL via player config: $url")
                     return url
                 }
-                
                 val sourcesMatch = Regex(""""sources"\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(config)
                 if (sourcesMatch != null) {
                     val sources = sourcesMatch.groupValues[1]
                     val urls = Regex(""""(https?://[^"]+\.m3u8[^"]*)"""").findAll(sources)
                         .map { it.groupValues[1] }
                         .toList()
-                    
                     if (urls.isNotEmpty()) {
                         val masterUrl = urls.find { it.contains("master.m3u8") }
                             ?: urls.maxByOrNull { extractQualityFromUrl(it) }
-                        
                         if (masterUrl != null) {
                             Log.d(tag, "Found master URL via player sources: $masterUrl")
                             return masterUrl
@@ -424,7 +420,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Regex("""-(\d+)\.m3u8"""),
             Regex("""_(\d+)\.m3u8"""),
         )
-        
         for (regex in qualityRegexes) {
             val match = regex.find(url)
             if (match != null) {
