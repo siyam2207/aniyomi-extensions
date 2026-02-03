@@ -129,15 +129,18 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         // Use the embed URL directly for video extraction
         val url = if (anime.url.startsWith("http")) anime.url else "$baseUrl${anime.url}"
         Log.d(tag, "Using embed URL: $url")
-        // Set the anime as a tag to preserve it
-        val request = GET(url, headers)
-        request.tag(SAnime::class.java, anime)
-        return request
+        // Store the anime in the request tag
+        return GET(url, headers).newBuilder().tag(SAnime::class.java to anime).build()
     }
 
     override fun animeDetailsParse(response: Response): SAnime {
         // Get the existing anime from the request tag
-        val anime = response.request.tag(SAnime::class.java) ?: SAnime.create()
+        val tagPair = response.request.tag() as? Pair<*, *>
+        val anime = if (tagPair?.first == SAnime::class.java) {
+            tagPair.second as? SAnime ?: SAnime.create()
+        } else {
+            SAnime.create()
+        }
         return try {
             val body = response.body.string()
             Log.d(tag, "Details response length: ${body.length}")
@@ -320,10 +323,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val playlistUtils = PlaylistUtils(client, headers)
                         Log.d(tag, "Extracting HLS from: $url")
                         val hlsVideos = playlistUtils.extractFromHls(
-                            url,
-                            response.request.url.toString(),
-                            videoNameGen = { quality -> "HLS - $quality" },
-                            headers = videoHeaders(),
+                            hlsUrl = url,
+                            referer = response.request.url.toString(),
+                            videoNameGen = { quality -> "HLS - $quality" }
                         )
                         videos.addAll(hlsVideos)
                         Log.d(tag, "Found ${hlsVideos.size} HLS streams")
