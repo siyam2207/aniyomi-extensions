@@ -528,7 +528,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private fun XhrVideoResponse.toVideoSources(): VideoSources {
         return VideoSources(
             hlsUrl = hls?.src,
-            mp4Sources = mp4?.filterValues { it.isNotBlank() }
+            mp4Sources = mp4?.filterValues { it.isNotBlank() },
         )
     }
 }
