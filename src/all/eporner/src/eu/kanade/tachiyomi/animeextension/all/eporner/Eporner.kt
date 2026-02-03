@@ -327,7 +327,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                             url,
                             response.request.url.toString(),
                             videoNameGen = { quality -> "HLS - $quality" },
-                            headers = videoHeaders()  // FIX: Pass headers to HLS extraction
+                            headers = videoHeaders(),
                         )
                         videos.addAll(hlsVideos)
                         Log.d(tag, "Found ${hlsVideos.size} HLS streams")
@@ -350,7 +350,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val url = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() } ?: match.value.takeIf { it.isNotBlank() }
                         if (url != null && url.startsWith("http") && url.contains(".mp4") && !videos.any { it.videoUrl == url }) {
                             val quality = url.extractQualityFromUrl()
-                            videos.add(Video(url, "MP4 - $quality", url, videoHeaders()))  // FIX: Add headers
+                            videos.add(Video(url, "MP4 - $quality", url, videoHeaders()))
                             Log.d(tag, "Found MP4: $quality")
                         }
                     }
@@ -370,7 +370,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         val url = urlMatch.groupValues[1]
                         if (url.isNotBlank() && !videos.any { it.videoUrl == url }) {
                             val quality = url.extractQualityFromUrl()
-                            videos.add(Video(url, "Script - $quality", url, videoHeaders()))  // FIX: Add headers
+                            videos.add(Video(url, "Script - $quality", url, videoHeaders()))
                             Log.d(tag, "Found script MP4: $quality")
                         }
                     }
