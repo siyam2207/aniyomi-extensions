@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import android.app.Application
 import android.util.Log
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
@@ -21,7 +20,6 @@ import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
-import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
 
@@ -42,9 +40,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Preferences ====================
     private val preferences by lazy {
         @Suppress("DEPRECATION")
-        android.preference.PreferenceManager.getDefaultSharedPreferences(
-            Injekt.get<Application>().applicationContext,
-        )
+        android.preference.PreferenceManager.getDefaultSharedPreferences(context)
     }
 
     // ==================== Headers ====================
@@ -293,7 +289,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val masterUrl = findMasterUrl(html) ?: return emptyList()
 
-            extractVideosWithRetry(masterUrl, embedUrl)
+            // First attempt with full headers
+            PlaylistUtils(client).extractHlsFromUrl(
+                masterUrl,
+                videoNameGen = { it.quality },
+                referer = embedUrl,
+                headers = videoHeaders(embedUrl),
+            ).sortedByDescending {
+                it.quality.replace("p", "").toIntOrNull() ?: 0
+            }
         } catch (e: Exception) {
             emptyList()
         }
@@ -313,34 +317,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             return url
         }
         return null
-    }
-
-    private fun extractVideosWithRetry(masterUrl: String, embedUrl: String): List<Video> {
-        return try {
-            PlaylistUtils(client, headers)
-                .extractFromHls(
-                    masterUrl,
-                    videoHeaders(embedUrl),
-                    videoHeaders(embedUrl),
-                ) { quality -> quality.toString() }
-                .sortedByDescending {
-                    it.quality.replace("p", "").toIntOrNull() ?: 0
-                }
-        } catch (e: Exception) {
-            try {
-                PlaylistUtils(client, videoHeaders(embedUrl))
-                    .extractFromHls(
-                        masterUrl,
-                        videoHeaders(embedUrl),
-                        videoHeaders(embedUrl),
-                    ) { quality -> quality.toString() }
-                    .sortedByDescending {
-                        it.quality.replace("p", "").toIntOrNull() ?: 0
-                    }
-            } catch (e2: Exception) {
-                emptyList()
-            }
-        }
     }
 
     // ==================== Settings ====================
