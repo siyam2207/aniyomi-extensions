@@ -531,4 +531,3 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             mp4Sources = mp4?.filterValues { it.isNotBlank() }
         )
     }
-}
