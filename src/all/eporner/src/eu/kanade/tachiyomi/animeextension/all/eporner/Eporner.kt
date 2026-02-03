@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
+import android.app.Application
 import android.util.Log
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
@@ -20,6 +21,7 @@ import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
+import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
 
@@ -36,6 +38,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // User agent constant
     private val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+    // ==================== Preferences ====================
+    private val preferences by lazy {
+        @Suppress("DEPRECATION")
+        android.preference.PreferenceManager.getDefaultSharedPreferences(
+            Injekt.get<Application>().applicationContext
+        )
+    }
 
     // ==================== Headers ====================
     override fun headersBuilder(): Headers.Builder {
@@ -310,10 +320,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             PlaylistUtils(client, headers)
                 .extractFromHls(
                     masterUrl,
-                    referer = embedUrl,
-                    qualityCallback = { it.quality },
-                    headers = videoHeaders(embedUrl),
-                )
+                    videoHeaders(embedUrl),
+                    videoHeaders(embedUrl),
+                ) { quality -> quality.toString() }
                 .sortedByDescending {
                     it.quality.replace("p", "").toIntOrNull() ?: 0
                 }
@@ -322,10 +331,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 PlaylistUtils(client, videoHeaders(embedUrl))
                     .extractFromHls(
                         masterUrl,
-                        referer = embedUrl,
-                        qualityCallback = { it.quality },
-                        headers = videoHeaders(embedUrl),
-                    )
+                        videoHeaders(embedUrl),
+                        videoHeaders(embedUrl),
+                    ) { quality -> quality.toString() }
                     .sortedByDescending {
                         it.quality.replace("p", "").toIntOrNull() ?: 0
                     }
@@ -388,12 +396,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         DurationFilter(),
         QualityFilter(),
     )
-
-    // ==================== Preferences ====================
-    private val preferences by lazy {
-        @Suppress("DEPRECATION")
-        android.preference.PreferenceManager.getDefaultSharedPreferences(context)
-    }
 
     // ==================== Filter Classes ====================
     private open class UriPartFilter(
