@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
@@ -21,8 +22,6 @@ import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
-import uy.kohesive.injekt.Injekt
-import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
 
@@ -40,13 +39,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // User agent constant
     private val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
-    // ==================== Preferences ====================
-    private val preferences by lazy {
-        @Suppress("DEPRECATION")
-        android.preference.PreferenceManager.getDefaultSharedPreferences(
-            Injekt.get<Context>(),
-        )
-    }
+    // Store preferences instance
+    private var preferences: SharedPreferences? = null
 
     // ==================== Headers ====================
     override fun headersBuilder(): Headers.Builder {
@@ -294,7 +288,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val masterUrl = findMasterUrl(html) ?: return emptyList()
 
-            // Use PlaylistUtils with proper parameters based on other extensions
+            // Use PlaylistUtils with proper parameters
             PlaylistUtils(client, videoHeaders(embedUrl))
                 .extractFromHls(masterUrl, embedUrl) { quality -> quality.toString() }
                 .sortedByDescending { video ->
@@ -323,41 +317,66 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Settings ====================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        // Initialize preferences with the context from the screen
+        preferences = android.preference.PreferenceManager.getDefaultSharedPreferences(screen.context)
+
+        // Create quality preference
         ListPreference(screen.context).apply {
             key = PREF_QUALITY_KEY
             title = "Preferred video quality"
             entries = QUALITY_LIST
             entryValues = QUALITY_LIST
             setDefaultValue(PREF_QUALITY_DEFAULT)
-            summary = "%s"
+            
+            // Set current value
+            val currentValue = preferences?.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
+            setValueIndex(QUALITY_LIST.indexOf(currentValue).coerceAtLeast(0))
+            summary = when (currentValue) {
+                "best" -> "Best available quality"
+                else -> currentValue
+            }
 
             setOnPreferenceChangeListener { _, newValue ->
                 val selected = newValue as String
-                val summary = when (selected) {
+                preferences?.edit()?.putString(PREF_QUALITY_KEY, selected)?.apply()
+                this.summary = when (selected) {
                     "best" -> "Best available quality"
-                    else -> "$selected"
+                    else -> selected
                 }
-                this.summary = summary
                 true
             }
         }.also(screen::addPreference)
 
+        // Create sort preference
         ListPreference(screen.context).apply {
             key = PREF_SORT_KEY
             title = "Default sort order"
             entries = SORT_LIST
             entryValues = SORT_LIST
             setDefaultValue(PREF_SORT_DEFAULT)
-            summary = "%s"
+            
+            // Set current value
+            val currentValue = preferences?.getString(PREF_SORT_KEY, PREF_SORT_DEFAULT) ?: PREF_SORT_DEFAULT
+            setValueIndex(SORT_LIST.indexOf(currentValue).coerceAtLeast(0))
+            summary = currentValue
 
             setOnPreferenceChangeListener { _, newValue ->
+                val selected = newValue as String
+                preferences?.edit()?.putString(PREF_SORT_KEY, selected)?.apply()
+                this.summary = selected
                 true
             }
         }.also(screen::addPreference)
     }
 
     override fun List<Video>.sort(): List<Video> {
-        val qualityPref = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
+        // Get quality preference safely
+        val qualityPref = try {
+            preferences?.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
+        } catch (e: Exception) {
+            PREF_QUALITY_DEFAULT
+        }
+        
         return sortedWith(
             compareByDescending<Video> {
                 when {
