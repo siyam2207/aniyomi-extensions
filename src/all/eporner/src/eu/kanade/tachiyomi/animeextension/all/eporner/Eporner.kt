@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.preference.ListPreference
@@ -327,7 +326,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             entries = QUALITY_LIST
             entryValues = QUALITY_LIST
             setDefaultValue(PREF_QUALITY_DEFAULT)
-            
+
             // Set current value
             val currentValue = preferences?.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT) ?: PREF_QUALITY_DEFAULT
             setValueIndex(QUALITY_LIST.indexOf(currentValue).coerceAtLeast(0))
@@ -354,7 +353,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             entries = SORT_LIST
             entryValues = SORT_LIST
             setDefaultValue(PREF_SORT_DEFAULT)
-            
+
             // Set current value
             val currentValue = preferences?.getString(PREF_SORT_KEY, PREF_SORT_DEFAULT) ?: PREF_SORT_DEFAULT
             setValueIndex(SORT_LIST.indexOf(currentValue).coerceAtLeast(0))
@@ -376,7 +375,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         } catch (e: Exception) {
             PREF_QUALITY_DEFAULT
         }
-        
+
         return sortedWith(
             compareByDescending<Video> {
                 when {
