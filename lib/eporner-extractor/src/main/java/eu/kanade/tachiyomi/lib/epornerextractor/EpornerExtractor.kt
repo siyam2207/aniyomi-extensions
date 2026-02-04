@@ -35,12 +35,12 @@ class EpornerExtractor(
             // Step 3: Extract hash from HTML
             val hash = extractHash(embedHtml) ?: return emptyList()
             
-            // Step 4: Build XHR URL - request both HLS and MP4 formats
+            // Step 4: Build XHR URL - ONLY request HLS format
             val xhrUrl = "https://www.eporner.com/xhr/video/$videoId" +
                 "?hash=$hash" +
                 "&domain=www.eporner.com" +
                 "&embed=true" +
-                "&supportedFormats=hls,mp4" +
+                "&supportedFormats=hls" +  // ONLY HLS, no MP4
                 "&_=${System.currentTimeMillis()}"
             
             // Step 5: Make XHR request with correct headers
@@ -63,14 +63,15 @@ class EpornerExtractor(
             // Step 6: Parse JSON response
             val json = JSONObject(xhrBody)
             
-            // Step 7: Try to get HLS URL first (preferred format)
+            // Step 7: Try to get HLS URL from direct "hls" field
             val hlsUrl = json.optString("hls", "").takeIf { it.isNotBlank() }
             if (!hlsUrl.isNullOrEmpty()) {
                 return listOf(
                     Video(
-                        url = hlsUrl,
-                        quality = "HLS",
-                        headers = Headers.Builder()
+                        hlsUrl,        // displayUrl - shown in UI
+                        "HLS",         // quality - shown in UI
+                        hlsUrl,        // videoUrl - actual video URL for player
+                        Headers.Builder()
                             .set("Referer", "https://www.eporner.com/")
                             .set("Origin", "https://www.eporner.com")
                             .set("User-Agent", mobileUserAgent)
@@ -79,20 +80,22 @@ class EpornerExtractor(
                 )
             }
             
-            // Step 8: Try to get sources array (check for HLS first, then MP4 fallback)
+            // Step 8: Try to get HLS URL from sources array
             val sources = json.optJSONArray("sources")
             if (sources != null) {
-                // First pass: look for HLS
                 for (i in 0 until sources.length()) {
                     val source = sources.getJSONObject(i)
                     val src = source.optString("src", "").takeIf { it.isNotBlank() } ?: continue
                     val type = source.optString("type", "")
+                    
+                    // Only accept HLS/m3u8 formats
                     if (type.contains("hls") || src.contains(".m3u8")) {
                         return listOf(
                             Video(
-                                url = src,
-                                quality = "HLS",
-                                headers = Headers.Builder()
+                                src,        // displayUrl
+                                "HLS",      // quality
+                                src,        // videoUrl
+                                Headers.Builder()
                                     .set("Referer", "https://www.eporner.com/")
                                     .set("Origin", "https://www.eporner.com")
                                     .set("User-Agent", mobileUserAgent)
@@ -101,28 +104,9 @@ class EpornerExtractor(
                         )
                     }
                 }
-                
-                // Second pass: look for MP4 fallback
-                for (i in 0 until sources.length()) {
-                    val source = sources.getJSONObject(i)
-                    val src = source.optString("src", "").takeIf { it.isNotBlank() } ?: continue
-                    val label = source.optString("label", "").takeIf { it.isNotBlank() } ?: "MP4"
-                    if (src.contains(".mp4")) {
-                        return listOf(
-                            Video(
-                                url = src,
-                                quality = label,
-                                headers = Headers.Builder()
-                                    .set("Referer", "https://www.eporner.com/")
-                                    .set("User-Agent", mobileUserAgent)
-                                    .build()
-                            )
-                        )
-                    }
-                }
             }
             
-            // If no valid sources found
+            // If no HLS sources found, return empty list (NO MP4 fallback)
             emptyList()
         } catch (e: Exception) {
             e.printStackTrace()
