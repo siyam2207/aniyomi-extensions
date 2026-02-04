@@ -36,13 +36,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private val json: Json by injectLazy()
     private val tag = "EpornerExtension"
 
-    // ADD THE EXTRACTOR INSTANCE HERE
+    // EXTRACTOR with proper User-Agent
     private val epornerExtractor by lazy {
         EpornerExtractor(client, headers)
     }
 
     // User agent constant
-    private val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    private val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; SM-M526BR) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
 
     // Store preferences instance
     private var preferences: SharedPreferences? = null
@@ -55,6 +55,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Accept-Language", "en-US,en;q=0.5")
             .add("Referer", baseUrl)
             .add("Origin", baseUrl)
+            .add("Cache-Control", "no-cache")
+            .add("Pragma", "no-cache")
     }
 
     // ==================== Popular Anime ====================
@@ -240,59 +242,58 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
-    // ==================== Clean Video Headers ====================
-    private fun videoHeaders(embedUrl: String): Headers {
-        return Headers.Builder()
-            .add("User-Agent", USER_AGENT)
-            .add("Referer", embedUrl)
-            .add("Origin", "https://www.eporner.com")
-            .add("Accept", "*/*")
-            .add("Accept-Language", "en-US,en;q=0.9")
-            .add("Connection", "keep-alive")
-            .build()
-    }
-
-    // ==================== Required Methods ====================
-    override fun videoUrlParse(response: Response): String {
-        return videoListParse(response).firstOrNull()?.videoUrl ?: ""
-    }
-
+    // ==================== Episodes ====================
     override fun episodeListRequest(anime: SAnime): Request {
+        // The embed URL is stored in anime.url
         return GET(anime.url, headers)
     }
 
+    override fun episodeListParse(response: Response): List<SEpisode> {
+        return try {
+            // Create a single episode with the embed URL
+            val embedUrl = response.request.url.toString()
+            listOf(
+                SEpisode.create().apply {
+                    name = "Video"
+                    episode_number = 1F
+                    url = embedUrl
+                }
+            )
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    // ==================== Video Extraction ====================
     override fun videoListRequest(episode: SEpisode): Request {
+        // Episode URL should be the embed URL
         return GET(episode.url, headers)
     }
 
-    // ==================== Episodes ====================
-    override fun episodeListParse(response: Response): List<SEpisode> {
-        return listOf(
-            SEpisode.create().apply {
-                name = "Video"
-                episode_number = 1F
-                url = response.request.url.toString()
-            },
-        )
-    }
-
-    // ==================== Video Extraction via EXTRACTOR ====================
     override fun videoListParse(response: Response): List<Video> {
         return try {
             val embedUrl = response.request.url.toString()
+            Log.d(tag, "Extracting videos from embed URL: $embedUrl")
+            
+            // Use the extractor
             val videos = epornerExtractor.videosFromEmbed(embedUrl)
+            
             if (videos.isNotEmpty()) {
-                Log.d(tag, "Found ${videos.size} HLS videos using extractor")
+                Log.d(tag, "Found ${videos.size} videos from extractor")
                 videos
             } else {
-                // NO MP4 FALLBACK - If no HLS found, video is site-locked
-                Log.d(tag, "No HLS streams found - video is site-locked (only available at eporner.com)")
+                Log.d(tag, "No videos found from extractor")
                 emptyList()
             }
         } catch (e: Exception) {
             Log.e(tag, "Error in videoListParse", e)
             emptyList()
         }
+    }
+
+    // Required method - just return first video URL
+    override fun videoUrlParse(response: Response): String {
+        return videoListParse(response).firstOrNull()?.videoUrl ?: ""
     }
 
     // ==================== Settings ====================
