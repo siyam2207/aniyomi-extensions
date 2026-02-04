@@ -15,6 +15,7 @@ import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.Request
@@ -349,44 +350,36 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val videos = mutableListOf<Video>()
 
-            // Try to parse the JSON response
-            val jsonObj = json.parseToJsonElement(jsonBody).jsonObject
-
-            // Look for sources array
-            val sources = jsonObj["sources"]?.jsonArray
-            if (sources != null) {
-                sources.forEach { source ->
-                    val src = source.jsonObject["src"]?.jsonPrimitive?.contentOrNull
-                    val type = source.jsonObject["type"]?.jsonPrimitive?.contentOrNull
-                    val label = source.jsonObject["label"]?.jsonPrimitive?.contentOrNull
-
-                    if (src != null && type != null && (type.contains("mp4") || type.contains("video"))) {
-                        val quality = label ?: extractQualityFromUrl(src)
-                        videos.add(Video(src, quality, src, videoHeaders(embedUrl)))
-                        Log.d(tag, "Found video source: $quality - $src")
+            // Try to parse the JSON response as VideoSourcesResponse
+            val videoSourcesResponse = json.decodeFromString<VideoSourcesResponse>(jsonBody)
+            
+            // Parse sources array
+            if (videoSourcesResponse.sources != null) {
+                for (source in videoSourcesResponse.sources) {
+                    if (source.src != null && source.type != null && 
+                        (source.type.contains("mp4") || source.type.contains("video"))) {
+                        val quality = source.label ?: extractQualityFromUrl(source.src)
+                        videos.add(Video(source.src, quality, source.src, videoHeaders(embedUrl)))
+                        Log.d(tag, "Found video source: $quality - ${source.src}")
                     }
                 }
             }
 
-            // Look for HLS or DASH URLs
-            val hls = jsonObj["hls"]?.jsonPrimitive?.contentOrNull
-            val dash = jsonObj["dash"]?.jsonPrimitive?.contentOrNull
-            val mp4 = jsonObj["mp4"]?.jsonPrimitive?.contentOrNull
-
-            if (hls != null) {
-                Log.d(tag, "Found HLS URL: $hls")
-                return extractVideosFromMasterPlaylist(hls, embedUrl)
+            // Check for HLS, DASH, or MP4 URLs
+            if (videoSourcesResponse.hls != null) {
+                Log.d(tag, "Found HLS URL: ${videoSourcesResponse.hls}")
+                return extractVideosFromMasterPlaylist(videoSourcesResponse.hls, embedUrl)
             }
 
-            if (dash != null) {
-                Log.d(tag, "Found DASH URL: $dash")
-                videos.add(Video(dash, "DASH", dash, videoHeaders(embedUrl)))
+            if (videoSourcesResponse.dash != null) {
+                Log.d(tag, "Found DASH URL: ${videoSourcesResponse.dash}")
+                videos.add(Video(videoSourcesResponse.dash, "DASH", videoSourcesResponse.dash, videoHeaders(embedUrl)))
             }
 
-            if (mp4 != null) {
-                Log.d(tag, "Found MP4 URL: $mp4")
-                val quality = extractQualityFromUrl(mp4)
-                videos.add(Video(mp4, quality, mp4, videoHeaders(embedUrl)))
+            if (videoSourcesResponse.mp4 != null) {
+                Log.d(tag, "Found MP4 URL: ${videoSourcesResponse.mp4}")
+                val quality = extractQualityFromUrl(videoSourcesResponse.mp4)
+                videos.add(Video(videoSourcesResponse.mp4, quality, videoSourcesResponse.mp4, videoHeaders(embedUrl)))
             }
 
             videos
@@ -730,5 +723,21 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("src") val src: String,
         @SerialName("width") val width: Int,
         @SerialName("height") val height: Int,
+    )
+
+    // ==================== Video Sources Data Classes ====================
+    @Serializable
+    private data class VideoSourcesResponse(
+        @SerialName("sources") val sources: List<VideoSource>? = null,
+        @SerialName("hls") val hls: String? = null,
+        @SerialName("dash") val dash: String? = null,
+        @SerialName("mp4") val mp4: String? = null,
+    )
+
+    @Serializable
+    private data class VideoSource(
+        @SerialName("src") val src: String? = null,
+        @SerialName("type") val type: String? = null,
+        @SerialName("label") val label: String? = null,
     )
 }
