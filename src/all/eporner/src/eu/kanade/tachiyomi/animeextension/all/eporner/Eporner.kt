@@ -276,25 +276,25 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         )
     }
 
-// ==================== Video Extraction via EXTRACTOR ====================
-override fun videoListParse(response: Response): List<Video> {
-    return try {
-        val embedUrl = response.request.url.toString()
-        val videos = epornerExtractor.videosFromEmbed(embedUrl)
-        
-        if (videos.isNotEmpty()) {
-            Log.d(tag, "Found ${videos.size} HLS videos using extractor")
-            videos
-        } else {
-            // NO MP4 FALLBACK - If no HLS found, video is site-locked
-            Log.d(tag, "No HLS streams found - video is site-locked (only available at eporner.com)")
+    // ==================== Video Extraction via EXTRACTOR ====================
+    override fun videoListParse(response: Response): List<Video> {
+        return try {
+            val embedUrl = response.request.url.toString()
+            val videos = epornerExtractor.videosFromEmbed(embedUrl)
+            
+            if (videos.isNotEmpty()) {
+                Log.d(tag, "Found ${videos.size} HLS videos using extractor")
+                videos
+            } else {
+                // NO MP4 FALLBACK - If no HLS found, video is site-locked
+                Log.d(tag, "No HLS streams found - video is site-locked (only available at eporner.com)")
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error in videoListParse", e)
             emptyList()
         }
-    } catch (e: Exception) {
-        Log.e(tag, "Error in videoListParse", e)
-        emptyList()
     }
-}
 
     // ==================== Settings ====================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
