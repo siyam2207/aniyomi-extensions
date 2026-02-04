@@ -371,20 +371,20 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun containsPlaceholder(text: String): Boolean {
         return text.contains("this video is only available at www.eporner.com", ignoreCase = true) ||
-               text.contains("video is only available", ignoreCase = true) ||
-               text.contains("available at www.eporner.com", ignoreCase = true) ||
-               text.contains("redirect to www.eporner.com", ignoreCase = true)
+                text.contains("video is only available", ignoreCase = true) ||
+                text.contains("available at www.eporner.com", ignoreCase = true) ||
+                text.contains("redirect to www.eporner.com", ignoreCase = true)
     }
 
     private fun isValidVideoUrl(url: String): Boolean {
-        return url.contains("eporner") && 
-               !url.contains("this video is only available at www.eporner.com", ignoreCase = true) &&
-               !url.contains("video is only available", ignoreCase = true) &&
-               !url.contains("thumb") && 
-               !url.contains("preview") &&
-               !url.contains("placeholder") &&
-               !url.contains("redirect") &&
-               url.endsWith(".mp4", ignoreCase = true)
+        return url.contains("eporner") &&
+                !url.contains("this video is only available at www.eporner.com", ignoreCase = true) &&
+                !url.contains("video is only available", ignoreCase = true) &&
+                !url.contains("thumb") &&
+                !url.contains("preview") &&
+                !url.contains("placeholder") &&
+                !url.contains("redirect") &&
+                url.endsWith(".mp4", ignoreCase = true)
     }
 
     private fun extractQualityFromUrl(url: String): String {
