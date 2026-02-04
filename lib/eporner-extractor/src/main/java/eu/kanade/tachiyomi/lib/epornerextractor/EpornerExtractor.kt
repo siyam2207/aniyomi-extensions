@@ -13,10 +13,10 @@ class EpornerExtractor(
 ) {
 
     private val videoIdPattern = Pattern.compile("/embed/([^/]+)/?")
-    private val hashPattern = Pattern.compile("""hash\s*[:=]\s*['"]([^'"]+)['"]""")
+    private val hashPattern = Pattern.compile("""hash\s*[:=]\s*['"]([a-zA-Z0-9]{20,})['"]""")
     
-    // Mobile User-Agent to avoid bot detection
-    private val mobileUserAgent = "Mozilla/5.0 (Linux; Android 10; SM-M526BR) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
+    // Mobile User-Agent to avoid bot detection (exactly as specified)
+    private val mobileUserAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
 
     fun videosFromEmbed(embedUrl: String): List<Video> {
         return try {
@@ -50,6 +50,9 @@ class EpornerExtractor(
                 .set("Accept", "application/json, text/plain, */*")
                 .set("Origin", "https://www.eporner.com")
                 .set("User-Agent", mobileUserAgent)
+                .set("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8")
+                .set("Cache-Control", "no-cache")
+                .set("Pragma", "no-cache")
                 .build()
             
             val xhrRequest = Request.Builder()
@@ -63,27 +66,25 @@ class EpornerExtractor(
             // Step 6: Parse JSON response
             val json = JSONObject(xhrBody)
             
-            // Step 7: Get HLS URL
+            // Step 7: Try to get HLS URL first (preferred format)
             val hlsUrl = json.optString("hls", "").takeIf { it.isNotBlank() }
             if (!hlsUrl.isNullOrEmpty()) {
-                return extractHlsVariants(hlsUrl)
+                return extractAllQualitiesFromMasterPlaylist(hlsUrl)
             }
             
-            // Step 8: Try to get HLS URL from sources array
+            // Step 8: Try to get sources array (check for HLS first)
             val sources = json.optJSONArray("sources")
             if (sources != null) {
                 for (i in 0 until sources.length()) {
                     val source = sources.getJSONObject(i)
                     val src = source.optString("src", "").takeIf { it.isNotBlank() } ?: continue
                     val type = source.optString("type", "")
-                    
                     if (type.contains("hls") || src.contains(".m3u8")) {
-                        return extractHlsVariants(src)
+                        return extractAllQualitiesFromMasterPlaylist(src)
                     }
                 }
             }
             
-            // If no HLS sources found, return empty list
             emptyList()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -91,10 +92,10 @@ class EpornerExtractor(
         }
     }
 
-    private fun extractHlsVariants(masterPlaylistUrl: String): List<Video> {
+    private fun extractAllQualitiesFromMasterPlaylist(masterPlaylistUrl: String): List<Video> {
         return try {
-            // Fetch the master playlist
-            val playlistRequest = Request.Builder()
+            // Download and parse the master playlist
+            val masterRequest = Request.Builder()
                 .url(masterPlaylistUrl)
                 .headers(
                     Headers.Builder()
@@ -109,69 +110,46 @@ class EpornerExtractor(
                 )
                 .build()
             
-            val playlistResponse = client.newCall(playlistRequest).execute()
-            val playlistContent = playlistResponse.body?.string() ?: return emptyList()
+            val masterResponse = client.newCall(masterRequest).execute()
+            val masterContent = masterResponse.body?.string() ?: return emptyList()
             
-            // Parse the master playlist to extract variants
-            val variants = mutableListOf<Video>()
-            val lines = playlistContent.lines()
+            // Parse the master playlist to find quality variants
+            val lines = masterContent.lines()
+            val videos = mutableListOf<Video>()
             
             var currentQuality: String? = null
-            var currentUrl: String? = null
             
             for (i in lines.indices) {
                 val line = lines[i].trim()
                 
-                // Look for stream information lines (contains BANDWIDTH and RESOLUTION)
+                // Look for quality information
                 if (line.startsWith("#EXT-X-STREAM-INF:")) {
-                    // Extract quality from resolution if available
-                    val resolutionMatch = Regex("RESOLUTION=(\\d+x\\d+)").find(line)
-                    val bandwidthMatch = Regex("BANDWIDTH=(\\d+)").find(line)
-                    
+                    // Extract quality from the line
                     currentQuality = when {
-                        resolutionMatch != null -> {
-                            val res = resolutionMatch.groupValues[1]
-                            when {
-                                res.contains("1280x720") -> "720p"
-                                res.contains("854x480") -> "480p"
-                                res.contains("640x360") -> "360p"
-                                res.contains("426x240") -> "240p"
-                                else -> res
-                            }
-                        }
-                        bandwidthMatch != null -> {
-                            val bandwidth = bandwidthMatch.groupValues[1].toInt()
-                            when {
-                                bandwidth > 2000000 -> "720p"
-                                bandwidth > 1000000 -> "480p"
-                                bandwidth > 500000 -> "360p"
-                                else -> "240p"
-                            }
-                        }
+                        line.contains("720p") || line.contains("1280x720") -> "720p"
+                        line.contains("480p") || line.contains("854x480") -> "480p"
+                        line.contains("360p") || line.contains("640x360") -> "360p"
+                        line.contains("240p") || line.contains("426x240") -> "240p"
                         else -> "Auto"
                     }
                     
                     // Next line should be the variant playlist URL
                     if (i + 1 < lines.size) {
-                        val nextLine = lines[i + 1].trim()
-                        if (!nextLine.startsWith("#")) {
-                            currentUrl = nextLine
-                            
-                            // Make relative URLs absolute
-                            currentUrl = if (currentUrl!!.startsWith("http")) {
-                                currentUrl
+                        val variantUrl = lines[i + 1].trim()
+                        if (variantUrl.isNotBlank() && !variantUrl.startsWith("#")) {
+                            // Make URL absolute if relative
+                            val absoluteUrl = if (variantUrl.startsWith("http")) {
+                                variantUrl
                             } else {
-                                // Extract base URL from master playlist
                                 val baseUrl = masterPlaylistUrl.substringBeforeLast("/") + "/"
-                                baseUrl + currentUrl
+                                baseUrl + variantUrl
                             }
                             
-                            // Add the variant to the list
-                            variants.add(
+                            videos.add(
                                 Video(
-                                    currentUrl,
+                                    absoluteUrl,
                                     currentQuality,
-                                    currentUrl,
+                                    absoluteUrl,
                                     Headers.Builder()
                                         .set("Referer", "https://www.eporner.com/")
                                         .set("Origin", "https://www.eporner.com")
@@ -184,17 +162,15 @@ class EpornerExtractor(
                                 )
                             )
                             
-                            // Reset for next variant
                             currentQuality = null
-                            currentUrl = null
                         }
                     }
                 }
             }
             
-            // If no variants were found (direct playlist), add the master playlist itself
-            if (variants.isEmpty()) {
-                variants.add(
+            // If no variants found, return the master playlist itself
+            if (videos.isEmpty()) {
+                videos.add(
                     Video(
                         masterPlaylistUrl,
                         "HLS",
@@ -212,7 +188,7 @@ class EpornerExtractor(
                 )
             }
             
-            variants
+            videos
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
