@@ -281,7 +281,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val embedUrl = response.request.url.toString()
             val videos = epornerExtractor.videosFromEmbed(embedUrl)
-            
             if (videos.isNotEmpty()) {
                 Log.d(tag, "Found ${videos.size} videos using extractor")
                 videos
@@ -302,11 +301,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val html = response.body.string()
             val embedUrl = response.request.url.toString()
             val videos = mutableListOf<Video>()
-            
             // Simple MP4 extraction as fallback
             val mp4Pattern = Regex(""""(https?://[^"]+\.mp4[^"]*)""")
             val matches = mp4Pattern.findAll(html)
-            
             matches.forEach { match ->
                 val url = match.groupValues[1]
                 if (url.contains("eporner") && !url.contains("thumb") && !url.contains("preview")) {
@@ -317,12 +314,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         url.contains("360") -> "360p"
                         else -> "Unknown"
                     }
-                    
                     videos.add(Video(url, quality, url, videoHeaders(embedUrl)))
                     Log.d(tag, "Found legacy MP4: $quality - $url")
                 }
             }
-            
             videos
         } catch (e: Exception) {
             Log.e(tag, "Legacy extraction failed", e)
