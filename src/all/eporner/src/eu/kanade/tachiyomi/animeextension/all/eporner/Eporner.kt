@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import android.content.SharedPreferences
 import android.util.Log
+import androidx.preference.PreferenceManager
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
@@ -275,7 +276,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 videos.addAll(
                     PlaylistUtils(client, videoHeaders(embedUrl))
                         .extractFromHls(hlsUrl, embedUrl) { quality ->
-                            "${quality.height}p"
+                            // The quality object has a resolution property that returns "720p", "1080p", etc.
+                            quality.resolution
                         },
                 )
             }
@@ -332,7 +334,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     // ==================== Settings ====================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // Initialize preferences with the context from the screen
-        preferences = androidx.preference.PreferenceManager.getDefaultSharedPreferences(screen.context)
+        preferences = PreferenceManager.getDefaultSharedPreferences(screen.context)
 
         // Create quality preference
         ListPreference(screen.context).apply {
