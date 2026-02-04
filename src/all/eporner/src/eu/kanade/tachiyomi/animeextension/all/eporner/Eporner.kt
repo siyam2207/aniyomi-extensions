@@ -356,8 +356,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // Parse sources array
             if (videoSourcesResponse.sources != null) {
                 for (source in videoSourcesResponse.sources) {
-                    if (source.src != null && source.type != null && 
-                        (source.type.contains("mp4") || source.type.contains("video"))) {
+                    if (source.src != null && source.type != null &&
+                        (source.type.contains("mp4") || source.type.contains("video"))
+                    ) {
                         val quality = source.label ?: extractQualityFromUrl(source.src)
                         videos.add(Video(source.src, quality, source.src, videoHeaders(embedUrl)))
                         Log.d(tag, "Found video source: $quality - ${source.src}")
