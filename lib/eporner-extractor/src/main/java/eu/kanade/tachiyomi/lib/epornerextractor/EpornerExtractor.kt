@@ -16,8 +16,7 @@ class EpornerExtractor(
     private val playlistUtils by lazy { PlaylistUtils(client) }
 
     private val videoIdPattern = Pattern.compile("/embed/([^/]+)/?")
-    private val hashPattern = Pattern.compile("hash['\"]?\\s*[:=]\\s*['\"]([a-zA-Z0-9]{20,32})")
-
+    private val hashPattern = Pattern.compile("""hash\s*[:=]\s*['"]([^'"]+)['"]""")
     fun videosFromEmbed(embedUrl: String): List<Video> {
         return try {
             // Get video ID from URL
