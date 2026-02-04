@@ -352,7 +352,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             // Try to parse the JSON response as VideoSourcesResponse
             val videoSourcesResponse = json.decodeFromString<VideoSourcesResponse>(jsonBody)
-            
             // Parse sources array
             if (videoSourcesResponse.sources != null) {
                 for (source in videoSourcesResponse.sources) {
