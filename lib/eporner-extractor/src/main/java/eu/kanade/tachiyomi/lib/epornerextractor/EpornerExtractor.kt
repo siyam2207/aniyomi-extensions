@@ -3,11 +3,9 @@ package eu.kanade.tachiyomi.lib.epornerextractor
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.asJsoup
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import org.jsoup.Jsoup
-import uy.kohesive.injekt.injectLazy
 import java.util.regex.Pattern
 
 class EpornerExtractor(
