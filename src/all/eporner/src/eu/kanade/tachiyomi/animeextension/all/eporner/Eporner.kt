@@ -281,7 +281,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val embedUrl = response.request.url.toString()
             val videos = epornerExtractor.videosFromEmbed(embedUrl)
-            
             if (videos.isNotEmpty()) {
                 Log.d(tag, "Found ${videos.size} videos using extractor")
                 videos
@@ -301,19 +300,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val html = response.body.string()
             val embedUrl = response.request.url.toString()
-            
             // Check for placeholder text
             if (containsPlaceholder(html)) {
                 Log.d(tag, "Page contains placeholder - video unavailable")
                 return emptyList()
             }
-            
             val videos = mutableListOf<Video>()
-            
             // Method 1: Look for data-src attributes which might contain MP4 URLs
             val dataSrcPattern = Regex("""data-src=["'](https?://[^"']+\.mp4[^"']*)""")
             val dataSrcMatches = dataSrcPattern.findAll(html)
-            
             dataSrcMatches.forEach { match ->
                 val url = match.groupValues[1]
                 if (isValidVideoUrl(url)) {
@@ -322,12 +317,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     Log.d(tag, "Found data-src MP4: $quality - $url")
                 }
             }
-            
             // Method 2: Look for video source tags
             if (videos.isEmpty()) {
                 val sourcePattern = Regex("""<source[^>]+src=["'](https?://[^"']+\.mp4[^"']*)""")
                 val sourceMatches = sourcePattern.findAll(html)
-                
                 sourceMatches.forEach { match ->
                     val url = match.groupValues[1]
                     if (isValidVideoUrl(url)) {
@@ -337,12 +330,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
             // Method 3: Look for regular MP4 URLs in JavaScript variables
             if (videos.isEmpty()) {
                 val jsVarPattern = Regex("""(?:src|url|file)\s*[=:]\s*["'](https?://[^"']+\.mp4[^"']*)""")
                 val jsVarMatches = jsVarPattern.findAll(html)
-                
                 jsVarMatches.forEach { match ->
                     val url = match.groupValues[1]
                     if (isValidVideoUrl(url)) {
@@ -352,12 +343,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
             // Method 4: Look for any MP4 URLs (last resort)
             if (videos.isEmpty()) {
                 val mp4Pattern = Regex("""["'](https?://[^"']+\.mp4[^"']*)""")
                 val matches = mp4Pattern.findAll(html)
-                
                 matches.forEach { match ->
                     val url = match.groupValues[1]
                     if (isValidVideoUrl(url)) {
@@ -367,14 +356,12 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     }
                 }
             }
-            
             // Check if we found any videos
             if (videos.isEmpty()) {
                 Log.d(tag, "No valid video URLs found in page")
             } else {
                 Log.d(tag, "Found ${videos.size} videos via direct page extraction")
             }
-            
             videos
         } catch (e: Exception) {
             Log.e(tag, "Direct page extraction failed", e)
