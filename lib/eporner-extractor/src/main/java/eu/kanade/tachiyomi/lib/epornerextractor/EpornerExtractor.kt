@@ -35,12 +35,12 @@ class EpornerExtractor(
             // Step 3: Extract hash from HTML
             val hash = extractHash(embedHtml) ?: return emptyList()
             
-            // Step 4: Build XHR URL - ONLY request HLS format
+            // Step 4: Build XHR URL - request both HLS and MP4 formats
             val xhrUrl = "https://www.eporner.com/xhr/video/$videoId" +
                 "?hash=$hash" +
                 "&domain=www.eporner.com" +
                 "&embed=true" +
-                "&supportedFormats=hls" +  // ONLY HLS, no MP4
+                "&supportedFormats=hls,mp4" +
                 "&_=${System.currentTimeMillis()}"
             
             // Step 5: Make XHR request with correct headers
@@ -63,21 +63,10 @@ class EpornerExtractor(
             // Step 6: Parse JSON response
             val json = JSONObject(xhrBody)
             
-            // Step 7: Try to get HLS URL from direct "hls" field
+            // Step 7: Get HLS URL
             val hlsUrl = json.optString("hls", "").takeIf { it.isNotBlank() }
             if (!hlsUrl.isNullOrEmpty()) {
-                return listOf(
-                    Video(
-                        hlsUrl,        // displayUrl - shown in UI
-                        "HLS",         // quality - shown in UI
-                        hlsUrl,        // videoUrl - actual video URL for player
-                        Headers.Builder()
-                            .set("Referer", "https://www.eporner.com/")
-                            .set("Origin", "https://www.eporner.com")
-                            .set("User-Agent", mobileUserAgent)
-                            .build()
-                    )
-                )
+                return extractHlsVariants(hlsUrl)
             }
             
             // Step 8: Try to get HLS URL from sources array
@@ -88,26 +77,142 @@ class EpornerExtractor(
                     val src = source.optString("src", "").takeIf { it.isNotBlank() } ?: continue
                     val type = source.optString("type", "")
                     
-                    // Only accept HLS/m3u8 formats
                     if (type.contains("hls") || src.contains(".m3u8")) {
-                        return listOf(
-                            Video(
-                                src,        // displayUrl
-                                "HLS",      // quality
-                                src,        // videoUrl
-                                Headers.Builder()
-                                    .set("Referer", "https://www.eporner.com/")
-                                    .set("Origin", "https://www.eporner.com")
-                                    .set("User-Agent", mobileUserAgent)
-                                    .build()
-                            )
-                        )
+                        return extractHlsVariants(src)
                     }
                 }
             }
             
-            // If no HLS sources found, return empty list (NO MP4 fallback)
+            // If no HLS sources found, return empty list
             emptyList()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    private fun extractHlsVariants(masterPlaylistUrl: String): List<Video> {
+        return try {
+            // Fetch the master playlist
+            val playlistRequest = Request.Builder()
+                .url(masterPlaylistUrl)
+                .headers(
+                    Headers.Builder()
+                        .set("Referer", "https://www.eporner.com/")
+                        .set("Origin", "https://www.eporner.com")
+                        .set("User-Agent", mobileUserAgent)
+                        .set("Accept", "*/*")
+                        .set("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8")
+                        .set("Cache-Control", "no-cache")
+                        .set("Pragma", "no-cache")
+                        .build()
+                )
+                .build()
+            
+            val playlistResponse = client.newCall(playlistRequest).execute()
+            val playlistContent = playlistResponse.body?.string() ?: return emptyList()
+            
+            // Parse the master playlist to extract variants
+            val variants = mutableListOf<Video>()
+            val lines = playlistContent.lines()
+            
+            var currentQuality: String? = null
+            var currentUrl: String? = null
+            
+            for (i in lines.indices) {
+                val line = lines[i].trim()
+                
+                // Look for stream information lines (contains BANDWIDTH and RESOLUTION)
+                if (line.startsWith("#EXT-X-STREAM-INF:")) {
+                    // Extract quality from resolution if available
+                    val resolutionMatch = Regex("RESOLUTION=(\\d+x\\d+)").find(line)
+                    val bandwidthMatch = Regex("BANDWIDTH=(\\d+)").find(line)
+                    
+                    currentQuality = when {
+                        resolutionMatch != null -> {
+                            val res = resolutionMatch.groupValues[1]
+                            when {
+                                res.contains("1280x720") -> "720p"
+                                res.contains("854x480") -> "480p"
+                                res.contains("640x360") -> "360p"
+                                res.contains("426x240") -> "240p"
+                                else -> res
+                            }
+                        }
+                        bandwidthMatch != null -> {
+                            val bandwidth = bandwidthMatch.groupValues[1].toInt()
+                            when {
+                                bandwidth > 2000000 -> "720p"
+                                bandwidth > 1000000 -> "480p"
+                                bandwidth > 500000 -> "360p"
+                                else -> "240p"
+                            }
+                        }
+                        else -> "Auto"
+                    }
+                    
+                    // Next line should be the variant playlist URL
+                    if (i + 1 < lines.size) {
+                        val nextLine = lines[i + 1].trim()
+                        if (!nextLine.startsWith("#")) {
+                            currentUrl = nextLine
+                            
+                            // Make relative URLs absolute
+                            currentUrl = if (currentUrl!!.startsWith("http")) {
+                                currentUrl
+                            } else {
+                                // Extract base URL from master playlist
+                                val baseUrl = masterPlaylistUrl.substringBeforeLast("/") + "/"
+                                baseUrl + currentUrl
+                            }
+                            
+                            // Add the variant to the list
+                            variants.add(
+                                Video(
+                                    currentUrl,
+                                    currentQuality,
+                                    currentUrl,
+                                    Headers.Builder()
+                                        .set("Referer", "https://www.eporner.com/")
+                                        .set("Origin", "https://www.eporner.com")
+                                        .set("User-Agent", mobileUserAgent)
+                                        .set("Accept", "*/*")
+                                        .set("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8")
+                                        .set("Cache-Control", "no-cache")
+                                        .set("Pragma", "no-cache")
+                                        .build()
+                                )
+                            )
+                            
+                            // Reset for next variant
+                            currentQuality = null
+                            currentUrl = null
+                        }
+                    }
+                }
+            }
+            
+            // If no variants were found (direct playlist), add the master playlist itself
+            if (variants.isEmpty()) {
+                variants.add(
+                    Video(
+                        masterPlaylistUrl,
+                        "HLS",
+                        masterPlaylistUrl,
+                        Headers.Builder()
+                            .set("Referer", "https://www.eporner.com/")
+                            .set("Origin", "https://www.eporner.com")
+                            .set("User-Agent", mobileUserAgent)
+                            .set("Accept", "*/*")
+                            .set("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8")
+                            .set("Cache-Control", "no-cache")
+                            .set("Pragma", "no-cache")
+                            .build()
+                    )
+                )
+            }
+            
+            variants
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
