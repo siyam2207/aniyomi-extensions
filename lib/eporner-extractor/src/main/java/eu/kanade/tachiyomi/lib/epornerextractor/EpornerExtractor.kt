@@ -61,6 +61,7 @@ class EpornerExtractor(
             if (!hlsUrl.isNullOrEmpty()) {
                 return playlistUtils.extractFromHls(
                     hlsUrl,
+                    referer = "https://www.eporner.com/",
                     videoNameGen = { quality -> "Eporner - $quality" }
                 )
             }
@@ -75,6 +76,7 @@ class EpornerExtractor(
                     if (type.contains("hls") || src.contains(".m3u8")) {
                         return playlistUtils.extractFromHls(
                             src,
+                            referer = "https://www.eporner.com/",
                             videoNameGen = { quality -> "Eporner - $quality" }
                         )
                     }
