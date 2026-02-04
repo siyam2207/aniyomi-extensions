@@ -2,9 +2,6 @@ package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import android.content.SharedPreferences
 import android.util.Log
-import androidx.preference.PreferenceManager
-import androidx.preference.ListPreference
-import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -24,6 +21,9 @@ import okhttp3.Response
 import org.jsoup.Jsoup
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
+import androidx.preference.PreferenceManager
+import androidx.preference.ListPreference
+import androidx.preference.PreferenceScreen
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
