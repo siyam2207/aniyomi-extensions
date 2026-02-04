@@ -288,10 +288,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             Log.d(tag, "XHR URL: $xhrUrl")
 
-            val xhrRequest = GET(xhrUrl, headersBuilder()
-                .add("Referer", embedUrl)
-                .add("X-Requested-With", "XMLHttpRequest")
-                .build())
+            val xhrRequest = GET(
+                xhrUrl,
+                headersBuilder()
+                    .add("Referer", embedUrl)
+                    .add("X-Requested-With", "XMLHttpRequest")
+                    .build(),
+            )
 
             val xhrResponse = client.newCall(xhrRequest).execute()
             val xhrBody = xhrResponse.body.string()
@@ -314,7 +317,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             // Final fallback: Look for direct MP4 URLs
             extractDirectMp4Urls(xhrBody, embedUrl)
-
         } catch (e: Exception) {
             Log.e(tag, "Video list parse error", e)
             emptyList()
@@ -400,7 +402,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Regex("""/(\d+)p/"""),
             Regex("""_(\d+)p\.mp4"""),
             Regex("""\.(\d+)\.mp4"""),
-            Regex("""quality=(\d+)""")
+            Regex("""quality=(\d+)"""),
         )
 
         for (pattern in patterns) {
@@ -411,12 +413,19 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
 
         // Default quality
-        return if (url.contains("1080")) "1080p"
-        else if (url.contains("720")) "720p"
-        else if (url.contains("480")) "480p"
-        else if (url.contains("360")) "360p"
-        else if (url.contains("240")) "240p"
-        else "Unknown"
+        return if (url.contains("1080")) {
+            "1080p"
+        } else if (url.contains("720")) {
+            "720p"
+        } else if (url.contains("480")) {
+            "480p"
+        } else if (url.contains("360")) {
+            "360p"
+        } else if (url.contains("240")) {
+            "240p"
+        } else {
+            "Unknown"
+        }
     }
 
     private fun findMasterUrlInXhrResponse(jsonBody: String): String? {
@@ -425,7 +434,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Regex("""(https?://[^"'\s]+master\.m3u8[^"'\s]*)"""),
             Regex("""masterUrl["']?\s*:\s*["']([^"']+\.m3u8[^"']*)["']"""),
             Regex("""hls["']?\s*:\s*["']([^"']+\.m3u8[^"']*)["']"""),
-            Regex("""url["']?\s*:\s*["']([^"']+\.m3u8[^"']*)["']""")
+            Regex("""url["']?\s*:\s*["']([^"']+\.m3u8[^"']*)["']"""),
         )
 
         for (pattern in patterns) {
