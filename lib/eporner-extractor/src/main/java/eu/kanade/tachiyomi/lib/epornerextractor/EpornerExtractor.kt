@@ -20,29 +20,6 @@ class EpornerExtractor(
 
     fun videosFromEmbed(embedUrl: String): List<Video> {
         return try {
-            var attempts = 0
-            val maxAttempts = 2
-            var videos: List<Video> = emptyList()
-
-            while (attempts < maxAttempts && videos.isEmpty()) {
-                videos = tryExtractVideos(embedUrl)
-                attempts++
-                if (videos.isEmpty()) {
-                    // Wait a bit before retry
-                    Thread.sleep(500)
-                }
-            }
-            
-            // If no HLS found, return empty - DO NOT FALLBACK TO MP4!
-            videos
-        } catch (e: Exception) {
-            e.printStackTrace()
-            emptyList()
-        }
-    }
-
-    private fun tryExtractVideos(embedUrl: String): List<Video> {
-        return try {
             // Get video ID from URL
             val videoId = extractVideoId(embedUrl) ?: return emptyList()
             
@@ -58,12 +35,12 @@ class EpornerExtractor(
             // Extract hash from HTML
             val hash = extractHash(embedHtml) ?: return emptyList()
             
-            // Build XHR URL
+            // Build XHR URL - ONLY REQUEST HLS
             val xhrUrl = "https://www.eporner.com/xhr/video/$videoId" +
                 "?hash=$hash" +
                 "&domain=www.eporner.com" +
                 "&embed=true" +
-                "&supportedFormats=hls" + // IMPORTANT: Only request HLS
+                "&supportedFormats=hls" +  // Only HLS, no MP4
                 "&_=${System.currentTimeMillis()}"
             
             // Make XHR request
