@@ -15,11 +15,14 @@ dependencies {
     implementation(project(':lib:playlist-utils'))
     implementation(project(':lib:unpacker'))
     
-    // ====== EPORNER-SPECIFIC EXTRACTORS ======
-    implementation(project(':lib:streamwish-extractor'))
-    implementation(project(':lib:voe-extractor'))
-    implementation(project(':lib:mp4upload-extractor'))
-    implementation(project(':lib:universal-extractor'))
+    // ====== EPORNER-SPECIFIC EXTRACTOR ====== 
+    implementation(project(':lib:eporner-extractor'))  // ADD THIS LINE
+    
+    // ====== REMOVE THESE (we don't need them anymore) ======
+    // implementation(project(':lib:streamwish-extractor'))
+    // implementation(project(':lib:voe-extractor'))
+    // implementation(project(':lib:mp4upload-extractor'))
+    // implementation(project(':lib:universal-extractor'))
     
     // ====== USE VERSION CATALOG REFERENCES ======
     implementation libs.kotlin.stdlib
