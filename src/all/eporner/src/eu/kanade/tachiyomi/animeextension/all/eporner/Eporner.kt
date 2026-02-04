@@ -257,7 +257,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     name = "Video"
                     episode_number = 1F
                     url = embedUrl
-                }
+                },
             )
         } catch (e: Exception) {
             emptyList()
@@ -274,10 +274,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val embedUrl = response.request.url.toString()
             Log.d(tag, "Extracting videos from embed URL: $embedUrl")
-            
             // Use the extractor
             val videos = epornerExtractor.videosFromEmbed(embedUrl)
-            
             if (videos.isNotEmpty()) {
                 Log.d(tag, "Found ${videos.size} videos from extractor")
                 videos
