@@ -17,8 +17,6 @@ class EpornerExtractor(
 
     private val videoIdPattern = Pattern.compile("/embed/([^/]+)/?")
     private val hashPattern = Pattern.compile("hash['\"]?\\s*[:=]\\s*['\"]([a-zA-Z0-9]{20,32})")
-    private val mp4UrlPattern = Pattern.compile("\"(https?://[^\"]+\\.mp4[^\"]*)\"")
-    private val m3u8Pattern = Pattern.compile("\"(https?://[^\"]+\\.m3u8[^\"]*)\"")
 
     fun videosFromEmbed(embedUrl: String): List<Video> {
         return try {
@@ -35,6 +33,7 @@ class EpornerExtractor(
                 }
             }
             
+            // If no HLS found, return empty - DO NOT FALLBACK TO MP4!
             videos
         } catch (e: Exception) {
             e.printStackTrace()
@@ -64,7 +63,7 @@ class EpornerExtractor(
                 "?hash=$hash" +
                 "&domain=www.eporner.com" +
                 "&embed=true" +
-                "&supportedFormats=hls,mp4" +
+                "&supportedFormats=hls" + // IMPORTANT: Only request HLS
                 "&_=${System.currentTimeMillis()}"
             
             // Make XHR request
@@ -77,16 +76,11 @@ class EpornerExtractor(
             val xhrResponse = client.newCall(xhrRequest).execute()
             val xhrBody = xhrResponse.body?.string() ?: return emptyList()
             
-            // Check if response contains the placeholder
-            if (containsPlaceholder(xhrBody)) {
-                return emptyList() // Trigger retry
-            }
-            
             // Try to parse as JSON
             val json = JSONObject(xhrBody)
             
             // Try to get HLS URL first
-            val hlsUrl = json.optString("hls", "").takeIf { it.isNotBlank() && !containsPlaceholder(it) }
+            val hlsUrl = json.optString("hls", "").takeIf { it.isNotBlank() }
             if (!hlsUrl.isNullOrEmpty()) {
                 return playlistUtils.extractFromHls(
                     hlsUrl,
@@ -94,56 +88,28 @@ class EpornerExtractor(
                 )
             }
             
-            // Try to get MP4 URL
-            val mp4Url = json.optString("mp4", "").takeIf { it.isNotBlank() && !containsPlaceholder(it) }
-            if (!mp4Url.isNullOrEmpty()) {
-                val quality = extractQualityFromUrl(mp4Url)
-                return listOf(
-                    Video(
-                        url = mp4Url,
-                        quality = quality,
-                        videoUrl = mp4Url,
-                        headers = buildVideoHeaders(embedUrl)
-                    )
-                )
-            }
-            
-            // Try to parse sources array
+            // Try to get sources array with HLS
             val sources = json.optJSONArray("sources")
             if (sources != null) {
-                val videos = mutableListOf<Video>()
                 for (i in 0 until sources.length()) {
                     val source = sources.getJSONObject(i)
-                    val src = source.optString("src", "").takeIf { it.isNotBlank() && !containsPlaceholder(it) } ?: continue
+                    val src = source.optString("src", "").takeIf { it.isNotBlank() } ?: continue
                     val type = source.optString("type", "")
-                    if (type.contains("mp4") || src.endsWith(".mp4")) {
-                        val quality = source.optString("label", "").takeIf { it.isNotBlank() }
-                            ?: extractQualityFromUrl(src)
-                        videos.add(
-                            Video(
-                                url = src,
-                                quality = quality,
-                                videoUrl = src,
-                                headers = buildVideoHeaders(embedUrl)
-                            )
+                    if (type.contains("hls") || src.contains(".m3u8")) {
+                        return playlistUtils.extractFromHls(
+                            src,
+                            videoNameGen = { quality -> "Eporner - $quality" }
                         )
                     }
                 }
-                if (videos.isNotEmpty()) return videos
             }
             
-            // Fallback: extract MP4 URLs from raw response (but check for placeholder)
-            extractMp4Urls(xhrBody, embedUrl)
+            // NO MP4 FALLBACK - return empty if no HLS
+            emptyList()
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
         }
-    }
-
-    private fun containsPlaceholder(text: String): Boolean {
-        return text.contains("this video is only available at www.eporner.com", ignoreCase = true) ||
-               text.contains("video is only available", ignoreCase = true) ||
-               text.contains("available at www.eporner.com", ignoreCase = true)
     }
 
     private fun extractVideoId(url: String): String? {
@@ -162,67 +128,6 @@ class EpornerExtractor(
             .set("X-Requested-With", "XMLHttpRequest")
             .set("Accept", "application/json, text/plain, */*")
             .set("Origin", "https://www.eporner.com")
-            .build()
-    }
-
-    private fun extractMp4Urls(body: String, embedUrl: String): List<Video> {
-        val videos = mutableListOf<Video>()
-        
-        // Extract HLS URLs first
-        val hlsMatcher = m3u8Pattern.matcher(body)
-        if (hlsMatcher.find()) {
-            val hlsUrl = hlsMatcher.group(1)
-            if (!containsPlaceholder(hlsUrl)) {
-                return playlistUtils.extractFromHls(
-                    hlsUrl,
-                    videoNameGen = { quality -> "Eporner - $quality" }
-                )
-            }
-        }
-        
-        // Extract MP4 URLs
-        val mp4Matcher = mp4UrlPattern.matcher(body)
-        while (mp4Matcher.find()) {
-            val url = mp4Matcher.group(1)
-            if (!containsPlaceholder(url) && 
-                url.contains("eporner") && 
-                !url.contains("thumb") && 
-                !url.contains("preview")) {
-                
-                val quality = extractQualityFromUrl(url)
-                videos.add(
-                    Video(
-                        url = url,
-                        quality = quality,
-                        videoUrl = url,
-                        headers = buildVideoHeaders(embedUrl)
-                    )
-                )
-            }
-        }
-        
-        return videos
-    }
-
-    private fun extractQualityFromUrl(url: String): String {
-        return when {
-            url.contains("/1080/") || url.contains("_1080.") || url.contains("1080p") -> "1080p"
-            url.contains("/720/") || url.contains("_720.") || url.contains("720p") -> "720p"
-            url.contains("/480/") || url.contains("_480.") || url.contains("480p") -> "480p"
-            url.contains("/360/") || url.contains("_360.") || url.contains("360p") -> "360p"
-            url.contains("/240/") || url.contains("_240.") || url.contains("240p") -> "240p"
-            else -> "Unknown"
-        }
-    }
-
-    private fun buildVideoHeaders(embedUrl: String): Headers {
-        return Headers.Builder()
-            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .add("Referer", embedUrl)
-            .add("Origin", "https://www.eporner.com")
-            .add("Accept", "*/*")
-            .add("Accept-Language", "en-US,en;q=0.9")
-            .add("Connection", "keep-alive")
             .build()
     }
 }
