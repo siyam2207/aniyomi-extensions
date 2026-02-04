@@ -281,7 +281,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val embedUrl = response.request.url.toString()
             val videos = epornerExtractor.videosFromEmbed(embedUrl)
-            
             if (videos.isNotEmpty()) {
                 Log.d(tag, "Found ${videos.size} HLS videos using extractor")
                 videos
