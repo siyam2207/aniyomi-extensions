@@ -276,132 +276,25 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         )
     }
 
-    // ==================== Video Extraction via EXTRACTOR ====================
-    override fun videoListParse(response: Response): List<Video> {
-        return try {
-            val embedUrl = response.request.url.toString()
-            val videos = epornerExtractor.videosFromEmbed(embedUrl)
-            if (videos.isNotEmpty()) {
-                Log.d(tag, "Found ${videos.size} videos using extractor")
-                videos
-            } else {
-                // Fallback: try to extract from the embed page directly
-                Log.d(tag, "Extractor returned empty, trying direct page extraction")
-                extractVideosFromPage(response)
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "Error in videoListParse", e)
-            emptyList()
-        }
-    }
-
-    // Direct page extraction fallback
-    private fun extractVideosFromPage(response: Response): List<Video> {
-        return try {
-            val html = response.body.string()
-            val embedUrl = response.request.url.toString()
-            // Check for placeholder text
-            if (containsPlaceholder(html)) {
-                Log.d(tag, "Page contains placeholder - video unavailable")
-                return emptyList()
-            }
-            val videos = mutableListOf<Video>()
-            // Method 1: Look for data-src attributes which might contain MP4 URLs
-            val dataSrcPattern = Regex("""data-src=["'](https?://[^"']+\.mp4[^"']*)""")
-            val dataSrcMatches = dataSrcPattern.findAll(html)
-            dataSrcMatches.forEach { match ->
-                val url = match.groupValues[1]
-                if (isValidVideoUrl(url)) {
-                    val quality = extractQualityFromUrl(url)
-                    videos.add(Video(url, quality, url, videoHeaders(embedUrl)))
-                    Log.d(tag, "Found data-src MP4: $quality - $url")
-                }
-            }
-            // Method 2: Look for video source tags
-            if (videos.isEmpty()) {
-                val sourcePattern = Regex("""<source[^>]+src=["'](https?://[^"']+\.mp4[^"']*)""")
-                val sourceMatches = sourcePattern.findAll(html)
-                sourceMatches.forEach { match ->
-                    val url = match.groupValues[1]
-                    if (isValidVideoUrl(url)) {
-                        val quality = extractQualityFromUrl(url)
-                        videos.add(Video(url, quality, url, videoHeaders(embedUrl)))
-                        Log.d(tag, "Found source tag MP4: $quality - $url")
-                    }
-                }
-            }
-            // Method 3: Look for regular MP4 URLs in JavaScript variables
-            if (videos.isEmpty()) {
-                val jsVarPattern = Regex("""(?:src|url|file)\s*[=:]\s*["'](https?://[^"']+\.mp4[^"']*)""")
-                val jsVarMatches = jsVarPattern.findAll(html)
-                jsVarMatches.forEach { match ->
-                    val url = match.groupValues[1]
-                    if (isValidVideoUrl(url)) {
-                        val quality = extractQualityFromUrl(url)
-                        videos.add(Video(url, quality, url, videoHeaders(embedUrl)))
-                        Log.d(tag, "Found JS variable MP4: $quality - $url")
-                    }
-                }
-            }
-            // Method 4: Look for any MP4 URLs (last resort)
-            if (videos.isEmpty()) {
-                val mp4Pattern = Regex("""["'](https?://[^"']+\.mp4[^"']*)""")
-                val matches = mp4Pattern.findAll(html)
-                matches.forEach { match ->
-                    val url = match.groupValues[1]
-                    if (isValidVideoUrl(url)) {
-                        val quality = extractQualityFromUrl(url)
-                        videos.add(Video(url, quality, url, videoHeaders(embedUrl)))
-                        Log.d(tag, "Found direct MP4: $quality - $url")
-                    }
-                }
-            }
-            // Check if we found any videos
-            if (videos.isEmpty()) {
-                Log.d(tag, "No valid video URLs found in page")
-            } else {
-                Log.d(tag, "Found ${videos.size} videos via direct page extraction")
-            }
+// ==================== Video Extraction via EXTRACTOR ====================
+override fun videoListParse(response: Response): List<Video> {
+    return try {
+        val embedUrl = response.request.url.toString()
+        val videos = epornerExtractor.videosFromEmbed(embedUrl)
+        
+        if (videos.isNotEmpty()) {
+            Log.d(tag, "Found ${videos.size} HLS videos using extractor")
             videos
-        } catch (e: Exception) {
-            Log.e(tag, "Direct page extraction failed", e)
+        } else {
+            // NO MP4 FALLBACK - If no HLS found, video is site-locked
+            Log.d(tag, "No HLS streams found - video is site-locked (only available at eporner.com)")
             emptyList()
         }
+    } catch (e: Exception) {
+        Log.e(tag, "Error in videoListParse", e)
+        emptyList()
     }
-
-    private fun containsPlaceholder(text: String): Boolean {
-        return text.contains("this video is only available at www.eporner.com", ignoreCase = true) ||
-            text.contains("video is only available", ignoreCase = true) ||
-            text.contains("available at www.eporner.com", ignoreCase = true) ||
-            text.contains("redirect to www.eporner.com", ignoreCase = true)
-    }
-
-    private fun isValidVideoUrl(url: String): Boolean {
-        return url.contains("eporner") &&
-            !url.contains("this video is only available at www.eporner.com", ignoreCase = true) &&
-            !url.contains("video is only available", ignoreCase = true) &&
-            !url.contains("thumb") &&
-            !url.contains("preview") &&
-            !url.contains("placeholder") &&
-            !url.contains("redirect") &&
-            url.endsWith(".mp4", ignoreCase = true)
-    }
-
-    private fun extractQualityFromUrl(url: String): String {
-        return when {
-            url.contains("/1080/") || url.contains("_1080.") || url.contains("1080p") -> "1080p"
-            url.contains("/720/") || url.contains("_720.") || url.contains("720p") -> "720p"
-            url.contains("/480/") || url.contains("_480.") || url.contains("480p") -> "480p"
-            url.contains("/360/") || url.contains("_360.") || url.contains("360p") -> "360p"
-            url.contains("/240/") || url.contains("_240.") || url.contains("240p") -> "240p"
-            else -> {
-                // Try to extract quality from filename
-                val qualityPattern = Regex("""[_-](\d{3,4})[p_]""")
-                val match = qualityPattern.find(url)
-                match?.groupValues?.get(1)?.let { "${it}p" } ?: "Unknown"
-            }
-        }
-    }
+}
 
     // ==================== Settings ====================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
