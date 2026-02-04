@@ -370,39 +370,38 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun containsPlaceholder(text: String): Boolean {
-        return text.contains("this video is only available at www.eporner.com", ignoreCase = true) ||
-                text.contains("video is only available", ignoreCase = true) ||
-                text.contains("available at www.eporner.com", ignoreCase = true) ||
-                text.contains("redirect to www.eporner.com", ignoreCase = true)
-    }
+    return text.contains("this video is only available at www.eporner.com", ignoreCase = true) ||
+        text.contains("video is only available", ignoreCase = true) ||
+        text.contains("available at www.eporner.com", ignoreCase = true) ||
+        text.contains("redirect to www.eporner.com", ignoreCase = true)
+}
 
-    private fun isValidVideoUrl(url: String): Boolean {
-        return url.contains("eporner") &&
-                !url.contains("this video is only available at www.eporner.com", ignoreCase = true) &&
-                !url.contains("video is only available", ignoreCase = true) &&
-                !url.contains("thumb") &&
-                !url.contains("preview") &&
-                !url.contains("placeholder") &&
-                !url.contains("redirect") &&
-                url.endsWith(".mp4", ignoreCase = true)
-    }
+private fun isValidVideoUrl(url: String): Boolean {
+    return url.contains("eporner") &&
+        !url.contains("this video is only available at www.eporner.com", ignoreCase = true) &&
+        !url.contains("video is only available", ignoreCase = true) &&
+        !url.contains("thumb") &&
+        !url.contains("preview") &&
+        !url.contains("placeholder") &&
+        !url.contains("redirect") &&
+        url.endsWith(".mp4", ignoreCase = true)
+}
 
-    private fun extractQualityFromUrl(url: String): String {
-        return when {
-            url.contains("/1080/") || url.contains("_1080.") || url.contains("1080p") -> "1080p"
-            url.contains("/720/") || url.contains("_720.") || url.contains("720p") -> "720p"
-            url.contains("/480/") || url.contains("_480.") || url.contains("480p") -> "480p"
-            url.contains("/360/") || url.contains("_360.") || url.contains("360p") -> "360p"
-            url.contains("/240/") || url.contains("_240.") || url.contains("240p") -> "240p"
-            else -> {
-                // Try to extract quality from filename
-                val qualityPattern = Regex("""[_-](\d{3,4})[p_]""")
-                val match = qualityPattern.find(url)
-                match?.groupValues?.get(1)?.let { "${it}p" } ?: "Unknown"
-            }
+private fun extractQualityFromUrl(url: String): String {
+    return when {
+        url.contains("/1080/") || url.contains("_1080.") || url.contains("1080p") -> "1080p"
+        url.contains("/720/") || url.contains("_720.") || url.contains("720p") -> "720p"
+        url.contains("/480/") || url.contains("_480.") || url.contains("480p") -> "480p"
+        url.contains("/360/") || url.contains("_360.") || url.contains("360p") -> "360p"
+        url.contains("/240/") || url.contains("_240.") || url.contains("240p") -> "240p"
+        else -> {
+            // Try to extract quality from filename
+            val qualityPattern = Regex("""[_-](\d{3,4})[p_]""")
+            val match = qualityPattern.find(url)
+            match?.groupValues?.get(1)?.let { "${it}p" } ?: "Unknown"
         }
     }
-
+}
     // ==================== Settings ====================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // Initialize preferences with the context from the screen
