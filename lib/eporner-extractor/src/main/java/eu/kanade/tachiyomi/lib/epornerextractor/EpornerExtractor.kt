@@ -16,7 +16,7 @@ class EpornerExtractor(private val client: OkHttpClient, private val headers: He
     private val videoIdPattern = Pattern.compile("/embed/([^/]+)/?")
     private val hashPattern = Pattern.compile("""hash\s*[:=]\s*['"]([a-zA-Z0-9]{20,})['"]""")
 
-    fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
+    fun videosFromEmbed(url: String): List<Video> {
         return try {
             // Step 1: Extract video ID from URL
             val videoId = extractVideoId(url) ?: return emptyList()
@@ -57,7 +57,7 @@ class EpornerExtractor(private val client: OkHttpClient, private val headers: He
             // Step 7: Try to get HLS URL first (preferred format)
             val hlsUrl = json.optString("hls", "").takeIf { it.isNotBlank() }
             if (!hlsUrl.isNullOrEmpty()) {
-                return extractHlsVideos(hlsUrl, prefix)
+                return extractHlsVideos(hlsUrl)
             }
             
             // Step 8: Try to get sources array
@@ -68,7 +68,7 @@ class EpornerExtractor(private val client: OkHttpClient, private val headers: He
                     val src = source.optString("src", "").takeIf { it.isNotBlank() } ?: continue
                     val type = source.optString("type", "")
                     if (type.contains("hls") || src.contains(".m3u8")) {
-                        return extractHlsVideos(src, prefix)
+                        return extractHlsVideos(src)
                     }
                 }
             }
@@ -80,19 +80,12 @@ class EpornerExtractor(private val client: OkHttpClient, private val headers: He
         }
     }
 
-    private fun extractHlsVideos(hlsUrl: String, prefix: String): List<Video> {
+    private fun extractHlsVideos(hlsUrl: String): List<Video> {
         return try {
-            // PlaylistUtils handles HLS extraction - it will parse the master playlist,
-            // find all quality variants, and create Video objects for each quality.
-            // These Video objects point to .m3u8 playlists, which the video player
-            // will use to download the actual .ts segments (video/MP2T)
             playlistUtils.extractFromHls(
                 hlsUrl,
                 referer = "https://www.eporner.com/",
-                videoNameGen = { quality -> 
-                    val prefixText = if (prefix.isNotBlank()) "$prefix " else ""
-                    "$prefixText Eporner:$quality"
-                }
+                videoNameGen = { quality -> "Eporner:$quality" }
             )
         } catch (e: Exception) {
             e.printStackTrace()
