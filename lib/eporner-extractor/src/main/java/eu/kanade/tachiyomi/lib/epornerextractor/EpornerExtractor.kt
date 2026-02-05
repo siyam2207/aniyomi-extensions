@@ -2,10 +2,9 @@ package eu.kanade.tachiyomi.lib.epornerextractor
 
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
-import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.Headers
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.util.regex.Pattern
 
@@ -22,8 +21,13 @@ class EpornerExtractor(private val client: OkHttpClient, private val headers: He
             val videoId = extractVideoId(url) ?: return emptyList()
             
             // Step 2: Fetch embed page to get hash
-            val document = client.newCall(GET(url, headers)).execute().asJsoup()
-            val embedHtml = document.html()
+            val embedRequest = Request.Builder()
+                .url(url)
+                .headers(headers)
+                .build()
+            
+            val embedResponse = client.newCall(embedRequest).execute()
+            val embedHtml = embedResponse.body?.string() ?: return emptyList()
             
             // Step 3: Extract hash from HTML
             val hash = extractHash(embedHtml) ?: return emptyList()
@@ -37,7 +41,7 @@ class EpornerExtractor(private val client: OkHttpClient, private val headers: He
                 "&_=${System.currentTimeMillis()}"
             
             // Step 5: Make XHR request with correct headers
-            val xhrHeaders = headers.newBuilder()
+            val xhrHeaders = Headers.Builder()
                 .set("Referer", url)
                 .set("X-Requested-With", "XMLHttpRequest")
                 .set("Accept", "application/json, text/plain, */*")
@@ -48,8 +52,13 @@ class EpornerExtractor(private val client: OkHttpClient, private val headers: He
                 .set("Pragma", "no-cache")
                 .build()
             
-            val response = client.newCall(GET(xhrUrl, xhrHeaders)).execute()
-            val xhrBody = response.body?.string() ?: return emptyList()
+            val xhrRequest = Request.Builder()
+                .url(xhrUrl)
+                .headers(xhrHeaders)
+                .build()
+            
+            val xhrResponse = client.newCall(xhrRequest).execute()
+            val xhrBody = xhrResponse.body?.string() ?: return emptyList()
             
             // Step 6: Parse JSON response
             val json = JSONObject(xhrBody)
