@@ -210,7 +210,7 @@ jobs:
           git config user.email "siyambackupfile@gmail.com"
           git remote set-url origin https://github.com/siyam2207/anime-repoo.git
           git fetch origin
-          git reset origin/repoo
+          git reset origin/repo
           git add -A
           git commit --amend -m "$COMMIT_MESSAGE" --no-sign --allow-empty || echo "No changes to commit"
           git push origin HEAD:repo --force
