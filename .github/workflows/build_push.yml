@@ -183,7 +183,7 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          repository: siyam2207/anime-repo
+          repository: siyam2207/anime-repoo
           token: ${{ secrets.BOT_PAT }}
           ref: repo
           path: repo
@@ -208,13 +208,13 @@ jobs:
           cd repo
           git config user.name "Siyam"
           git config user.email "siyambackupfile@gmail.com"
-          git remote set-url origin https://github.com/siyam2207/anime-repo.git
+          git remote set-url origin https://github.com/siyam2207/anime-repoo.git
           git fetch origin
-          git reset origin/repo
+          git reset origin/repoo
           git add -A
           git commit --amend -m "$COMMIT_MESSAGE" --no-sign --allow-empty || echo "No changes to commit"
           git push origin HEAD:repo --force
 
       - name: Purge cached index on jsDelivr
         run: |
-          curl https://purge.jsdelivr.net/gh/siyam2207/anime-repo@repo/index.min.json
+          curl https://purge.jsdelivr.net/gh/siyam2207/anime-repoo@repo/index.min.json
