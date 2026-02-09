@@ -421,9 +421,6 @@ class EpornerExtractor(private val client: OkHttpClient, private val headers: He
     )
 }
 
-// Extension for absolute value
-private fun Int.absoluteValue(): Int = if (this < 0) -this else this
-
 // Logging utility
 object LogUtil {
     fun log(tag: String, message: String) {
