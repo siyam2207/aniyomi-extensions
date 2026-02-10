@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.animeextension.all.eporner.extractor
+package eu.kanade.tachiyomi.lib.epornerextractor
 
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
