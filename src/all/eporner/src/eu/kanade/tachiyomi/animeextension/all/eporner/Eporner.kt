@@ -212,20 +212,64 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return GET(anime.url, headers)
     }
 
-    override fun episodeListParse(response: Response): List<SEpisode> {
-        return try {
-            val embedUrl = response.request.url.toString()
-            listOf(
-                SEpisode.create().apply {
-                    name = "Video"
-                    episode_number = 1F
-                    url = embedUrl
-                },
-            )
-        } catch (_: Exception) {
-            emptyList()
+    override fun videoListParse(response: Response): List<Video> {
+    return try {
+        val html = response.body.string()
+        val videoList = mutableListOf<Video>()
+
+        // ================= Extract flashvars JSON =================
+        val flashvarsMatch = Regex("""var\s+flashvars\s*=\s*(\{.*?})\s*;""", RegexOption.DOT_MATCHES_ALL)
+            .find(html)
+        
+        if (flashvarsMatch == null) {
+            Log.e(tag, "flashvars JSON not found")
+            return emptyList()
         }
+
+        val flashvarsJson = flashvarsMatch.groupValues[1]
+
+        // Parse JSON safely
+        val jsonObject = json.parseToJsonElement(flashvarsJson).jsonObject
+
+        // ================= HLS =================
+        jsonObject["hls"]?.jsonPrimitive?.contentOrNull?.let { hlsUrl ->
+            videoList.add(
+                Video(
+                    url = hlsUrl,
+                    quality = "HLS • Auto",
+                    videoUrl = hlsUrl,
+                    headers = headers,
+                ),
+            )
+        }
+
+        // ================= MP4 Qualities =================
+        val sources = jsonObject["video_sources"]?.jsonObject
+
+        sources?.forEach { (quality, value) ->
+            val url = value.jsonPrimitive.contentOrNull ?: return@forEach
+
+            videoList.add(
+                Video(
+                    url = url,
+                    quality = "MP4 • $quality",
+                    videoUrl = url,
+                    headers = headers,
+                ),
+            )
+        }
+
+        if (videoList.isEmpty()) {
+            Log.e(tag, "No videos extracted from flashvars")
+        }
+
+        videoList.sort()
+
+    } catch (e: Exception) {
+        Log.e(tag, "videoListParse error", e)
+        emptyList()
     }
+}
 
     // ==================== Video Extraction ====================
     override fun videoListRequest(episode: SEpisode): Request {
