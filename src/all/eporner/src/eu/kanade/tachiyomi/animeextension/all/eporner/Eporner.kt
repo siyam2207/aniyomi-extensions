@@ -16,7 +16,6 @@ import eu.kanade.tachiyomi.lib.epornerextractor.EpornerExtractor
 import eu.kanade.tachiyomi.network.GET
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
 import okhttp3.Request
@@ -38,7 +37,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // EXTRACTOR with proper User-Agent
     private val epornerExtractor by lazy {
-        EpornerExtractor(client, headers)
+        EpornerExtractor(client)
     }
 
     // User agent constant
@@ -213,7 +212,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 if (thumbnail_url.isNullOrBlank()) {
                     thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")?.takeIf { it.isNotBlank() }
                         ?: document.selectFirst("img.thumb")?.attr("src")?.takeIf { it.isNotBlank() }
-                        ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
+                            ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
                 }
 
                 if (description.isNullOrBlank()) {
@@ -266,28 +265,46 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Video Extraction ====================
     override fun videoListRequest(episode: SEpisode): Request {
-        // Episode URL should be the embed URL
         return GET(episode.url, headers)
     }
 
     override fun videoListParse(response: Response): List<Video> {
         return try {
+            val html = response.body.string()
+
             val embedUrl = response.request.url.toString()
-            Log.d(tag, "Extracting videos from embed URL: $embedUrl")
-            // Use the extractor
-            val videos = epornerExtractor.videosFromEmbed(embedUrl)
+            Log.d(tag, "Embed URL: $embedUrl")
+
+            // ===== Extract master.m3u8 =====
+            val masterUrl = Regex("""https://[^"]+master\.m3u8[^"]*""")
+                .find(html)
+                ?.value
+
+            if (masterUrl == null) {
+                Log.e(tag, "Master playlist not found")
+                return emptyList()
+            }
+
+            Log.d(tag, "Master URL: $masterUrl")
+
+            // ===== Use extractor =====
+            val videos = epornerExtractor.videosFromUrl(masterUrl)
+
             if (videos.isNotEmpty()) {
-                Log.d(tag, "Found ${videos.size} videos from extractor")
+                Log.d(tag, "Found ${videos.size} videos")
                 videos
             } else {
-                Log.d(tag, "No videos found from extractor")
+                Log.e(tag, "Extractor returned empty list")
                 emptyList()
             }
+
         } catch (e: Exception) {
             Log.e(tag, "Error in videoListParse", e)
             emptyList()
         }
+
     }
+
 
     // Required method - just return first video URL
     override fun videoUrlParse(response: Response): String {
