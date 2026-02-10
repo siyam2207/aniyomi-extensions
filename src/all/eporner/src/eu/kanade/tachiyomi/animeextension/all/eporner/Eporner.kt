@@ -25,7 +25,6 @@ import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
-
     override val name = "Eporner"
     override val baseUrl = "https://www.eporner.com"
     private val apiUrl = "https://www.eporner.com/api/v2"
@@ -297,14 +296,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 Log.e(tag, "Extractor returned empty list")
                 emptyList()
             }
-
         } catch (e: Exception) {
             Log.e(tag, "Error in videoListParse", e)
             emptyList()
         }
-
     }
-
 
     // Required method - just return first video URL
     override fun videoUrlParse(response: Response): String {
