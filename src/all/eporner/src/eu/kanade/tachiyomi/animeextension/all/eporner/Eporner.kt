@@ -235,58 +235,52 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> {
         return try {
             val html = response.body.string()
-            val videoList = mutableListOf<Video>()
+            val embedUrl = response.request.url.toString()
+            Log.d(tag, "Embed URL: $embedUrl")
 
-            // ================= Extract flashvars JSON =================
-            val flashvarsMatch = Regex("""var\s+flashvars\s*=\s*(\{.*?})\s*;""", RegexOption.DOT_MATCHES_ALL)
-                .find(html)
-            
-            if (flashvarsMatch == null) {
-                Log.e(tag, "flashvars JSON not found")
+            val masterUrl = Regex("""https://[^"]+master\.m3u8[^"]*""").find(html)?.value
+            if (masterUrl.isNullOrBlank()) {
+                Log.e(tag, "Master playlist not found")
                 return emptyList()
             }
 
-            val flashvarsJson = flashvarsMatch.groupValues[1]
+            Log.d(tag, "Master URL: $masterUrl")
 
-            // Parse JSON safely
-            val jsonObject = json.parseToJsonElement(flashvarsJson).jsonObject
-
-            // ================= HLS =================
-            jsonObject["hls"]?.jsonPrimitive?.contentOrNull?.let { hlsUrl ->
-                videoList.add(
-                    Video(
-                        url = hlsUrl,
-                        quality = "HLS • Auto",
-                        videoUrl = hlsUrl,
-                        headers = headers,
-                    ),
-                )
+            val playlistResponse = client.newCall(GET(masterUrl, headers)).execute()
+            if (!playlistResponse.isSuccessful) {
+                Log.e(tag, "Failed to fetch master playlist: ${playlistResponse.code}")
+                return emptyList()
             }
 
-            // ================= MP4 Qualities =================
-            val sources = jsonObject["video_sources"]?.jsonObject
+            val playlistBody = playlistResponse.body.string()
+            val lines = playlistBody.split("\n")
 
-            sources?.forEach { (quality, value) ->
-                val url = value.jsonPrimitive.contentOrNull ?: return@forEach
+            val videoList = mutableListOf<Video>()
+            var currentQuality = "Auto"
 
-                videoList.add(
-                    Video(
-                        url = url,
-                        quality = "MP4 • $quality",
-                        videoUrl = url,
-                        headers = headers,
-                    ),
-                )
+            lines.forEach { line ->
+                when {
+                    line.startsWith("#EXT-X-STREAM-INF") -> {
+                        val match = Regex("""RESOLUTION=\d+x(\d+)""").find(line)
+                        currentQuality = match?.groupValues?.get(1)?.plus("p") ?: "Auto"
+                    }
+                    line.startsWith("http") -> {
+                        videoList.add(
+                            Video(
+                                url = line,
+                                quality = "Eporner • $currentQuality",
+                                videoUrl = line,
+                                headers = headers,
+                            ),
+                        )
+                    }
+                }
             }
 
-            if (videoList.isEmpty()) {
-                Log.e(tag, "No videos extracted from flashvars")
-            }
-
+            if (videoList.isEmpty()) Log.e(tag, "No videos found in master playlist")
             videoList
-
         } catch (e: Exception) {
-            Log.e(tag, "videoListParse error", e)
+            Log.e(tag, "Error in videoListParse", e)
             emptyList()
         }
     }
