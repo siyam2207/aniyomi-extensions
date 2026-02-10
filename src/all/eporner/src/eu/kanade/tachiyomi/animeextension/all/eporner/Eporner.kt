@@ -212,64 +212,20 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return GET(anime.url, headers)
     }
 
-    override fun videoListParse(response: Response): List<Video> {
-    return try {
-        val html = response.body.string()
-        val videoList = mutableListOf<Video>()
-
-        // ================= Extract flashvars JSON =================
-        val flashvarsMatch = Regex("""var\s+flashvars\s*=\s*(\{.*?})\s*;""", RegexOption.DOT_MATCHES_ALL)
-            .find(html)
-        
-        if (flashvarsMatch == null) {
-            Log.e(tag, "flashvars JSON not found")
-            return emptyList()
-        }
-
-        val flashvarsJson = flashvarsMatch.groupValues[1]
-
-        // Parse JSON safely
-        val jsonObject = json.parseToJsonElement(flashvarsJson).jsonObject
-
-        // ================= HLS =================
-        jsonObject["hls"]?.jsonPrimitive?.contentOrNull?.let { hlsUrl ->
-            videoList.add(
-                Video(
-                    url = hlsUrl,
-                    quality = "HLS • Auto",
-                    videoUrl = hlsUrl,
-                    headers = headers,
-                ),
+    override fun episodeListParse(response: Response): List<SEpisode> {
+        return try {
+            val embedUrl = response.request.url.toString()
+            listOf(
+                SEpisode.create().apply {
+                    name = "Video"
+                    episode_number = 1F
+                    url = embedUrl
+                },
             )
+        } catch (_: Exception) {
+            emptyList()
         }
-
-        // ================= MP4 Qualities =================
-        val sources = jsonObject["video_sources"]?.jsonObject
-
-        sources?.forEach { (quality, value) ->
-            val url = value.jsonPrimitive.contentOrNull ?: return@forEach
-
-            videoList.add(
-                Video(
-                    url = url,
-                    quality = "MP4 • $quality",
-                    videoUrl = url,
-                    headers = headers,
-                ),
-            )
-        }
-
-        if (videoList.isEmpty()) {
-            Log.e(tag, "No videos extracted from flashvars")
-        }
-
-        videoList.sort()
-
-    } catch (e: Exception) {
-        Log.e(tag, "videoListParse error", e)
-        emptyList()
     }
-}
 
     // ==================== Video Extraction ====================
     override fun videoListRequest(episode: SEpisode): Request {
@@ -279,52 +235,58 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> {
         return try {
             val html = response.body.string()
-            val embedUrl = response.request.url.toString()
-            Log.d(tag, "Embed URL: $embedUrl")
-
-            val masterUrl = Regex("""https://[^"]+master\.m3u8[^"]*""").find(html)?.value
-            if (masterUrl.isNullOrBlank()) {
-                Log.e(tag, "Master playlist not found")
-                return emptyList()
-            }
-
-            Log.d(tag, "Master URL: $masterUrl")
-
-            val playlistResponse = client.newCall(GET(masterUrl, headers)).execute()
-            if (!playlistResponse.isSuccessful) {
-                Log.e(tag, "Failed to fetch master playlist: ${playlistResponse.code}")
-                return emptyList()
-            }
-
-            val playlistBody = playlistResponse.body.string()
-            val lines = playlistBody.split("\n")
-
             val videoList = mutableListOf<Video>()
-            var currentQuality = "Auto"
 
-            lines.forEach { line ->
-                when {
-                    line.startsWith("#EXT-X-STREAM-INF") -> {
-                        val match = Regex("""RESOLUTION=\d+x(\d+)""").find(line)
-                        currentQuality = match?.groupValues?.get(1)?.plus("p") ?: "Auto"
-                    }
-                    line.startsWith("http") -> {
-                        videoList.add(
-                            Video(
-                                url = line,
-                                quality = "Eporner • $currentQuality",
-                                videoUrl = line,
-                                headers = headers,
-                            ),
-                        )
-                    }
-                }
+            // ================= Extract flashvars JSON =================
+            val flashvarsMatch = Regex("""var\s+flashvars\s*=\s*(\{.*?})\s*;""", RegexOption.DOT_MATCHES_ALL)
+                .find(html)
+            
+            if (flashvarsMatch == null) {
+                Log.e(tag, "flashvars JSON not found")
+                return emptyList()
             }
 
-            if (videoList.isEmpty()) Log.e(tag, "No videos found in master playlist")
+            val flashvarsJson = flashvarsMatch.groupValues[1]
+
+            // Parse JSON safely
+            val jsonObject = json.parseToJsonElement(flashvarsJson).jsonObject
+
+            // ================= HLS =================
+            jsonObject["hls"]?.jsonPrimitive?.contentOrNull?.let { hlsUrl ->
+                videoList.add(
+                    Video(
+                        url = hlsUrl,
+                        quality = "HLS • Auto",
+                        videoUrl = hlsUrl,
+                        headers = headers,
+                    ),
+                )
+            }
+
+            // ================= MP4 Qualities =================
+            val sources = jsonObject["video_sources"]?.jsonObject
+
+            sources?.forEach { (quality, value) ->
+                val url = value.jsonPrimitive.contentOrNull ?: return@forEach
+
+                videoList.add(
+                    Video(
+                        url = url,
+                        quality = "MP4 • $quality",
+                        videoUrl = url,
+                        headers = headers,
+                    ),
+                )
+            }
+
+            if (videoList.isEmpty()) {
+                Log.e(tag, "No videos extracted from flashvars")
+            }
+
             videoList
+
         } catch (e: Exception) {
-            Log.e(tag, "Error in videoListParse", e)
+            Log.e(tag, "videoListParse error", e)
             emptyList()
         }
     }
