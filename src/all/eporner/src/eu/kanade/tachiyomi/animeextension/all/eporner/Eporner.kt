@@ -309,7 +309,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 summary = if (selected == "best") "Best available quality" else selected
                 true
             }
-        }.also(screen::addPreference)
+        }.also(
+            screen::addPreference,
+            )
 
         ListPreference(screen.context).apply {
             key = PREF_SORT_KEY
@@ -465,3 +467,4 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("height") val height: Int,
     )
 }
+
