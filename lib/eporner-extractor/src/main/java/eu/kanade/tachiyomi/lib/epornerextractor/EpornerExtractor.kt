@@ -12,7 +12,6 @@ private val client: OkHttpClient,
 private val headers: Headers,
 ) {
 
-```
 private val playlistUtils by lazy { PlaylistUtils(client) }
 
 // Regex to capture signed master.m3u8 URLs
@@ -88,6 +87,5 @@ fun videosFromEmbed(url: String): List<Video> {
         emptyList()
     }
 }
-```
 
 }
