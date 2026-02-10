@@ -238,27 +238,53 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val embedUrl = response.request.url.toString()
             Log.d(tag, "Embed URL: $embedUrl")
 
-            val masterUrl = Regex("""https://[^"]+master\.m3u8[^"]*""").find(html)?.value
-            if (masterUrl.isNullOrBlank()) {
-                Log.e(tag, "Master playlist not found")
+            // Extract hash and video ID from embed page
+            val hash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)""").find(html)?.groupValues?.get(1)
+            val id = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""").find(html)?.groupValues?.get(1)
+            if (hash.isNullOrBlank() || id.isNullOrBlank()) {
+                Log.e(tag, "Hash or Video ID not found")
                 return emptyList()
             }
 
-            Log.d(tag, "Master URL: $masterUrl")
+            val cdnServers = listOf(
+                "dash-s1-n50-fr-cdn.eporner.com",
+                "dash-s2-n50-fr-cdn.eporner.com",
+                "dash-s3-n50-fr-cdn.eporner.com",
+                "dash-s4-n50-fr-cdn.eporner.com",
+                "dash-s13-n50-fr-cdn.eporner.com",
+                "dash-s24-n50-fr-cdn.eporner.com",
+            )
 
-            val playlistResponse = client.newCall(GET(masterUrl, headers)).execute()
-            if (!playlistResponse.isSuccessful) {
-                Log.e(tag, "Failed to fetch master playlist: ${playlistResponse.code}")
+            var masterBody: String? = null
+            var workingCdn: String? = null
+            val requestHeaders = headersBuilder()
+                .add("Referer", baseUrl)
+                .add("Origin", baseUrl)
+                .build()
+
+            // Try all CDNs to find a working master playlist
+            for (cdn in cdnServers) {
+                val masterUrl =
+                    "https://$cdn/hls/v6/$id-,240p,360p,480p,720p,.mp4.urlset/master.m3u8?hash=$hash"
+                try {
+                    val res = client.newCall(GET(masterUrl, requestHeaders)).execute()
+                    if (res.isSuccessful) {
+                        masterBody = res.body.string()
+                        workingCdn = cdn
+                        break
+                    }
+                } catch (_: Exception) { /* try next CDN */ }
+            }
+
+            if (masterBody.isNullOrBlank()) {
+                Log.e(tag, "Master playlist not found on any CDN")
                 return emptyList()
             }
 
-            val playlistBody = playlistResponse.body.string()
-            val lines = playlistBody.split("\n")
-
+            // Parse HLS master playlist
             val videoList = mutableListOf<Video>()
             var currentQuality = "Auto"
-
-            lines.forEach { line ->
+            masterBody.split("\n").forEach { line ->
                 when {
                     line.startsWith("#EXT-X-STREAM-INF") -> {
                         val match = Regex("""RESOLUTION=\d+x(\d+)""").find(line)
@@ -270,14 +296,27 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                                 url = line,
                                 quality = "Eporner • $currentQuality",
                                 videoUrl = line,
-                                headers = headers,
+                                headers = requestHeaders,
                             ),
                         )
                     }
                 }
             }
 
-            if (videoList.isEmpty()) Log.e(tag, "No videos found in master playlist")
+            if (videoList.isEmpty() && workingCdn != null) {
+                // fallback master
+                val fallbackUrl =
+                    "https://$workingCdn/hls/v6/$id-,240p,360p,480p,720p,.mp4.urlset/master.m3u8?hash=$hash"
+                videoList.add(
+                    Video(
+                        url = fallbackUrl,
+                        quality = "Eporner • Auto",
+                        videoUrl = fallbackUrl,
+                        headers = requestHeaders,
+                    ),
+                )
+            }
+
             videoList
         } catch (e: Exception) {
             Log.e(tag, "Error in videoListParse", e)
