@@ -184,7 +184,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 if (thumbnail_url.isNullOrBlank()) {
                     thumbnail_url = document.selectFirst("meta[property='og:image']")?.attr("content")?.takeIf { it.isNotBlank() }
                         ?: document.selectFirst("img.thumb")?.attr("src")?.takeIf { it.isNotBlank() }
-                            ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
+                        ?: document.selectFirst("img")?.attr("src")?.takeIf { it.isNotBlank() }
                 }
 
                 if (description.isNullOrBlank()) description = "Eporner Video"
