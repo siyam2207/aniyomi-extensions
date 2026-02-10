@@ -1,91 +1,64 @@
-package eu.kanade.tachiyomi.lib.epornerextractor
+package eu.kanade.tachiyomi.animeextension.all.eporner.extractor
 
 import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
+import eu.kanade.tachiyomi.network.GET
 import okhttp3.Headers
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.util.regex.Pattern
+import eu.kanade.tachiyomi.util.asJsoup
 
 class EpornerExtractor(
-private val client: OkHttpClient,
-private val headers: Headers,
+    private val client: OkHttpClient
 ) {
+    fun videosFromUrl(url: String): List<Video> {
+        val videoList = mutableListOf<Video>()
 
-private val playlistUtils by lazy { PlaylistUtils(client) }
-
-// Regex to capture signed master.m3u8 URLs
-private val hlsPattern = Pattern.compile(
-    """https://[^"]+\.m3u8[^"]*""",
-    Pattern.CASE_INSENSITIVE,
-)
-
-// Regex to capture direct MP4 links (fallback)
-private val mp4Pattern = Pattern.compile(
-    """https://[^"]+\.mp4[^"]*""",
-    Pattern.CASE_INSENSITIVE,
-)
-
-fun videosFromEmbed(url: String): List<Video> {
-    return try {
-        // 1️⃣ Load embed page
-        val request = Request.Builder()
-            .url(url)
-            .headers(headers)
-            .addHeader("Referer", "https://www.eporner.com/")
-            .addHeader(
+        // ===== HEADERS (ANTI-403) =====
+        val headers = Headers.Builder()
+            .add("Referer", "https://www.eporner.com/")
+            .add("Origin", "https://www.eporner.com")
+            .add(
                 "User-Agent",
-                "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                    "Chrome/120.0.0.0 Safari/537.36"
             )
             .build()
 
-        val html = client.newCall(request)
-            .execute()
-            .body
-            ?.string()
-            ?: return emptyList()
+        // ===== REQUEST MASTER PLAYLIST =====
+        val request = GET(url, headers)
+        val response = client.newCall(request).execute()
 
-        val videos = mutableListOf<Video>()
+        if (!response.isSuccessful) return emptyList()
 
-        // 2️⃣ Extract HLS master playlist
-        val hlsMatcher = hlsPattern.matcher(html)
+        val body = response.body.string()
 
-        while (hlsMatcher.find()) {
-            val masterUrl = hlsMatcher.group()
+        // ===== PARSE QUALITY STREAMS =====
+        val lines = body.split("\n")
 
-            val hlsVideos = playlistUtils.extractFromHls(
-                masterUrl,
-                referer = "https://www.eporner.com/",
-                videoNameGen = { quality ->
-                    "Eporner HLS:$quality"
-                },
-            )
+        var quality = "Auto"
 
-            videos.addAll(hlsVideos)
+        lines.forEach { line ->
+            if (line.startsWith("#EXT-X-STREAM-INF")) {
+
+                val resMatch = Regex("""RESOLUTION=\d+x(\d+)""")
+                    .find(line)
+
+                quality = resMatch?.groupValues?.get(1)?.plus("p")
+                    ?: "Auto"
+            }
+
+            if (line.startsWith("http")) {
+                videoList.add(
+                    Video(
+                        url = line,
+                        quality = "Eporner • $quality",
+                        videoUrl = line,
+                        headers = headers
+                    )
+                )
+            }
         }
 
-        // 3️⃣ Fallback: Direct MP4 links
-        val mp4Matcher = mp4Pattern.matcher(html)
-
-        while (mp4Matcher.find()) {
-            val mp4Url = mp4Matcher.group()
-
-            videos.add(
-                Video(
-                    mp4Url,
-                    "Eporner MP4",
-                    mp4Url,
-                    headers = headers,
-                ),
-            )
-        }
-
-        videos.distinctBy { it.url }
-
-    } catch (e: Exception) {
-        e.printStackTrace()
-        emptyList()
+        return videoList
     }
-}
-
 }
