@@ -104,7 +104,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 is QualityFilter -> {
                     if (filter.state != 0) quality = filter.toUriPart()
                 }
-
                 else -> {}
             }
         }
@@ -271,8 +270,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                                 url = line,
                                 quality = "Eporner • $currentQuality",
                                 videoUrl = line,
-                                headers = headers
-                            )
+                                headers = headers,
+                            ),
                         )
                     }
                 }
@@ -311,7 +310,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }.also(
             screen::addPreference,
-            )
+        )
 
         ListPreference(screen.context).apply {
             key = PREF_SORT_KEY
@@ -328,7 +327,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 summary = selected
                 true
             }
-        }.also(screen::addPreference)
+        }.also(
+            screen::addPreference,
+        )
     }
 
     override fun List<Video>.sort(): List<Video> {
@@ -467,4 +468,3 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("height") val height: Int,
     )
 }
-
