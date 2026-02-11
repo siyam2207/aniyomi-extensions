@@ -274,7 +274,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // 3. Build Video objects from all_qualities map
             val videos = mutableListOf<Video>()
             val requestHeaders = headersBuilder()
-                .add("Referer", embedUrl)   // required for CDN access
+                .add("Referer", embedUrl)
                 .add("Origin", baseUrl)
                 .build()
 
