@@ -392,7 +392,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // 9️⃣ CRITICAL: Sort by quality preference
             // ==============================
             videos.sort()
-
         } catch (e: Exception) {
             Log.e(tag, "videoListParse error", e)
             emptyList()
