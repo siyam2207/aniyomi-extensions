@@ -223,7 +223,62 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // STRATEGY 1: Direct MP4 URLs from `video_sources` JSON
+    // ✅ PRIMARY: Direct, permanent MP4 URLs via public API
+    // -----------------------------------------------------------------
+    private fun extractViaApi(embedUrl: String): List<Video> {
+        val videoId = Regex("""embed/([^/?]+)""").find(embedUrl)?.groupValues?.get(1)
+            ?: return emptyList()
+
+        Log.d(tag, "[API] Video ID: $videoId")
+
+        val apiRequestUrl = "$apiUrl/video/search/?id=$videoId&per_page=1&thumbsize=big"
+        val apiResponse = try {
+            client.newCall(GET(apiRequestUrl, headers)).execute()
+        } catch (e: Exception) {
+            Log.e(tag, "[API] Network error", e)
+            return emptyList()
+        }
+
+        if (!apiResponse.isSuccessful) {
+            Log.e(tag, "[API] HTTP ${apiResponse.code}")
+            return emptyList()
+        }
+
+        val apiBody = apiResponse.body.string()
+        val searchResponse = try {
+            json.decodeFromString<ApiSearchResponse>(apiBody)
+        } catch (e: Exception) {
+            Log.e(tag, "[API] JSON parse error", e)
+            return emptyList()
+        }
+
+        val video = searchResponse.videos.firstOrNull() ?: return emptyList()
+        val allQualities = video.allQualities ?: return emptyList()
+
+        val headers = headersBuilder()
+            .add("Referer", embedUrl)
+            .add("Origin", baseUrl)
+            .build()
+
+        val videos = mutableListOf<Video>()
+        allQualities.forEach { (quality, url) ->
+            videos.add(
+                Video(
+                    url = url,
+                    quality = "MP4 • ${quality}p",
+                    videoUrl = url,
+                    headers = headers,
+                ),
+            )
+        }
+
+        Log.i(tag, "[API] Found ${videos.size} permanent MP4 URLs")
+        videos.sort()
+        return videos
+    }
+
+    // -----------------------------------------------------------------
+    // ✅ FALLBACK 1: `video_sources` JSON (direct MP4, sometimes present)
     // -----------------------------------------------------------------
     private fun extractFromVideoSources(html: String, embedUrl: String): List<Video> {
         val regex = Regex("""var\s+video_sources\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
@@ -257,10 +312,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // STRATEGY 2: Signed MP4 URLs (reverse‑engineered from downloaders)
+    // ✅ FALLBACK 2: Signed MP4 URLs (expire, but work for a while)
     // -----------------------------------------------------------------
     private fun extractSignedMp4Urls(html: String, embedUrl: String): List<Video> {
-        // 1. Extract required tokens
         val hash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)""")
             .find(html)?.groupValues?.get(1)
         val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""")
@@ -274,7 +328,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             return emptyList()
         }
 
-        // 2. Extract numeric video ID
         var numericId = Regex("""video_id["']?\s*:\s*["']?(\d+)""")
             .find(html)?.groupValues?.get(1)
         if (numericId.isNullOrBlank()) {
@@ -291,7 +344,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             "vid-s24-n50-fr-cdn.eporner.com",
         )
 
-        val qualities = listOf("240", "360", "480", "720", "1080", "2160")
+        val qualities = listOf("2160", "1080", "720", "480", "360", "240")
         val headers = headersBuilder()
             .add("Referer", embedUrl)
             .add("Origin", baseUrl)
@@ -300,45 +353,29 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         val videos = mutableListOf<Video>()
 
         for (cdn in cdnServers) {
-            var cdnWorks = false
             for (quality in qualities) {
                 val url = "https://$cdn/v3/$hash/${expires}_${ip}_$vid/$numericId-$quality.mp4"
-                try {
-                    // Verify with HEAD request
-                    val headRequest = Request.Builder()
-                        .url(url)
-                        .method("HEAD", null)
-                        .headers(headers)
-                        .build()
-                    val headResponse = client.newCall(headRequest).execute()
-                    if (headResponse.isSuccessful) {
-                        videos.add(
-                            Video(
-                                url = url,
-                                quality = "MP4 • ${quality}p",
-                                videoUrl = url,
-                                headers = headers,
-                            ),
-                        )
-                        cdnWorks = true
-                    }
-                    headResponse.close()
-                } catch (_: Exception) {
-                    // Ignore, try next quality or CDN
-                }
+                videos.add(
+                    Video(
+                        url = url,
+                        quality = "MP4 • ${quality}p",
+                        videoUrl = url,
+                        headers = headers,
+                    ),
+                )
             }
-            if (cdnWorks) break
+            break // take first CDN only
         }
 
+        Log.i(tag, "[Signed] Generated ${videos.size} signed MP4 URLs (may expire)")
         videos.sort()
         return videos
     }
 
     // -----------------------------------------------------------------
-    // STRATEGY 3: HLS master playlist (fallback)
+    // ✅ FALLBACK 3: HLS master playlist (legacy)
     // -----------------------------------------------------------------
     private fun extractHls(html: String, embedUrl: String): List<Video> {
-        // Extract hash and numeric ID
         val hash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)""")
             .find(html)?.groupValues?.get(1)
         val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""")
@@ -435,14 +472,22 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // MAIN ENTRY POINT – tries all strategies in order
+    // ✅ MAIN ENTRY POINT – tries methods in order
     // -----------------------------------------------------------------
     override fun videoListParse(response: Response): List<Video> {
         val html = response.body.string()
         val embedUrl = response.request.url.toString()
         Log.d(tag, "Embed URL: $embedUrl")
 
-        // Strategy 1: video_sources JSON (fastest, most reliable)
+        // 1. API – permanent direct MP4s (best)
+        extractViaApi(embedUrl).let { videos ->
+            if (videos.isNotEmpty()) {
+                Log.i(tag, "✅ Using API permanent MP4 (${videos.size} qualities)")
+                return videos
+            }
+        }
+
+        // 2. video_sources JSON – also permanent, but not always present
         extractFromVideoSources(html, embedUrl).let { videos ->
             if (videos.isNotEmpty()) {
                 Log.i(tag, "✅ Using video_sources JSON (${videos.size} qualities)")
@@ -450,15 +495,15 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }
 
-        // Strategy 2: Signed MP4 URLs (proven pattern)
+        // 3. Signed MP4 URLs – temporary, but often work
         extractSignedMp4Urls(html, embedUrl).let { videos ->
             if (videos.isNotEmpty()) {
-                Log.i(tag, "✅ Using signed MP4 URLs (${videos.size} qualities)")
+                Log.w(tag, "⚠️ Using signed MP4 URLs (may expire after ~30s)")
                 return videos
             }
         }
 
-        // Strategy 3: HLS master playlist (legacy fallback)
+        // 4. HLS – last resort
         Log.w(tag, "⚠️ Falling back to HLS")
         extractHls(html, embedUrl).let { videos ->
             if (videos.isNotEmpty()) {
@@ -629,7 +674,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
     )
 
-    // allQualities is kept for completeness, but no longer used
+    // ✅ all_qualities is essential – it gives permanent direct MP4 URLs
     @Serializable
     private data class ApiVideo(
         @SerialName("id") val id: String,
