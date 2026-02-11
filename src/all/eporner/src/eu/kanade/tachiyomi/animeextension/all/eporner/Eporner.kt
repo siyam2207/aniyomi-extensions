@@ -240,7 +240,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Log.d(tag, "Embed URL: $embedUrl")
 
             // ==============================
-            // 1️⃣ Extract VID + HASH (player JS)
+            // 1️⃣ VID + HASH (player JS)
             // ==============================
             val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""")
                 .find(html)?.groupValues?.get(1)
@@ -257,13 +257,27 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Log.d(tag, "HASH: $hash")
 
             // ==============================
-            // 2️⃣ Extract NUMERIC VIDEO ID
-            // (research doc shows master uses numeric ID)
+            // 2️⃣ EXPIRES + IP (required for CDN auth)
+            // ==============================
+            val expires = Regex("""expires["']?\s*[:=]\s*["']?(\d+)""")
+                .find(html)?.groupValues?.get(1)
+
+            val ip = Regex("""ip["']?\s*[:=]\s*["']?([\d\.]+)""")
+                .find(html)?.groupValues?.get(1)
+
+            if (expires.isNullOrBlank()) {
+                Log.w(tag, "Expires token missing – playback may fail after 10‑20s")
+            }
+
+            Log.d(tag, "Expires: $expires")
+            Log.d(tag, "IP: $ip")
+
+            // ==============================
+            // 3️⃣ NUMERIC VIDEO ID
             // ==============================
             var numericId = Regex("""video_id["']?\s*:\s*["']?(\d+)""")
                 .find(html)?.groupValues?.get(1)
 
-            // Fallback via thumbnail path
             if (numericId.isNullOrBlank()) {
                 numericId = Regex("""/(\d+)_\d+\.jpg""")
                     .find(html)?.groupValues?.get(1)
@@ -277,7 +291,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Log.d(tag, "Numeric ID: $numericId")
 
             // ==============================
-            // 3️⃣ CDN list (research c50 cluster)
+            // 4️⃣ CDN servers (c50 cluster)
             // ==============================
             val cdnServers = listOf(
                 "dash-s1-c50-fr-cdn.eporner.com",
@@ -289,7 +303,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             )
 
             // ==============================
-            // 4️⃣ Headers (embed referer required)
+            // 5️⃣ Headers (embed referer required)
             // ==============================
             val requestHeaders = headersBuilder()
                 .add("Referer", embedUrl)
@@ -297,17 +311,21 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 .build()
 
             // ==============================
-            // 5️⃣ Find working master.m3u8
+            // 6️⃣ Find working master.m3u8 with FULL token
             // ==============================
             var masterBody: String? = null
             var masterUrl: String? = null
 
             for (cdn in cdnServers) {
-                val url =
-                    "https://$cdn/hls/v5/" +
-                        "$numericId-,240p,360p,480p,720p,.mp4.urlset/master.m3u8" +
-                        "?hash=$hash"
+                val urlBuilder = StringBuilder()
+                    .append("https://$cdn/hls/v5/")
+                    .append("$numericId-,240p,360p,480p,720p,.mp4.urlset/master.m3u8")
+                    .append("?hash=$hash")
 
+                if (!expires.isNullOrBlank()) urlBuilder.append("&expires=$expires")
+                if (!ip.isNullOrBlank()) urlBuilder.append("&ip=$ip")
+
+                val url = urlBuilder.toString()
                 Log.d(tag, "Trying master: $url")
 
                 try {
@@ -324,12 +342,12 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
 
             if (masterBody.isNullOrBlank() || masterUrl == null) {
-                Log.e(tag, "Master playlist not found")
+                Log.e(tag, "Master playlist not found on any CDN")
                 return emptyList()
             }
 
             // ==============================
-            // 6️⃣ Parse master playlist
+            // 7️⃣ Parse master playlist
             // ==============================
             val videos = mutableListOf<Video>()
             var quality = "Auto"
@@ -355,7 +373,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             }
 
             // ==============================
-            // 7️⃣ Fallback → Auto master
+            // 8️⃣ Fallback → Auto master
             // ==============================
             if (videos.isEmpty()) {
                 videos.add(
@@ -370,7 +388,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             Log.d(tag, "Videos found: ${videos.size}")
 
-            videos
+            // ==============================
+            // 9️⃣ CRITICAL: Sort by quality preference
+            // ==============================
+            videos.sort()
+
         } catch (e: Exception) {
             Log.e(tag, "videoListParse error", e)
             emptyList()
