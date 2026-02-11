@@ -232,166 +232,73 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return GET(episode.url, headers)
     }
 
+    // --------------------------------------------------------------
+    // ✅ FIXED: Use Eporner Public API for direct MP4 URLs (no HLS, no token expiry)
+    // --------------------------------------------------------------
     override fun videoListParse(response: Response): List<Video> {
         return try {
-            val html = response.body.string()
             val embedUrl = response.request.url.toString()
-
             Log.d(tag, "Embed URL: $embedUrl")
 
-            // ==============================
-            // 1️⃣ VID + HASH (player JS)
-            // ==============================
-            val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""")
-                .find(html)?.groupValues?.get(1)
+            // 1. Extract video ID from embed URL (e.g. /embed/AbCd1234/)
+            val videoId = Regex("""embed/([^/?]+)""")
+                .find(embedUrl)
+                ?.groupValues
+                ?.get(1)
 
-            val hash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)""")
-                .find(html)?.groupValues?.get(1)
-
-            if (vid.isNullOrBlank() || hash.isNullOrBlank()) {
-                Log.e(tag, "VID or HASH not found")
+            if (videoId.isNullOrBlank()) {
+                Log.e(tag, "Could not extract video ID from embed URL")
                 return emptyList()
             }
 
-            Log.d(tag, "VID: $vid")
-            Log.d(tag, "HASH: $hash")
+            Log.d(tag, "Video ID: $videoId")
 
-            // ==============================
-            // 2️⃣ EXPIRES + IP (required for CDN auth)
-            // ==============================
-            val expires = Regex("""expires["']?\s*[:=]\s*["']?(\d+)""")
-                .find(html)?.groupValues?.get(1)
+            // 2. Call public API to get video details with all_qualities
+            val apiRequestUrl = "$apiUrl/video/search/?id=$videoId&per_page=1&thumbsize=big"
+            val apiResponse = client.newCall(GET(apiRequestUrl, headers)).execute()
 
-            val ip = Regex("""ip["']?\s*[:=]\s*["']?([\d\.]+)""")
-                .find(html)?.groupValues?.get(1)
-
-            if (expires.isNullOrBlank()) {
-                Log.w(tag, "Expires token missing – playback may fail after 10‑20s")
-            }
-
-            Log.d(tag, "Expires: $expires")
-            Log.d(tag, "IP: $ip")
-
-            // ==============================
-            // 3️⃣ NUMERIC VIDEO ID
-            // ==============================
-            var numericId = Regex("""video_id["']?\s*:\s*["']?(\d+)""")
-                .find(html)?.groupValues?.get(1)
-
-            if (numericId.isNullOrBlank()) {
-                numericId = Regex("""/(\d+)_\d+\.jpg""")
-                    .find(html)?.groupValues?.get(1)
-            }
-
-            if (numericId.isNullOrBlank()) {
-                Log.e(tag, "Numeric video ID not found")
+            if (!apiResponse.isSuccessful) {
+                Log.e(tag, "API request failed: ${apiResponse.code}")
                 return emptyList()
             }
 
-            Log.d(tag, "Numeric ID: $numericId")
+            val apiBody = apiResponse.body.string()
+            val searchResponse = json.decodeFromString<ApiSearchResponse>(apiBody)
 
-            // ==============================
-            // 4️⃣ CDN servers (c50 cluster)
-            // ==============================
-            val cdnServers = listOf(
-                "dash-s1-c50-fr-cdn.eporner.com",
-                "dash-s2-c50-fr-cdn.eporner.com",
-                "dash-s3-c50-fr-cdn.eporner.com",
-                "dash-s4-c50-fr-cdn.eporner.com",
-                "dash-s13-c50-fr-cdn.eporner.com",
-                "dash-s24-c50-fr-cdn.eporner.com",
-            )
+            val video = searchResponse.videos.firstOrNull()
+            if (video == null) {
+                Log.e(tag, "No video found in API response")
+                return emptyList()
+            }
 
-            // ==============================
-            // 5️⃣ Headers (embed referer required)
-            // ==============================
+            // 3. Build Video objects from all_qualities map
+            val videos = mutableListOf<Video>()
             val requestHeaders = headersBuilder()
-                .add("Referer", embedUrl)
+                .add("Referer", embedUrl)   // required for CDN access
                 .add("Origin", baseUrl)
                 .build()
 
-            // ==============================
-            // 6️⃣ Find working master.m3u8 with FULL token
-            // ==============================
-            var masterBody: String? = null
-            var masterUrl: String? = null
-
-            for (cdn in cdnServers) {
-                val urlBuilder = StringBuilder()
-                    .append("https://$cdn/hls/v5/")
-                    .append("$numericId-,240p,360p,480p,720p,.mp4.urlset/master.m3u8")
-                    .append("?hash=$hash")
-
-                if (!expires.isNullOrBlank()) urlBuilder.append("&expires=$expires")
-                if (!ip.isNullOrBlank()) urlBuilder.append("&ip=$ip")
-
-                val url = urlBuilder.toString()
-                Log.d(tag, "Trying master: $url")
-
-                try {
-                    val res = client.newCall(GET(url, requestHeaders)).execute()
-                    if (res.isSuccessful) {
-                        masterBody = res.body.string()
-                        masterUrl = url
-                        Log.d(tag, "Working CDN: $cdn")
-                        break
-                    }
-                } catch (e: Exception) {
-                    Log.e(tag, "CDN failed: $cdn", e)
-                }
-            }
-
-            if (masterBody.isNullOrBlank() || masterUrl == null) {
-                Log.e(tag, "Master playlist not found on any CDN")
-                return emptyList()
-            }
-
-            // ==============================
-            // 7️⃣ Parse master playlist
-            // ==============================
-            val videos = mutableListOf<Video>()
-            var quality = "Auto"
-
-            masterBody.split("\n").forEach { line ->
-                when {
-                    line.startsWith("#EXT-X-STREAM-INF") -> {
-                        val q = Regex("""RESOLUTION=\d+x(\d+)""")
-                            .find(line)?.groupValues?.get(1)
-                        quality = q?.plus("p") ?: "Auto"
-                    }
-                    line.startsWith("http") -> {
-                        videos.add(
-                            Video(
-                                url = line,
-                                quality = "Eporner • $quality",
-                                videoUrl = line,
-                                headers = requestHeaders,
-                            ),
-                        )
-                    }
-                }
-            }
-
-            // ==============================
-            // 8️⃣ Fallback → Auto master
-            // ==============================
-            if (videos.isEmpty()) {
+            video.allQualities?.forEach { (quality, url) ->
+                // Skip very low qualities if desired, but keep all for availability
                 videos.add(
                     Video(
-                        url = masterUrl,
-                        quality = "Eporner • Auto",
-                        videoUrl = masterUrl,
+                        url = url,
+                        quality = "MP4 • ${quality}p",
+                        videoUrl = url,
                         headers = requestHeaders,
                     ),
                 )
             }
 
-            Log.d(tag, "Videos found: ${videos.size}")
+            if (videos.isEmpty()) {
+                Log.e(tag, "No quality URLs found in API response")
+            } else {
+                Log.d(tag, "Found ${videos.size} quality options via API")
+            }
 
-            // ==============================
-            // 9️⃣ CRITICAL: Sort by quality preference
-            // ==============================
+            // 4. Sort according to user preference and return
             videos.sort()
+            videos
         } catch (e: Exception) {
             Log.e(tag, "videoListParse error", e)
             emptyList()
@@ -556,6 +463,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
     )
 
+    // ✅ ADDED: allQualities field to capture direct MP4 URLs from API
     @Serializable
     private data class ApiVideo(
         @SerialName("id") val id: String,
@@ -564,6 +472,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("url") val url: String,
         @SerialName("embed") val embed: String,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
+        @SerialName("all_qualities") val allQualities: Map<String, String>? = null,
     ) {
         fun toSAnime(): SAnime = SAnime.create().apply {
             title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
