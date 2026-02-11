@@ -204,7 +204,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     name = "Video"
                     episode_number = 1F
                     url = embedUrl
-                }
+                },
             )
         } catch (_: Exception) {
             emptyList()
@@ -239,8 +239,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         url = url,
                         quality = "MP4 • ${quality}p",
                         videoUrl = url,
-                        headers = headers
-                    )
+                        headers = headers,
+                    ),
                 )
             }
             videos.sort()
@@ -283,7 +283,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             "vid-s3-n50-fr-cdn.eporner.com",
             "vid-s4-n50-fr-cdn.eporner.com",
             "vid-s13-n50-fr-cdn.eporner.com",
-            "vid-s24-n50-fr-cdn.eporner.com"
+            "vid-s24-n50-fr-cdn.eporner.com",
         )
 
         val qualities = listOf("240", "360", "480", "720", "1080", "2160")
@@ -312,8 +312,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                                 url = url,
                                 quality = "MP4 • ${quality}p",
                                 videoUrl = url,
-                                headers = headers
-                            )
+                                headers = headers,
+                            ),
                         )
                         cdnWorks = true
                     }
@@ -358,7 +358,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             "dash-s3-c50-fr-cdn.eporner.com",
             "dash-s4-c50-fr-cdn.eporner.com",
             "dash-s13-c50-fr-cdn.eporner.com",
-            "dash-s24-c50-fr-cdn.eporner.com"
+            "dash-s24-c50-fr-cdn.eporner.com",
         )
 
         val headers = headersBuilder()
@@ -407,8 +407,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                             url = line,
                             quality = "HLS • $quality",
                             videoUrl = line,
-                            headers = headers
-                        )
+                            headers = headers,
+                        ),
                     )
                 }
             }
@@ -420,8 +420,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     url = masterUrl,
                     quality = "HLS • Auto",
                     videoUrl = masterUrl,
-                    headers = headers
-                )
+                    headers = headers,
+                ),
             )
         }
 
@@ -523,23 +523,23 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     it.quality.contains(qualityPref, ignoreCase = false) -> 1000
                     else -> 0
                 }
-            }
+            },
         )
     }
 
     override fun getFilterList() = AnimeFilterList(
         CategoryFilter(),
         DurationFilter(),
-        QualityFilter()
+        QualityFilter(),
     )
 
     // ==================== Filter Classes ====================
     private open class UriPartFilter(
         displayName: String,
-        private val vals: Array<Pair<String, String>>
+        private val vals: Array<Pair<String, String>>,
     ) : AnimeFilter.Select<String>(
         displayName,
-        vals.map { it.first }.toTypedArray()
+        vals.map { it.first }.toTypedArray(),
     ) {
         fun toUriPart() = vals[state].second
     }
@@ -565,8 +565,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Pair("Masturbation", "masturbation"),
             Pair("Mature", "mature"),
             Pair("Milf", "milf"),
-            Pair("Teen", "teen")
-        )
+            Pair("Teen", "teen"),
+        ),
     )
 
     private class DurationFilter : UriPartFilter(
@@ -575,8 +575,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Pair("Any", "0"),
             Pair("10+ min", "10"),
             Pair("20+ min", "20"),
-            Pair("30+ min", "30")
-        )
+            Pair("30+ min", "30"),
+        ),
     )
 
     private class QualityFilter : UriPartFilter(
@@ -585,8 +585,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Pair("Any", "0"),
             Pair("HD 1080", "1080"),
             Pair("HD 720", "720"),
-            Pair("HD 480", "480")
-        )
+            Pair("HD 480", "480"),
+        ),
     )
 
     companion object {
@@ -604,7 +604,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private data class ApiSearchResponse(
         @SerialName("videos") val videos: List<ApiVideo>,
         @SerialName("page") val page: Int,
-        @SerialName("total_pages") val total_pages: Int
+        @SerialName("total_pages") val total_pages: Int,
     )
 
     @Serializable
@@ -617,7 +617,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("added") val added: String,
         @SerialName("length_sec") val lengthSec: Int,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
-        @SerialName("thumbs") val thumbs: List<ApiThumbnail>
+        @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
     )
 
     // allQualities is kept for completeness, but no longer used
@@ -629,7 +629,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("url") val url: String,
         @SerialName("embed") val embed: String,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
-        @SerialName("all_qualities") val allQualities: Map<String, String>? = null
+        @SerialName("all_qualities") val allQualities: Map<String, String>? = null,
     ) {
         fun toSAnime(): SAnime = SAnime.create().apply {
             title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
@@ -644,6 +644,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private data class ApiThumbnail(
         @SerialName("src") val src: String,
         @SerialName("width") val width: Int,
-        @SerialName("height") val height: Int
+        @SerialName("height") val height: Int,
     )
 }
