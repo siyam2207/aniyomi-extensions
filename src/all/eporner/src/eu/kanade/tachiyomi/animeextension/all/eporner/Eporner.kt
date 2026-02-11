@@ -50,7 +50,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Pragma", "no-cache")
     }
 
-    // ==================== Popular / Latest / Search ====================
+    // ==================== Popular ====================
     override fun popularAnimeRequest(page: Int): Request {
         val url = "$apiUrl/video/search/?query=all&page=$page&order=top-weekly&thumbsize=big&format=json&per_page=30"
         return GET(url, headers)
@@ -69,6 +69,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
+    // ==================== Latest ====================
     override fun latestUpdatesRequest(page: Int): Request {
         val url = "$apiUrl/video/search/?query=all&page=$page&order=latest&thumbsize=big&format=json&per_page=30"
         return GET(url, headers)
@@ -78,6 +79,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return popularAnimeParse(response)
     }
 
+    // ==================== Search ====================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val encodedQuery = if (query.isNotBlank()) {
             URLEncoder.encode(query, "UTF-8")
@@ -141,7 +143,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun ensureTitleInitialized(anime: SAnime) {
-        try { anime.title } catch (_: kotlin.UninitializedPropertyAccessException) { anime.title = "Unknown Title" }
+        try {
+            anime.title
+        } catch (_: kotlin.UninitializedPropertyAccessException) {
+            anime.title = "Unknown Title"
+        }
     }
 
     private fun updateAnimeFromApi(anime: SAnime, videoDetail: ApiVideoDetailResponse): SAnime {
@@ -217,7 +223,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // ✅ STRATEGY 1: Direct MP4 URLs from `video_sources` JSON
+    // STRATEGY 1: Direct MP4 URLs from `video_sources` JSON
     // -----------------------------------------------------------------
     private fun extractFromVideoSources(html: String, embedUrl: String): List<Video> {
         val regex = Regex("""var\s+video_sources\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
@@ -225,15 +231,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         val jsonStr = match.groupValues[1]
 
         return try {
-            val jsonObject = json.parseToJsonElement(jsonStr).jsonObject
+            val sources: Map<String, String> = json.decodeFromString(jsonStr)
             val videos = mutableListOf<Video>()
             val headers = headersBuilder()
                 .add("Referer", embedUrl)
                 .add("Origin", baseUrl)
                 .build()
 
-            jsonObject.forEach { (quality, urlElement) ->
-                val url = urlElement.jsonPrimitive.content
+            sources.forEach { (quality, url) ->
                 videos.add(
                     Video(
                         url = url,
@@ -252,7 +257,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // ✅ STRATEGY 2: Signed MP4 URLs (reverse‑engineered from downloaders)
+    // STRATEGY 2: Signed MP4 URLs (reverse‑engineered from downloaders)
     // -----------------------------------------------------------------
     private fun extractSignedMp4Urls(html: String, embedUrl: String): List<Video> {
         // 1. Extract required tokens
@@ -330,7 +335,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // ✅ STRATEGY 3: HLS master playlist (fallback)
+    // STRATEGY 3: HLS master playlist (fallback)
     // -----------------------------------------------------------------
     private fun extractHls(html: String, embedUrl: String): List<Video> {
         // Extract hash and numeric ID
@@ -430,7 +435,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // ✅ MAIN ENTRY POINT – tries all strategies in order
+    // MAIN ENTRY POINT – tries all strategies in order
     // -----------------------------------------------------------------
     override fun videoListParse(response: Response): List<Video> {
         val html = response.body.string()
@@ -489,7 +494,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 summary = if (selected == "best") "Best available quality" else selected
                 true
             }
-        }.also(screen::addPreference)
+        }.also(
+            screen::addPreference,
+        )
 
         ListPreference(screen.context).apply {
             key = PREF_SORT_KEY
@@ -506,7 +513,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 summary = selected
                 true
             }
-        }.also(screen::addPreference)
+        }.also(
+            screen::addPreference,
+        )
     }
 
     override fun List<Video>.sort(): List<Video> {
