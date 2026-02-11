@@ -34,10 +34,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private val json: Json by injectLazy()
     private val tag = "EpornerExtension"
 
-    // User agent constant
     private val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; SM-M526BR) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
 
-    // Store preferences instance
     private var preferences: SharedPreferences? = null
 
     // ==================== Headers ====================
@@ -52,7 +50,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Pragma", "no-cache")
     }
 
-    // ==================== Popular Anime ====================
+    // ==================== Popular / Latest / Search ====================
     override fun popularAnimeRequest(page: Int): Request {
         val url = "$apiUrl/video/search/?query=all&page=$page&order=top-weekly&thumbsize=big&format=json&per_page=30"
         return GET(url, headers)
@@ -71,7 +69,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         }
     }
 
-    // ==================== Latest Updates ====================
     override fun latestUpdatesRequest(page: Int): Request {
         val url = "$apiUrl/video/search/?query=all&page=$page&order=latest&thumbsize=big&format=json&per_page=30"
         return GET(url, headers)
@@ -81,7 +78,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return popularAnimeParse(response)
     }
 
-    // ==================== Search ====================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val encodedQuery = if (query.isNotBlank()) {
             URLEncoder.encode(query, "UTF-8")
@@ -95,21 +91,14 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
         filters.forEach { filter ->
             when (filter) {
-                is CategoryFilter -> {
-                    if (filter.state != 0) category = filter.toUriPart()
-                }
-                is DurationFilter -> {
-                    if (filter.state != 0) duration = filter.toUriPart()
-                }
-                is QualityFilter -> {
-                    if (filter.state != 0) quality = filter.toUriPart()
-                }
+                is CategoryFilter -> if (filter.state != 0) category = filter.toUriPart()
+                is DurationFilter -> if (filter.state != 0) duration = filter.toUriPart()
+                is QualityFilter -> if (filter.state != 0) quality = filter.toUriPart()
                 else -> {}
             }
         }
 
-        val url =
-            "$apiUrl/video/search/?query=$encodedQuery&page=$page&categories=$category&duration=$duration&quality=$quality&thumbsize=big&format=json&per_page=30"
+        val url = "$apiUrl/video/search/?query=$encodedQuery&page=$page&categories=$category&duration=$duration&quality=$quality&thumbsize=big&format=json&per_page=30"
         return GET(url, headers)
     }
 
@@ -142,8 +131,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 try {
                     val videoDetail = json.decodeFromString<ApiVideoDetailResponse>(body)
                     return updateAnimeFromApi(anime, videoDetail)
-                } catch (_: Exception) {
-                }
+                } catch (_: Exception) {}
             }
 
             updateAnimeFromEmbedPage(body, anime)
@@ -153,11 +141,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private fun ensureTitleInitialized(anime: SAnime) {
-        try {
-            anime.title
-        } catch (_: kotlin.UninitializedPropertyAccessException) {
-            anime.title = "Unknown Title"
-        }
+        try { anime.title } catch (_: kotlin.UninitializedPropertyAccessException) { anime.title = "Unknown Title" }
     }
 
     private fun updateAnimeFromApi(anime: SAnime, videoDetail: ApiVideoDetailResponse): SAnime {
@@ -220,7 +204,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     name = "Video"
                     episode_number = 1F
                     url = embedUrl
-                },
+                }
             )
         } catch (_: Exception) {
             emptyList()
@@ -232,77 +216,254 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return GET(episode.url, headers)
     }
 
-    // --------------------------------------------------------------
-    // ✅ FIXED: Use Eporner Public API for direct MP4 URLs (no HLS, no token expiry)
-    // --------------------------------------------------------------
-    override fun videoListParse(response: Response): List<Video> {
+    // -----------------------------------------------------------------
+    // ✅ STRATEGY 1: Direct MP4 URLs from `video_sources` JSON
+    // -----------------------------------------------------------------
+    private fun extractFromVideoSources(html: String, embedUrl: String): List<Video> {
+        val regex = Regex("""var\s+video_sources\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
+        val match = regex.find(html) ?: return emptyList()
+        val jsonStr = match.groupValues[1]
+
         return try {
-            val embedUrl = response.request.url.toString()
-            Log.d(tag, "Embed URL: $embedUrl")
-
-            // 1. Extract video ID from embed URL (e.g. /embed/AbCd1234/)
-            val videoId = Regex("""embed/([^/?]+)""")
-                .find(embedUrl)
-                ?.groupValues
-                ?.get(1)
-
-            if (videoId.isNullOrBlank()) {
-                Log.e(tag, "Could not extract video ID from embed URL")
-                return emptyList()
-            }
-
-            Log.d(tag, "Video ID: $videoId")
-
-            // 2. Call public API to get video details with all_qualities
-            val apiRequestUrl = "$apiUrl/video/search/?id=$videoId&per_page=1&thumbsize=big"
-            val apiResponse = client.newCall(GET(apiRequestUrl, headers)).execute()
-
-            if (!apiResponse.isSuccessful) {
-                Log.e(tag, "API request failed: ${apiResponse.code}")
-                return emptyList()
-            }
-
-            val apiBody = apiResponse.body.string()
-            val searchResponse = json.decodeFromString<ApiSearchResponse>(apiBody)
-
-            val video = searchResponse.videos.firstOrNull()
-            if (video == null) {
-                Log.e(tag, "No video found in API response")
-                return emptyList()
-            }
-
-            // 3. Build Video objects from all_qualities map
+            val jsonObject = json.parseToJsonElement(jsonStr).jsonObject
             val videos = mutableListOf<Video>()
-            val requestHeaders = headersBuilder()
+            val headers = headersBuilder()
                 .add("Referer", embedUrl)
                 .add("Origin", baseUrl)
                 .build()
 
-            video.allQualities?.forEach { (quality, url) ->
-                // Skip very low qualities if desired, but keep all for availability
+            jsonObject.forEach { (quality, urlElement) ->
+                val url = urlElement.jsonPrimitive.content
                 videos.add(
                     Video(
                         url = url,
                         quality = "MP4 • ${quality}p",
                         videoUrl = url,
-                        headers = requestHeaders,
-                    ),
+                        headers = headers
+                    )
                 )
             }
-
-            if (videos.isEmpty()) {
-                Log.e(tag, "No quality URLs found in API response")
-            } else {
-                Log.d(tag, "Found ${videos.size} quality options via API")
-            }
-
-            // 4. Sort according to user preference and return
             videos.sort()
             videos
         } catch (e: Exception) {
-            Log.e(tag, "videoListParse error", e)
+            Log.e(tag, "Failed to parse video_sources", e)
             emptyList()
         }
+    }
+
+    // -----------------------------------------------------------------
+    // ✅ STRATEGY 2: Signed MP4 URLs (reverse‑engineered from downloaders)
+    // -----------------------------------------------------------------
+    private fun extractSignedMp4Urls(html: String, embedUrl: String): List<Video> {
+        // 1. Extract required tokens
+        val hash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)""")
+            .find(html)?.groupValues?.get(1)
+        val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""")
+            .find(html)?.groupValues?.get(1)
+        val expires = Regex("""expires["']?\s*[:=]\s*["']?(\d+)""")
+            .find(html)?.groupValues?.get(1)
+        val ip = Regex("""ip["']?\s*[:=]\s*["']?([\d\.]+)""")
+            .find(html)?.groupValues?.get(1)
+
+        if (hash.isNullOrBlank() || vid.isNullOrBlank() || expires.isNullOrBlank()) {
+            return emptyList()
+        }
+
+        // 2. Extract numeric video ID
+        var numericId = Regex("""video_id["']?\s*:\s*["']?(\d+)""")
+            .find(html)?.groupValues?.get(1)
+        if (numericId.isNullOrBlank()) {
+            numericId = Regex("""/(\d+)_\d+\.jpg""").find(html)?.groupValues?.get(1)
+        }
+        if (numericId.isNullOrBlank()) return emptyList()
+
+        val cdnServers = listOf(
+            "vid-s1-n50-fr-cdn.eporner.com",
+            "vid-s2-n50-fr-cdn.eporner.com",
+            "vid-s3-n50-fr-cdn.eporner.com",
+            "vid-s4-n50-fr-cdn.eporner.com",
+            "vid-s13-n50-fr-cdn.eporner.com",
+            "vid-s24-n50-fr-cdn.eporner.com"
+        )
+
+        val qualities = listOf("240", "360", "480", "720", "1080", "2160")
+        val headers = headersBuilder()
+            .add("Referer", embedUrl)
+            .add("Origin", baseUrl)
+            .build()
+
+        val videos = mutableListOf<Video>()
+
+        for (cdn in cdnServers) {
+            var cdnWorks = false
+            for (quality in qualities) {
+                val url = "https://$cdn/v3/$hash/${expires}_${ip}_$vid/$numericId-$quality.mp4"
+                try {
+                    // Verify with HEAD request
+                    val headRequest = Request.Builder()
+                        .url(url)
+                        .method("HEAD", null)
+                        .headers(headers)
+                        .build()
+                    val headResponse = client.newCall(headRequest).execute()
+                    if (headResponse.isSuccessful) {
+                        videos.add(
+                            Video(
+                                url = url,
+                                quality = "MP4 • ${quality}p",
+                                videoUrl = url,
+                                headers = headers
+                            )
+                        )
+                        cdnWorks = true
+                    }
+                    headResponse.close()
+                } catch (_: Exception) {
+                    // Ignore, try next quality or CDN
+                }
+            }
+            if (cdnWorks) break
+        }
+
+        videos.sort()
+        return videos
+    }
+
+    // -----------------------------------------------------------------
+    // ✅ STRATEGY 3: HLS master playlist (fallback)
+    // -----------------------------------------------------------------
+    private fun extractHls(html: String, embedUrl: String): List<Video> {
+        // Extract hash and numeric ID
+        val hash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)""")
+            .find(html)?.groupValues?.get(1)
+        val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""")
+            .find(html)?.groupValues?.get(1)
+        if (hash.isNullOrBlank() || vid.isNullOrBlank()) return emptyList()
+
+        var numericId = Regex("""video_id["']?\s*:\s*["']?(\d+)""")
+            .find(html)?.groupValues?.get(1)
+        if (numericId.isNullOrBlank()) {
+            numericId = Regex("""/(\d+)_\d+\.jpg""").find(html)?.groupValues?.get(1)
+        }
+        if (numericId.isNullOrBlank()) return emptyList()
+
+        val expires = Regex("""expires["']?\s*[:=]\s*["']?(\d+)""")
+            .find(html)?.groupValues?.get(1)
+        val ip = Regex("""ip["']?\s*[:=]\s*["']?([\d\.]+)""")
+            .find(html)?.groupValues?.get(1)
+
+        val cdnServers = listOf(
+            "dash-s1-c50-fr-cdn.eporner.com",
+            "dash-s2-c50-fr-cdn.eporner.com",
+            "dash-s3-c50-fr-cdn.eporner.com",
+            "dash-s4-c50-fr-cdn.eporner.com",
+            "dash-s13-c50-fr-cdn.eporner.com",
+            "dash-s24-c50-fr-cdn.eporner.com"
+        )
+
+        val headers = headersBuilder()
+            .add("Referer", embedUrl)
+            .add("Origin", baseUrl)
+            .build()
+
+        var masterBody: String? = null
+        var masterUrl: String? = null
+
+        for (cdn in cdnServers) {
+            val url = StringBuilder()
+                .append("https://$cdn/hls/v5/")
+                .append("$numericId-,240p,360p,480p,720p,.mp4.urlset/master.m3u8")
+                .append("?hash=$hash")
+                .apply {
+                    if (!expires.isNullOrBlank()) append("&expires=$expires")
+                    if (!ip.isNullOrBlank()) append("&ip=$ip")
+                }
+                .toString()
+
+            try {
+                val res = client.newCall(GET(url, headers)).execute()
+                if (res.isSuccessful) {
+                    masterBody = res.body.string()
+                    masterUrl = url
+                    break
+                }
+            } catch (_: Exception) {}
+        }
+
+        if (masterBody.isNullOrBlank() || masterUrl == null) return emptyList()
+
+        val videos = mutableListOf<Video>()
+        var quality = "Auto"
+
+        masterBody.split("\n").forEach { line ->
+            when {
+                line.startsWith("#EXT-X-STREAM-INF") -> {
+                    val q = Regex("""RESOLUTION=\d+x(\d+)""").find(line)?.groupValues?.get(1)
+                    quality = q?.plus("p") ?: "Auto"
+                }
+                line.startsWith("http") -> {
+                    videos.add(
+                        Video(
+                            url = line,
+                            quality = "HLS • $quality",
+                            videoUrl = line,
+                            headers = headers
+                        )
+                    )
+                }
+            }
+        }
+
+        if (videos.isEmpty()) {
+            videos.add(
+                Video(
+                    url = masterUrl,
+                    quality = "HLS • Auto",
+                    videoUrl = masterUrl,
+                    headers = headers
+                )
+            )
+        }
+
+        videos.sort()
+        return videos
+    }
+
+    // -----------------------------------------------------------------
+    // ✅ MAIN ENTRY POINT – tries all strategies in order
+    // -----------------------------------------------------------------
+    override fun videoListParse(response: Response): List<Video> {
+        val html = response.body.string()
+        val embedUrl = response.request.url.toString()
+        Log.d(tag, "Embed URL: $embedUrl")
+
+        // Strategy 1: video_sources JSON (fastest, most reliable)
+        extractFromVideoSources(html, embedUrl).let { videos ->
+            if (videos.isNotEmpty()) {
+                Log.i(tag, "✅ Using video_sources JSON (${videos.size} qualities)")
+                return videos
+            }
+        }
+
+        // Strategy 2: Signed MP4 URLs (proven pattern)
+        extractSignedMp4Urls(html, embedUrl).let { videos ->
+            if (videos.isNotEmpty()) {
+                Log.i(tag, "✅ Using signed MP4 URLs (${videos.size} qualities)")
+                return videos
+            }
+        }
+
+        // Strategy 3: HLS master playlist (legacy fallback)
+        Log.w(tag, "⚠️ Falling back to HLS")
+        extractHls(html, embedUrl).let { videos ->
+            if (videos.isNotEmpty()) {
+                Log.i(tag, "✅ Using HLS (${videos.size} streams)")
+                return videos
+            }
+        }
+
+        Log.e(tag, "❌ No videos found with any method")
+        return emptyList()
     }
 
     override fun videoUrlParse(response: Response): String {
@@ -328,9 +489,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 summary = if (selected == "best") "Best available quality" else selected
                 true
             }
-        }.also(
-            screen::addPreference,
-        )
+        }.also(screen::addPreference)
 
         ListPreference(screen.context).apply {
             key = PREF_SORT_KEY
@@ -347,9 +506,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 summary = selected
                 true
             }
-        }.also(
-            screen::addPreference,
-        )
+        }.also(screen::addPreference)
     }
 
     override fun List<Video>.sort(): List<Video> {
@@ -366,23 +523,23 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     it.quality.contains(qualityPref, ignoreCase = false) -> 1000
                     else -> 0
                 }
-            },
+            }
         )
     }
 
     override fun getFilterList() = AnimeFilterList(
         CategoryFilter(),
         DurationFilter(),
-        QualityFilter(),
+        QualityFilter()
     )
 
     // ==================== Filter Classes ====================
     private open class UriPartFilter(
         displayName: String,
-        private val vals: Array<Pair<String, String>>,
+        private val vals: Array<Pair<String, String>>
     ) : AnimeFilter.Select<String>(
         displayName,
-        vals.map { it.first }.toTypedArray(),
+        vals.map { it.first }.toTypedArray()
     ) {
         fun toUriPart() = vals[state].second
     }
@@ -408,8 +565,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Pair("Masturbation", "masturbation"),
             Pair("Mature", "mature"),
             Pair("Milf", "milf"),
-            Pair("Teen", "teen"),
-        ),
+            Pair("Teen", "teen")
+        )
     )
 
     private class DurationFilter : UriPartFilter(
@@ -418,8 +575,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Pair("Any", "0"),
             Pair("10+ min", "10"),
             Pair("20+ min", "20"),
-            Pair("30+ min", "30"),
-        ),
+            Pair("30+ min", "30")
+        )
     )
 
     private class QualityFilter : UriPartFilter(
@@ -428,8 +585,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             Pair("Any", "0"),
             Pair("HD 1080", "1080"),
             Pair("HD 720", "720"),
-            Pair("HD 480", "480"),
-        ),
+            Pair("HD 480", "480")
+        )
     )
 
     companion object {
@@ -447,7 +604,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private data class ApiSearchResponse(
         @SerialName("videos") val videos: List<ApiVideo>,
         @SerialName("page") val page: Int,
-        @SerialName("total_pages") val total_pages: Int,
+        @SerialName("total_pages") val total_pages: Int
     )
 
     @Serializable
@@ -460,10 +617,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("added") val added: String,
         @SerialName("length_sec") val lengthSec: Int,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
-        @SerialName("thumbs") val thumbs: List<ApiThumbnail>,
+        @SerialName("thumbs") val thumbs: List<ApiThumbnail>
     )
 
-    // ✅ ADDED: allQualities field to capture direct MP4 URLs from API
+    // allQualities is kept for completeness, but no longer used
     @Serializable
     private data class ApiVideo(
         @SerialName("id") val id: String,
@@ -472,7 +629,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("url") val url: String,
         @SerialName("embed") val embed: String,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
-        @SerialName("all_qualities") val allQualities: Map<String, String>? = null,
+        @SerialName("all_qualities") val allQualities: Map<String, String>? = null
     ) {
         fun toSAnime(): SAnime = SAnime.create().apply {
             title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown Title"
@@ -487,6 +644,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private data class ApiThumbnail(
         @SerialName("src") val src: String,
         @SerialName("width") val width: Int,
-        @SerialName("height") val height: Int,
+        @SerialName("height") val height: Int
     )
 }
