@@ -32,7 +32,6 @@ class Xmovix : AnimeHttpSource() {
         .add("Referer", baseUrl)
         .add("Origin", baseUrl)
 
-    // ============================== Popular ==============================
     override fun popularAnimeRequest(page: Int): Request =
         GET("$baseUrl/en?page=$page", headers)
 
@@ -48,7 +47,6 @@ class Xmovix : AnimeHttpSource() {
     private fun popularAnimeFromElement(element: Element): SAnime = SAnime.create().apply {
         title = element.selectFirst("a.th-title")?.text() ?: ""
         val posterLink = element.selectFirst("a.short-poster") ?: return@apply
-        // ✅ store relative path – setUrlWithoutDomain removes the domain
         setUrlWithoutDomain(posterLink.attr("href"))
         val img = posterLink.selectFirst("img")
         thumbnail_url = when {
@@ -57,19 +55,15 @@ class Xmovix : AnimeHttpSource() {
         }
     }
 
-    // ============================== Latest ==============================
     override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
-    // ============================== Search ==============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
         GET("$baseUrl/en/search/$query?page=$page", headers)
 
     override fun searchAnimeParse(response: Response): AnimesPage = popularAnimeParse(response)
 
-    // ============================== Details ==============================
     override fun animeDetailsRequest(anime: SAnime): Request =
-        // ✅ must be absolute – prepend baseUrl
         GET("$baseUrl${anime.url}", headers)
 
     override fun animeDetailsParse(response: Response): SAnime {
@@ -81,25 +75,20 @@ class Xmovix : AnimeHttpSource() {
         }
     }
 
-    // ============================== Episodes ==============================
     override fun episodeListRequest(anime: SAnime): Request =
-        // ✅ same as above – absolute URL
         GET("$baseUrl${anime.url}", headers)
 
     override fun episodeListParse(response: Response): List<SEpisode> {
         return listOf(
             SEpisode.create().apply {
-            name = "Movie"
-            episode_number = 1f
-            // ✅ store absolute URL for later video extraction
-            url = response.request.url.toString()
-        },
+                name = "Movie"
+                episode_number = 1f
+                url = response.request.url.toString()
+            },
         )
     }
 
-    // ============================== Videos ==============================
     override fun videoListRequest(episode: SEpisode): Request =
-        // ✅ episode.url is absolute (from episodeListParse)
         GET(episode.url, headers)
 
     override fun videoListParse(response: Response): List<Video> {
@@ -126,7 +115,6 @@ class Xmovix : AnimeHttpSource() {
             videos.addAll(resolved)
         }
 
-        // fallback – direct <video> (rare)
         if (videos.isEmpty()) {
             document.select("video source").forEach { source ->
                 val url = source.attr("src")
@@ -171,17 +159,14 @@ class Xmovix : AnimeHttpSource() {
                 Jsoup.parse(response.body.string())
             }
 
-            // direct <video> source
             doc.select("video source").map { element ->
                 val url = element.attr("src")
                 Video(url, "Default", url, headers)
             }.ifEmpty {
-                // og:video meta
                 val og = doc.selectFirst("meta[property='og:video']")?.attr("content")
                 if (!og.isNullOrBlank()) {
                     listOf(Video(og, "Default", og, headers))
                 } else {
-                    // JavaScript variable
                     val js = doc.select("script").joinToString("\n") { it.data() }
                     Regex("""(?:file|src):\s*["']([^"']+)["']""").find(js)?.groupValues?.get(1)?.let { url ->
                         listOf(Video(url, "Default", url, headers))
