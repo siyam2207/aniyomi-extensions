@@ -48,7 +48,7 @@ class Xmovix : ParsedAnimeHttpSource() {
         val imgElement = element.selectFirst("a.short-poster img")
 
         anime.setUrlWithoutDomain(
-            linkElement?.attr("href") ?: ""
+            linkElement?.attr("href") ?: "",
         )
 
         anime.title = titleElement?.text() ?: "No Title"
@@ -93,11 +93,11 @@ class Xmovix : ParsedAnimeHttpSource() {
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: AnimeFilterList
+        filters: AnimeFilterList,
     ): Request {
         return GET(
             "$baseUrl/en/search/$query",
-            headers
+            headers,
         )
     }
 
@@ -157,7 +157,7 @@ class Xmovix : ParsedAnimeHttpSource() {
 
         episode.setUrlWithoutDomain(
             response.request.url.toString()
-                .removePrefix(baseUrl)
+                .removePrefix(baseUrl),
         )
 
         return listOf(episode)
