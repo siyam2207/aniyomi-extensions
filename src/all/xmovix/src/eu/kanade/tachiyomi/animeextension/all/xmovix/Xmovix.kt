@@ -87,12 +87,14 @@ class Xmovix : AnimeHttpSource() {
         GET("$baseUrl${anime.url}", headers)
 
     override fun episodeListParse(response: Response): List<SEpisode> {
-        return listOf(SEpisode.create().apply {
+        return listOf(
+            SEpisode.create().apply {
             name = "Movie"
             episode_number = 1f
             // ✅ store absolute URL for later video extraction
             url = response.request.url.toString()
-        })
+        }
+        )
     }
 
     // ============================== Videos ==============================
