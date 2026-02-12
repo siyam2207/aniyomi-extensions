@@ -34,7 +34,7 @@ class Xmovix : ParsedAnimeHttpSource() {
             element.select("h3.title").text()
 
         anime.setUrlWithoutDomain(
-            element.selectFirst("a")!!.attr("href")
+            element.selectFirst("a")!!.attr("href"),
         )
 
         anime.thumbnail_url =
@@ -79,7 +79,7 @@ class Xmovix : ParsedAnimeHttpSource() {
             element.selectFirst("a")!!.text()
 
         episode.setUrlWithoutDomain(
-            element.selectFirst("a")!!.attr("href")
+            element.selectFirst("a")!!.attr("href"),
         )
 
         return episode
@@ -114,7 +114,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: AnimeFilterList
+        filters: AnimeFilterList,
     ): Request {
         return GET(
             "$baseUrl/en/search/$query?page=$page",
@@ -126,7 +126,7 @@ class Xmovix : ParsedAnimeHttpSource() {
         popularAnimeSelector()
 
     override fun searchAnimeFromElement(
-        element: Element
+        element: Element,
     ): SAnime =
         popularAnimeFromElement(element)
 
