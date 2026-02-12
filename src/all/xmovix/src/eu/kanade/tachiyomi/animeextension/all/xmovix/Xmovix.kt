@@ -68,9 +68,70 @@ class Xmovix : AnimeHttpSource() {
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
         return SAnime.create().apply {
-            title = document.selectFirst("h1")?.text() ?: ""
+            // ----- Clean title (remove "watch online" suffix) -----
+            title = document.selectFirst("h1 span[itemprop=name]")?.text()
+                ?: document.selectFirst("h1")?.ownText() // text excluding child tags
+                ?: ""
+
+            // ----- Thumbnail -----
             thumbnail_url = document.selectFirst("div.poster img")?.attr("src")
-            description = document.selectFirst("div.description")?.text()
+                ?: document.selectFirst("meta[property=og:image]")?.attr("content")
+
+            // ----- Build rich description -----
+            val descriptionParts = mutableListOf<String>()
+
+            // 1. Main description from h2 inside #s-desc
+            document.selectFirst("div#s-desc h2")?.text()?.takeIf { it.isNotBlank() }?.let {
+                descriptionParts.add(it)
+            }
+
+            // 2. Director(s)
+            val director = document.select("span[itemprop=director] a").joinToString { it.text() }
+            if (director.isNotBlank()) descriptionParts.add("🎬 Director: $director")
+
+            // 3. Duration
+            document.selectFirst("li:contains(Duration:)")?.ownText()?.takeIf { it.isNotBlank() }?.let {
+                descriptionParts.add("⏱️ Duration: $it")
+            }
+
+            // 4. Country & Year
+            val year = document.selectFirst("span[itemprop=dateCreated] a")?.text()
+            val country = document.select(".parameters-info span.str675")?.getOrNull(1)?.text()
+            if (year != null || country != null) {
+                descriptionParts.add("📅 ${year ?: ""} ${country ?: ""}".trim())
+            }
+
+            // 5. Cast / Actors
+            val actors = document.select("span[itemprop=actors] a").joinToString { it.text() }
+            if (actors.isNotBlank()) descriptionParts.add("🎭 Cast: $actors")
+
+            // 6. Tags / Genres
+            val tags = document.select("ul.flist-col3 a[href*=/tags/]").joinToString(" • ") { it.text() }
+            if (tags.isNotBlank()) {
+                descriptionParts.add("🏷️ Tags: $tags")
+                genre = tags
+            }
+
+            // 7. Studio / Production (if available)
+            document.selectFirst("li:contains(Maker:)")?.ownText()?.takeIf { it.isNotBlank() }?.let {
+                descriptionParts.add("🏢 Studio: $it")
+            }
+
+            // Fallback to meta description if nothing else found
+            if (descriptionParts.isEmpty()) {
+                document.selectFirst("meta[name=description]")?.attr("content")?.let {
+                    descriptionParts.add(it)
+                }
+            }
+
+            description = descriptionParts.joinToString("\n\n")
+
+            // ----- Additional metadata fields -----
+            artist = actors.takeIf { it.isNotBlank() }
+            author = director.takeIf { it.isNotBlank() }
+
+            // ----- All movies are complete -----
+            status = SAnime.COMPLETED
         }
     }
 
