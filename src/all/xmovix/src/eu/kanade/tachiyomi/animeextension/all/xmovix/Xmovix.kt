@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.all.xmovix
 
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -47,7 +48,7 @@ class Xmovix : ParsedAnimeHttpSource() {
         val imgElement = element.selectFirst("a.short-poster img")
 
         anime.setUrlWithoutDomain(
-            linkElement?.attr("href") ?: "",
+            linkElement?.attr("href") ?: ""
         )
 
         anime.title = titleElement?.text() ?: "No Title"
@@ -86,17 +87,17 @@ class Xmovix : ParsedAnimeHttpSource() {
     }
 
     // ===============================
-    // SEARCH (STUB REQUIRED FOR CI)
+    // SEARCH
     // ===============================
 
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList,
+        filters: AnimeFilterList
     ): Request {
         return GET(
             "$baseUrl/en/search/$query",
-            headers,
+            headers
         )
     }
 
@@ -132,31 +133,41 @@ class Xmovix : ParsedAnimeHttpSource() {
     }
 
     // ===============================
-    // EPISODES
+    // EPISODE LIST
     // ===============================
 
-    override fun episodeListParse(
-        response: Response,
-    ): List<SEpisode> {
+    override fun episodeListSelector(): String {
+        return "div.not-exist"
+    }
+
+    override fun episodeFromElement(element: Element): SEpisode {
+        val episode = SEpisode.create()
+
+        episode.name = "Movie"
+
+        episode.setUrlWithoutDomain("")
+
+        return episode
+    }
+
+    override fun episodeListParse(response: Response): List<SEpisode> {
         val episode = SEpisode.create()
 
         episode.name = "Movie"
 
         episode.setUrlWithoutDomain(
             response.request.url.toString()
-                .removePrefix(baseUrl),
+                .removePrefix(baseUrl)
         )
 
         return listOf(episode)
     }
 
     // ===============================
-    // VIDEO (STUB)
+    // VIDEO LIST (STUB)
     // ===============================
 
-    override fun videoListParse(
-        response: Response,
-    ): List<Video> {
+    override fun videoListParse(response: Response): List<Video> {
         return emptyList()
     }
 }
