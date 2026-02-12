@@ -15,7 +15,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override val name = "Xmovix"
     override val baseUrl = "https://hd.xmovix.net"
     override val lang = "en"
-    override val supportsLatest = true// Keep true if you want a "Latest" tab
+    override val supportsLatest = true // Keep true if you want a "Latest" tab
 
     // ==============================
     // Popular
@@ -41,7 +41,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     // Latest (reuse popular logic)
     // ==============================
     override fun latestUpdatesRequest(page: Int): Request =
-        popularAnimeRequest(page)// or adjust if the site has a dedicated "latest" page
+        popularAnimeRequest(page) // or adjust if the site has a dedicated "latest" page
 
     override fun latestUpdatesSelector(): String =
         popularAnimeSelector()
@@ -86,9 +86,9 @@ class Xmovix : ParsedAnimeHttpSource() {
         val url = element.attr("src")
         return Video(
             url = url,
-            quality = "Default",// optionally extract quality from element
+            quality = "Default", // optionally extract quality from element
             videoUrl = url,
-            headers = headers,// include referer etc. if needed
+            headers = headers, // include referer etc. if needed
         )
     }
 
