@@ -89,7 +89,7 @@ class Xmovix : ParsedAnimeHttpSource() {
             url = url,
             quality = "Default",
             videoUrl = url,
-            headers = headers
+            headers = headers,
         )
     }
 
