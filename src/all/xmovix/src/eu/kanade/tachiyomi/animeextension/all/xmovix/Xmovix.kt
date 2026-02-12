@@ -58,7 +58,6 @@ class Xmovix : AnimeHttpSource() {
 
     // ============================== Search ==============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        // The site uses POST with form data, 24 results per page
         val formBody = FormBody.Builder()
             .add("do", "search")
             .add("subaction", "search")
@@ -77,14 +76,10 @@ class Xmovix : AnimeHttpSource() {
 
     override fun searchAnimeParse(response: Response): AnimesPage {
         val document = Jsoup.parse(response.body.string())
-
-        // Search results use the same HTML structure as popular/latest
         val animes = document.select("div.short").map { element ->
             popularAnimeFromElement(element)
         }
 
-        // Parse pagination from info text like "Found 1 responses (Query results 1 - 1) :"
-        // or "Found 25 responses (Query results 1 - 24) :" → has next page
         val hasNext = document.select(".infosearch p")?.text()?.let { infoText ->
             val regex = Regex("""results (\d+)-(\d+) of (\d+)""")
             val match = regex.find(infoText)
@@ -92,7 +87,9 @@ class Xmovix : AnimeHttpSource() {
                 val currentEnd = match.groupValues[2].toIntOrNull() ?: 0
                 val total = match.groupValues[3].toIntOrNull() ?: 0
                 currentEnd < total
-            } else false
+            } else {
+                false
+            }
         } ?: false
 
         return AnimesPage(animes, hasNext)
@@ -105,7 +102,7 @@ class Xmovix : AnimeHttpSource() {
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
         return SAnime.create().apply {
-            // ----- Clean title (remove "watch online" suffix) -----
+            // ----- Clean title -----
             title = document.selectFirst("h1 span[itemprop=name]")?.text()
                 ?: document.selectFirst("h1")?.ownText()
                 ?: ""
@@ -117,14 +114,16 @@ class Xmovix : AnimeHttpSource() {
             // ----- Build rich description -----
             val descriptionParts = mutableListOf<String>()
 
-            // 1. Main description from h2 inside #s-desc
+            // 1. Main description
             document.selectFirst("div#s-desc h2")?.text()?.takeIf { it.isNotBlank() }?.let {
                 descriptionParts.add(it)
             }
 
             // 2. Director(s)
             val director = document.select("span[itemprop=director] a").joinToString { it.text() }
-            if (director.isNotBlank()) descriptionParts.add("🎬 Director: $director")
+            if (director.isNotBlank()) {
+                descriptionParts.add("🎬 Director: $director")
+            }
 
             // 3. Duration
             document.selectFirst("li:contains(Duration:)")?.ownText()?.takeIf { it.isNotBlank() }?.let {
@@ -140,9 +139,11 @@ class Xmovix : AnimeHttpSource() {
 
             // 5. Cast / Actors
             val actors = document.select("span[itemprop=actors] a").joinToString { it.text() }
-            if (actors.isNotBlank()) descriptionParts.add("🎭 Cast: $actors")
+            if (actors.isNotBlank()) {
+                descriptionParts.add("🎭 Cast: $actors")
+            }
 
-            // 6. Tags / Genres – comma separated, not bullets
+            // 6. Tags / Genres – comma separated
             val tags = document.select("ul.flist-col3 a[href*=/tags/]").joinToString(", ") { it.text() }
             if (tags.isNotBlank()) {
                 descriptionParts.add("🏷️ Tags: $tags")
@@ -154,7 +155,7 @@ class Xmovix : AnimeHttpSource() {
                 descriptionParts.add("🏢 Studio: $it")
             }
 
-            // Fallback to meta description if nothing else found
+            // Fallback to meta description
             if (descriptionParts.isEmpty()) {
                 document.selectFirst("meta[name=description]")?.attr("content")?.let {
                     descriptionParts.add(it)
@@ -163,11 +164,11 @@ class Xmovix : AnimeHttpSource() {
 
             description = descriptionParts.joinToString("\n\n")
 
-            // ----- Additional metadata fields -----
+            // ----- Additional metadata -----
             artist = actors.takeIf { it.isNotBlank() }
             author = director.takeIf { it.isNotBlank() }
 
-            // ----- All movies are complete -----
+            // ----- All movies complete -----
             status = SAnime.COMPLETED
         }
     }
@@ -192,10 +193,6 @@ class Xmovix : AnimeHttpSource() {
 
     override fun videoListParse(response: Response): List<Video> {
         // 🚧 VIDEO EXTRACTION TEMPORARILY DISABLED
-        // To enable video extraction later:
-        // 1. Parse the iframe URLs from the <script> tags.
-        // 2. Write a custom extractor for filmcdn.top / filmcdm.top.
-        // 3. Remove this comment and implement the extraction.
         return emptyList()
     }
 
