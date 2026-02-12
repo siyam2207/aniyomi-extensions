@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
+import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
@@ -56,10 +57,46 @@ class Xmovix : AnimeHttpSource() {
     override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     // ============================== Search ==============================
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
-        GET("$baseUrl/en/search/$query?page=$page", headers)
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        // The site uses POST with form data, 24 results per page
+        val formBody = FormBody.Builder()
+            .add("do", "search")
+            .add("subaction", "search")
+            .add("story", query)
+            .add("search_start", ((page - 1) * 24).toString())
+            .add("full_search", "0")
+            .add("result_from", ((page - 1) * 24 + 1).toString())
+            .build()
 
-    override fun searchAnimeParse(response: Response): AnimesPage = popularAnimeParse(response)
+        return Request.Builder()
+            .url("$baseUrl/index.php?do=search&lang=en")
+            .headers(headers)
+            .post(formBody)
+            .build()
+    }
+
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        val document = Jsoup.parse(response.body.string())
+
+        // Search results use the same HTML structure as popular/latest
+        val animes = document.select("div.short").map { element ->
+            popularAnimeFromElement(element)
+        }
+
+        // Parse pagination from info text like "Found 1 responses (Query results 1 - 1) :"
+        // or "Found 25 responses (Query results 1 - 24) :" → has next page
+        val hasNext = document.select(".infosearch p")?.text()?.let { infoText ->
+            val regex = Regex("""results (\d+)-(\d+) of (\d+)""")
+            val match = regex.find(infoText)
+            if (match != null) {
+                val currentEnd = match.groupValues[2].toIntOrNull() ?: 0
+                val total = match.groupValues[3].toIntOrNull() ?: 0
+                currentEnd < total
+            } else false
+        } ?: false
+
+        return AnimesPage(animes, hasNext)
+    }
 
     // ============================== Details ==============================
     override fun animeDetailsRequest(anime: SAnime): Request =
@@ -105,7 +142,7 @@ class Xmovix : AnimeHttpSource() {
             val actors = document.select("span[itemprop=actors] a").joinToString { it.text() }
             if (actors.isNotBlank()) descriptionParts.add("🎭 Cast: $actors")
 
-            // 6. Tags / Genres – FIXED: comma separated, not bullets
+            // 6. Tags / Genres – comma separated, not bullets
             val tags = document.select("ul.flist-col3 a[href*=/tags/]").joinToString(", ") { it.text() }
             if (tags.isNotBlank()) {
                 descriptionParts.add("🏷️ Tags: $tags")
