@@ -7,6 +7,7 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import okhttp3.Request
+import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
@@ -15,7 +16,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override val name = "Xmovix"
     override val baseUrl = "https://hd.xmovix.net"
     override val lang = "en"
-    override val supportsLatest = true // Keep true if you want a "Latest" tab
+    override val supportsLatest = true
 
     // ==============================
     // Popular
@@ -41,7 +42,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     // Latest (reuse popular logic)
     // ==============================
     override fun latestUpdatesRequest(page: Int): Request =
-        popularAnimeRequest(page) // or adjust if the site has a dedicated "latest" page
+        popularAnimeRequest(page)
 
     override fun latestUpdatesSelector(): String =
         popularAnimeSelector()
@@ -86,10 +87,15 @@ class Xmovix : ParsedAnimeHttpSource() {
         val url = element.attr("src")
         return Video(
             url = url,
-            quality = "Default", // optionally extract quality from element
+            quality = "Default",
             videoUrl = url,
-            headers = headers, // include referer etc. if needed
+            headers = headers
         )
+    }
+
+    // ✅ REQUIRED: implement videoUrlParse from AnimeHttpSource
+    override fun videoUrlParse(response: Response): String {
+        return videoListParse(response).firstOrNull()?.videoUrl ?: ""
     }
 
     // ==============================
