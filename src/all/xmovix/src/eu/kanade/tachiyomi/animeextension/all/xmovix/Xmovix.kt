@@ -20,7 +20,7 @@ class Xmovix : AnimeHttpSource() {
     override val supportsLatest = true
 
     // ==============================
-    // Popular
+    // Popular – front page (New Porn Movies)
     // ==============================
     override fun popularAnimeRequest(page: Int): Request =
         GET("$baseUrl/en?page=$page", headers)
@@ -34,22 +34,38 @@ class Xmovix : AnimeHttpSource() {
         return AnimesPage(animes, hasNextPage)
     }
 
-    private fun popularAnimeSelector(): String = "div.movie-item"
+    // Selector for each movie card
+    private fun popularAnimeSelector(): String = "div.short"
+
+    // Extract SAnime from one movie card
     private fun popularAnimeFromElement(element: Element): SAnime = SAnime.create().apply {
-        title = element.select("h3.title").text()
-        setUrlWithoutDomain(element.selectFirst("a")!!.attr("href"))
-        thumbnail_url = element.selectFirst("img")!!.attr("src")
+        // Title is inside a.th-title
+        title = element.selectFirst("a.th-title")?.text() ?: ""
+
+        // Relative URL from the poster link
+        val posterLink = element.selectFirst("a.short-poster")
+        val fullUrl = posterLink?.attr("href") ?: ""
+        setUrlWithoutDomain(fullUrl.substringAfter(baseUrl))
+
+        // Thumbnail: try src, fallback to data-src
+        val img = posterLink?.selectFirst("img")
+        thumbnail_url = when {
+            img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
+            else -> img?.attr("data-src")
+        }
     }
+
+    // Next page link – adjust if the site uses different pagination
     private fun popularAnimeNextPageSelector(): String? = "a.next"
 
     // ==============================
-    // Latest
+    // Latest (reuse popular logic)
     // ==============================
     override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     // ==============================
-    // Search
+    // Search – /en/search/QUERY?page=PAGE
     // ==============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
         GET("$baseUrl/en/search/$query?page=$page", headers)
@@ -57,7 +73,7 @@ class Xmovix : AnimeHttpSource() {
     override fun searchAnimeParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     // ==============================
-    // Details
+    // Anime Details – page of one movie
     // ==============================
     override fun animeDetailsRequest(anime: SAnime): Request =
         GET(anime.url, headers)
@@ -65,30 +81,30 @@ class Xmovix : AnimeHttpSource() {
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
         return SAnime.create().apply {
-            title = document.selectFirst("h1")!!.text()
-            thumbnail_url = document.selectFirst("div.poster img")!!.attr("src")
+            title = document.selectFirst("h1")?.text() ?: ""
+            thumbnail_url = document.selectFirst("div.poster img")?.attr("src")
             description = document.selectFirst("div.description")?.text()
         }
     }
 
     // ==============================
-    // Episodes
+    // Episodes – single episode (the movie itself)
     // ==============================
     override fun episodeListRequest(anime: SAnime): Request =
         GET(anime.url, headers)
 
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val document = Jsoup.parse(response.body.string())
-        return document.select("ul.episodes li").map { element ->
-            SEpisode.create().apply {
-                name = element.selectFirst("a")!!.text()
-                setUrlWithoutDomain(element.selectFirst("a")!!.attr("href"))
-            }
+        // Xmovix presents each movie as a single episode
+        val episode = SEpisode.create().apply {
+            name = "Movie"
+            episode_number = 1f
+            url = response.request.url.toString()
         }
+        return listOf(episode)
     }
 
     // ==============================
-    // Videos
+    // Videos – extract direct mp4 from <video> tag
     // ==============================
     override fun videoListRequest(episode: SEpisode): Request =
         GET(episode.url, headers)
@@ -96,13 +112,12 @@ class Xmovix : AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> {
         val document = Jsoup.parse(response.body.string())
         return document.select("video source").map { element ->
-            val url = element.attr("src")
-            Video(url, "Default", url, headers = headers)
+            val videoUrl = element.attr("src")
+            Video(videoUrl, "Default", videoUrl, headers = headers)
         }
     }
 
-    // ✅ REQUIRED by AnimeHttpSource
-    override fun videoUrlParse(response: Response): String {
-        return videoListParse(response).firstOrNull()?.videoUrl ?: ""
-    }
+    // Required by AnimeHttpSource
+    override fun videoUrlParse(response: Response): String =
+        videoListParse(response).firstOrNull()?.videoUrl ?: ""
 }
