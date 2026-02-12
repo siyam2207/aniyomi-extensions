@@ -1,15 +1,7 @@
 ext {
-    extName = 'Xmovix'
-    extClass = '.Xmovix' // Ensure your Kotlin file is: eu.kanade.tachiyomi.animeextension.all.xmovix.Xmovix
-    extVersionCode = 2
-    isNsfw = true // Correctly marked for adult content
+    extName = "Xmovix"
+    extClass = ".Xmovix"
+    extVersionCode = 1
+    isNsfw = true
 }
-
 apply from: "$rootDir/common.gradle"
-
-dependencies {
-    implementation(project(':lib:unpacker'))
-    implementation(project(':lib:playlist-utils'))
-    // CRITICAL: Add your DoodStream extractor module
-    implementation(project(':lib:dood-extractor'))
-}
