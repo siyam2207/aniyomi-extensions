@@ -157,7 +157,7 @@ class Xmovix : ParsedAnimeHttpSource() {
 
         episode.setUrlWithoutDomain(
             response.request.url.toString()
-                .removePrefix(baseUrl)
+                .removePrefix(baseUrl),
         )
 
         return listOf(episode)
@@ -175,7 +175,7 @@ class Xmovix : ParsedAnimeHttpSource() {
         return Video(
             "",
             "Stub",
-            ""
+            "",
         )
     }
 
