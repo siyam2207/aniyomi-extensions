@@ -46,7 +46,7 @@ class Xmovix : ParsedAnimeHttpSource() {
         val imgElement = element.selectFirst("a.short-poster img")
 
         anime.setUrlWithoutDomain(
-            linkElement?.attr("href") ?: ""
+            linkElement?.attr("href") ?: "",
         )
 
         anime.title = titleElement?.text() ?: "No Title"
