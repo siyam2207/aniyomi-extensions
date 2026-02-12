@@ -70,7 +70,7 @@ class Xmovix : AnimeHttpSource() {
         return SAnime.create().apply {
             // ----- Clean title (remove "watch online" suffix) -----
             title = document.selectFirst("h1 span[itemprop=name]")?.text()
-                ?: document.selectFirst("h1")?.ownText() // text excluding child tags
+                ?: document.selectFirst("h1")?.ownText()
                 ?: ""
 
             // ----- Thumbnail -----
@@ -105,8 +105,8 @@ class Xmovix : AnimeHttpSource() {
             val actors = document.select("span[itemprop=actors] a").joinToString { it.text() }
             if (actors.isNotBlank()) descriptionParts.add("🎭 Cast: $actors")
 
-            // 6. Tags / Genres
-            val tags = document.select("ul.flist-col3 a[href*=/tags/]").joinToString(" • ") { it.text() }
+            // 6. Tags / Genres – FIXED: comma separated, not bullets
+            val tags = document.select("ul.flist-col3 a[href*=/tags/]").joinToString(", ") { it.text() }
             if (tags.isNotBlank()) {
                 descriptionParts.add("🏷️ Tags: $tags")
                 genre = tags
