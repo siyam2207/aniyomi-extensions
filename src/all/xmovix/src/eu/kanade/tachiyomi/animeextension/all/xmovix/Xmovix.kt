@@ -157,7 +157,7 @@ class Xmovix : ParsedAnimeHttpSource() {
 
         episode.setUrlWithoutDomain(
             response.request.url.toString()
-                .removePrefix(baseUrl),
+                .removePrefix(baseUrl)
         )
 
         return listOf(episode)
@@ -166,6 +166,18 @@ class Xmovix : ParsedAnimeHttpSource() {
     // ===============================
     // VIDEO LIST (STUB)
     // ===============================
+
+    override fun videoListSelector(): String {
+        return "div.not-exist"
+    }
+
+    override fun videoFromElement(element: Element): Video {
+        return Video(
+            "",
+            "Stub",
+            ""
+        )
+    }
 
     override fun videoListParse(response: Response): List<Video> {
         return emptyList()
