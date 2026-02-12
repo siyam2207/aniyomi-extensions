@@ -4,6 +4,7 @@ import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
+import eu.kanade.tachiyomi.network.GET
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -27,7 +28,7 @@ class Xmovix : ParsedAnimeHttpSource() {
         .add("Referer", baseUrl)
 
     // ===============================
-    // FRONT PAGE
+    // POPULAR / FRONT PAGE
     // ===============================
 
     override fun popularAnimeRequest(page: Int): Request {
@@ -46,7 +47,7 @@ class Xmovix : ParsedAnimeHttpSource() {
         val imgElement = element.selectFirst("a.short-poster img")
 
         anime.setUrlWithoutDomain(
-            linkElement?.attr("href") ?: "",
+            linkElement?.attr("href") ?: ""
         )
 
         anime.title = titleElement?.text() ?: "No Title"
@@ -85,6 +86,33 @@ class Xmovix : ParsedAnimeHttpSource() {
     }
 
     // ===============================
+    // SEARCH (STUB REQUIRED FOR CI)
+    // ===============================
+
+    override fun searchAnimeRequest(
+        page: Int,
+        query: String,
+        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+    ): Request {
+        return GET(
+            "$baseUrl/en/search/$query",
+            headers
+        )
+    }
+
+    override fun searchAnimeSelector(): String {
+        return "div.short"
+    }
+
+    override fun searchAnimeFromElement(element: Element): SAnime {
+        return popularAnimeFromElement(element)
+    }
+
+    override fun searchAnimeNextPageSelector(): String? {
+        return null
+    }
+
+    // ===============================
     // DETAILS
     // ===============================
 
@@ -104,29 +132,31 @@ class Xmovix : ParsedAnimeHttpSource() {
     }
 
     // ===============================
-    // EPISODE LIST
+    // EPISODES
     // ===============================
 
     override fun episodeListParse(
-        document: Document,
+        response: Response
     ): List<SEpisode> {
+
         val episode = SEpisode.create()
 
         episode.name = "Movie"
 
         episode.setUrlWithoutDomain(
-            document.location(),
+            response.request.url.toString()
+                .removePrefix(baseUrl)
         )
 
         return listOf(episode)
     }
 
     // ===============================
-    // VIDEO LINKS (TODO)
+    // VIDEO (STUB)
     // ===============================
 
     override fun videoListParse(
-        response: Response,
+        response: Response
     ): List<Video> {
         return emptyList()
     }
