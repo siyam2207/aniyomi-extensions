@@ -108,15 +108,14 @@ class Xmovix : ParsedAnimeHttpSource() {
     // ===============================
 
     override fun episodeListParse(
-        document: Document
+        document: Document,
     ): List<SEpisode> {
-
         val episode = SEpisode.create()
 
         episode.name = "Movie"
 
         episode.setUrlWithoutDomain(
-            document.location()
+            document.location(),
         )
 
         return listOf(episode)
@@ -127,7 +126,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     // ===============================
 
     override fun videoListParse(
-        response: Response
+        response: Response,
     ): List<Video> {
         return emptyList()
     }
