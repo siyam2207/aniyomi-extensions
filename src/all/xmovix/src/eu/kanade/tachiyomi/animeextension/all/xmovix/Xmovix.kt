@@ -47,7 +47,7 @@ class Xmovix : ParsedAnimeHttpSource() {
         val imgElement = element.selectFirst("a.short-poster img")
 
         anime.setUrlWithoutDomain(
-            linkElement?.attr("href") ?: ""
+            linkElement?.attr("href") ?: "",
         )
 
         anime.title = titleElement?.text() ?: "No Title"
@@ -92,11 +92,11 @@ class Xmovix : ParsedAnimeHttpSource() {
     override fun searchAnimeRequest(
         page: Int,
         query: String,
-        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+        filters: eu.kanade.tachiyomi.animesource.model.AnimeFilterList,
     ): Request {
         return GET(
             "$baseUrl/en/search/$query",
-            headers
+            headers,
         )
     }
 
@@ -136,16 +136,15 @@ class Xmovix : ParsedAnimeHttpSource() {
     // ===============================
 
     override fun episodeListParse(
-        response: Response
+        response: Response,
     ): List<SEpisode> {
-
         val episode = SEpisode.create()
 
         episode.name = "Movie"
 
         episode.setUrlWithoutDomain(
             response.request.url.toString()
-                .removePrefix(baseUrl)
+                .removePrefix(baseUrl),
         )
 
         return listOf(episode)
@@ -156,7 +155,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     // ===============================
 
     override fun videoListParse(
-        response: Response
+        response: Response,
     ): List<Video> {
         return emptyList()
     }
