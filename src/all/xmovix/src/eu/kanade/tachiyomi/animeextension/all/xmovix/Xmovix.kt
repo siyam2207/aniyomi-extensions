@@ -133,7 +133,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     }
 
     // ===============================
-    // EPISODE LIST
+    // EPISODE LIST (MOVIE = 1)
     // ===============================
 
     override fun episodeListSelector(): String {
@@ -157,7 +157,7 @@ class Xmovix : ParsedAnimeHttpSource() {
 
         episode.setUrlWithoutDomain(
             response.request.url.toString()
-                .removePrefix(baseUrl),
+                .removePrefix(baseUrl)
         )
 
         return listOf(episode)
@@ -181,5 +181,12 @@ class Xmovix : ParsedAnimeHttpSource() {
 
     override fun videoListParse(response: Response): List<Video> {
         return emptyList()
+    }
+
+    override fun videoUrlParse(response: Response): String {
+        return videoListParse(response)
+            .firstOrNull()
+            ?.videoUrl
+            ?: ""
     }
 }
