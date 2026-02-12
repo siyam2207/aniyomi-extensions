@@ -93,7 +93,7 @@ class Xmovix : AnimeHttpSource() {
             episode_number = 1f
             // ✅ store absolute URL for later video extraction
             url = response.request.url.toString()
-        }
+        },
         )
     }
 
