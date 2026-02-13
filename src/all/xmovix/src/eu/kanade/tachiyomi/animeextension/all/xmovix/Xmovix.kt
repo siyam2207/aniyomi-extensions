@@ -13,7 +13,6 @@ import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
 
 class Xmovix : AnimeHttpSource() {
 
@@ -35,9 +34,9 @@ class Xmovix : AnimeHttpSource() {
         val path = buildPathFromFilters(filters)
 
         val url = when {
-            path == "/en/top.html" -> "$baseUrl$path"                // Top 100 – no pagination
-            page == 1 -> "$baseUrl$path"                             // Page 1 – no /page/1/
-            else -> "$baseUrl$path/page/$page/"                      // Pages 2+ – /page/N/
+            path == "/en/top.html" -> "$baseUrl$path"
+            page == 1 -> "$baseUrl$path"
+            else -> "$baseUrl$path/page/$page/"
         }
         return GET(url, headers)
     }
@@ -50,14 +49,13 @@ class Xmovix : AnimeHttpSource() {
 
         val animes = when {
             isTop100 -> parseTop100(document)
-            else -> parseMovies(document)   // Movies, Countries, Studios, Quality, Scenes
+            else -> parseMovies(document)
         }
 
         val hasNext = parsePagination(document, isTop100)
         return AnimesPage(animes, hasNext)
     }
 
-    // ---------- Universal movie/scene parser (div.short) ----------
     private fun parseMovies(document: org.jsoup.nodes.Document): List<SAnime> {
         return document.select("div.short").mapNotNull { element ->
             try {
@@ -87,7 +85,6 @@ class Xmovix : AnimeHttpSource() {
         }
     }
 
-    // ---------- Top 100 parser (li.top100-item) ----------
     private fun parseTop100(document: org.jsoup.nodes.Document): List<SAnime> {
         return document.select("li.top100-item").mapNotNull { element ->
             try {
@@ -113,16 +110,12 @@ class Xmovix : AnimeHttpSource() {
         }
     }
 
-    // ---------- Pagination – works with /page/N/ ----------
     private fun parsePagination(document: org.jsoup.nodes.Document, isTop100: Boolean): Boolean {
-        // Top 100 has no pagination
         if (isTop100) return false
 
-        // 1. Explicit "next" link
         if (document.selectFirst("a.next") != null) return true
         if (document.selectFirst("span.pnext a") != null) return true
 
-        // 2. Numeric pagination (Movies, Scenes, Countries, Studios)
         val pageLinks = document.select(".navigation a[href*='/page/']")
         if (pageLinks.isNotEmpty()) {
             val currentPage = document.select(".navigation span[class*='current']")?.text()?.toIntOrNull() ?: 1
@@ -166,7 +159,9 @@ class Xmovix : AnimeHttpSource() {
                 val currentEnd = match.groupValues[2].toIntOrNull() ?: 0
                 val total = match.groupValues[3].toIntOrNull() ?: 0
                 currentEnd < total
-            } else false
+            } else {
+                false
+            }
         } ?: false
 
         return AnimesPage(animes, hasNext)
@@ -293,21 +288,20 @@ class Xmovix : AnimeHttpSource() {
         return "/en/movies/"
     }
 
-    // ----- Filter definitions – EXACT working paths (from your examples) -----
     private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
     private class Top100Filter : AnimeFilter.CheckBox("Top 100")
 
     private class MoviesFilter : AnimeFilter.Select<String>(
         "Movies",
         arrayOf(
-            "All Movies",
-            "News",
-            "Movies in FullHD",
-            "Movies in HD",
-            "Russian porn movies",
-            "Russian translation",
-            "Vintage",
-            "Parodies",
+            "All Movies", // 0
+            "News", // 1
+            "Movies in FullHD", // 2
+            "Movies in HD", // 3
+            "Russian porn movies", // 4
+            "Russian translation", // 5
+            "Vintage", // 6
+            "Parodies", // 7
         ),
     ) {
         fun getPath(): String = when (state) {
@@ -326,16 +320,16 @@ class Xmovix : AnimeHttpSource() {
     private class CountryFilter : AnimeFilter.Select<String>(
         "Country",
         arrayOf(
-            "None",
-            "Italy",
-            "USA",
-            "Germany",
-            "France",
-            "Sweden",
-            "Brazil",
-            "Spain",
-            "Europe",
-            "Russia",
+            "None", // 0
+            "Italy", // 1
+            "USA", // 2
+            "Germany", // 3
+            "France", // 4
+            "Sweden", // 5
+            "Brazil", // 6
+            "Spain", // 7
+            "Europe", // 8
+            "Russia", // 9
         ),
     ) {
         fun getPath(): String = when (state) {
@@ -356,17 +350,17 @@ class Xmovix : AnimeHttpSource() {
     private class StudioFilter : AnimeFilter.Select<String>(
         "Studio",
         arrayOf(
-            "None",
-            "Marc Dorcel",
-            "Wicked Pictures",
-            "Hustler",
-            "Daring",
-            "Pure Taboo",
-            "Digital Playground",
-            "Mario Salieri",
-            "Private",
-            "New Sensations",
-            "Brasileirinhas",
+            "None", // 0
+            "Marc Dorcel", // 1
+            "Wicked Pictures", // 2
+            "Hustler", // 3
+            "Daring", // 4
+            "Pure Taboo", // 5
+            "Digital Playground", // 6
+            "Mario Salieri", // 7
+            "Private", // 8
+            "New Sensations", // 9
+            "Brasileirinhas", // 10
         ),
     ) {
         fun getPath(): String = when (state) {
