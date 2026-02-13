@@ -28,34 +28,99 @@ class Xmovix : AnimeHttpSource() {
         .add("Referer", baseUrl)
         .add("Origin", baseUrl)
 
-    // ============================== Popular (Filters) ==============================
+    // ============================== Popular ==============================
+    // Always loads default movie listing – filters do not apply here.
     override fun popularAnimeRequest(page: Int): Request {
-        val filters = getFilterList()
-        val path = buildPathFromFilters(filters)
-
-        val url = when {
-            path == "/en/top.html" -> "$baseUrl$path"
-            page == 1 -> "$baseUrl$path"
-            else -> "$baseUrl$path/page/$page/"
+        val url = if (page == 1) {
+            "$baseUrl/en/movies/"
+        } else {
+            "$baseUrl/en/movies/page/$page/"
         }
         return GET(url, headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = Jsoup.parse(response.body.string())
-        val filters = getFilterList()
-
-        val isTop100 = filters.any { it is Top100Filter && it.state }
-
-        val animes = when {
-            isTop100 -> parseTop100(document)
-            else -> parseMovies(document)
-        }
-
-        val hasNext = parsePagination(document, isTop100)
+        val animes = parseMovies(document)
+        val hasNext = parsePagination(document, isTop100 = false)
         return AnimesPage(animes, hasNext)
     }
 
+    // ============================== Latest ==============================
+    // Uses same logic as Popular (no filters).
+    override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
+    override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
+
+    // ============================== Search ==============================
+    // Filters are applied HERE – this is the only place they work.
+    override fun searchAnimeRequest(
+        page: Int,
+        query: String,
+        filters: AnimeFilterList,
+    ): Request {
+        // 1. If user typed something → do a text search (POST)
+        if (query.isNotBlank()) {
+            val formBody = FormBody.Builder()
+                .add("do", "search")
+                .add("subaction", "search")
+                .add("story", query)
+                .add("search_start", ((page - 1) * 24).toString())
+                .add("full_search", "0")
+                .add("result_from", ((page - 1) * 24 + 1).toString())
+                .build()
+
+            return Request.Builder()
+                .url("$baseUrl/index.php?do=search&lang=en")
+                .headers(headers)
+                .post(formBody)
+                .build()
+        }
+
+        // 2. No text query → user is browsing with filters
+        val path = buildPathFromFilters(filters)
+
+        val url = if (path == "/en/top.html") {
+            "$baseUrl$path" // Top 100 has no pagination
+        } else if (page == 1) {
+            "$baseUrl$path"
+        } else {
+            "$baseUrl$path/page/$page/"
+        }
+
+        return GET(url, headers)
+    }
+
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        val document = Jsoup.parse(response.body.string())
+        val requestUrl = response.request.url.toString()
+
+        val animes = if (requestUrl.contains("/top.html")) {
+            parseTop100(document)
+        } else {
+            parseMovies(document)
+        }
+
+        // Pagination for search results page (text search)
+        val hasNext = if (requestUrl.contains("do=search")) {
+            document.select(".infosearch p")?.text()?.let { infoText ->
+                val regex = Regex("""results (\d+)-(\d+) of (\d+)""")
+                val match = regex.find(infoText)
+                if (match != null) {
+                    val currentEnd = match.groupValues[2].toIntOrNull() ?: 0
+                    val total = match.groupValues[3].toIntOrNull() ?: 0
+                    currentEnd < total
+                } else {
+                    false
+                }
+            } ?: false
+        } else {
+            parsePagination(document, requestUrl.contains("/top.html"))
+        }
+
+        return AnimesPage(animes, hasNext)
+    }
+
+    // ---------- Universal movie/scene parser (div.short) ----------
     private fun parseMovies(document: org.jsoup.nodes.Document): List<SAnime> {
         return document.select("div.short").mapNotNull { element ->
             try {
@@ -85,6 +150,7 @@ class Xmovix : AnimeHttpSource() {
         }
     }
 
+    // ---------- Top 100 parser (li.top100-item) ----------
     private fun parseTop100(document: org.jsoup.nodes.Document): List<SAnime> {
         return document.select("li.top100-item").mapNotNull { element ->
             try {
@@ -110,6 +176,7 @@ class Xmovix : AnimeHttpSource() {
         }
     }
 
+    // ---------- Pagination (works with /page/N/) ----------
     private fun parsePagination(document: org.jsoup.nodes.Document, isTop100: Boolean): Boolean {
         if (isTop100) return false
 
@@ -124,47 +191,6 @@ class Xmovix : AnimeHttpSource() {
         }
 
         return false
-    }
-
-    // ============================== Latest ==============================
-    override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
-    override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
-
-    // ============================== Search ==============================
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val formBody = FormBody.Builder()
-            .add("do", "search")
-            .add("subaction", "search")
-            .add("story", query)
-            .add("search_start", ((page - 1) * 24).toString())
-            .add("full_search", "0")
-            .add("result_from", ((page - 1) * 24 + 1).toString())
-            .build()
-
-        return Request.Builder()
-            .url("$baseUrl/index.php?do=search&lang=en")
-            .headers(headers)
-            .post(formBody)
-            .build()
-    }
-
-    override fun searchAnimeParse(response: Response): AnimesPage {
-        val document = Jsoup.parse(response.body.string())
-        val animes = parseMovies(document)
-
-        val hasNext = document.select(".infosearch p")?.text()?.let { infoText ->
-            val regex = Regex("""results (\d+)-(\d+) of (\d+)""")
-            val match = regex.find(infoText)
-            if (match != null) {
-                val currentEnd = match.groupValues[2].toIntOrNull() ?: 0
-                val total = match.groupValues[3].toIntOrNull() ?: 0
-                currentEnd < total
-            } else {
-                false
-            }
-        } ?: false
-
-        return AnimesPage(animes, hasNext)
     }
 
     // ============================== Details ==============================
@@ -269,25 +295,25 @@ class Xmovix : AnimeHttpSource() {
         )
     }
 
+    // Build path from user‑selected filters (called only from searchAnimeRequest).
     private fun buildPathFromFilters(filters: AnimeFilterList): String {
+        var path = "/en/movies/" // default
+
         for (filter in filters) {
             when (filter) {
-                is ScenesFilter -> if (filter.state) return "/en/porno-video/"
-                is Top100Filter -> if (filter.state) return "/en/top.html"
+                is ScenesFilter -> if (filter.state) path = "/en/porno-video/"
+                is Top100Filter -> if (filter.state) path = "/en/top.html"
+                is MoviesFilter -> path = filter.getPath()
+                is CountryFilter -> if (filter.state != 0) path = filter.getPath()
+                is StudioFilter -> if (filter.state != 0) path = filter.getPath()
                 else -> {}
             }
         }
-        for (filter in filters) {
-            when (filter) {
-                is StudioFilter -> if (filter.state != 0) return filter.getPath()
-                is CountryFilter -> if (filter.state != 0) return filter.getPath()
-                is MoviesFilter -> return filter.getPath()
-                else -> {}
-            }
-        }
-        return "/en/movies/"
+
+        return path
     }
 
+    // ----- Filter definitions – EXACT working paths -----
     private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
     private class Top100Filter : AnimeFilter.CheckBox("Top 100")
 
