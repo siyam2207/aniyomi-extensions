@@ -29,78 +29,108 @@ class Xmovix : AnimeHttpSource() {
         .add("Referer", baseUrl)
         .add("Origin", baseUrl)
 
-    // ============================== Popular ==============================
+    // ============================== Popular (Filters) ==============================
     override fun popularAnimeRequest(page: Int): Request {
         val filters = getFilterList()
         val path = buildPathFromFilters(filters)
-        return GET("$baseUrl$path?page=$page", headers)
+
+        val url = when {
+            path == "/en/top.html" -> "$baseUrl$path"                // Top 100 – no pagination
+            page == 1 -> "$baseUrl$path"                             // Page 1 – no /page/1/
+            else -> "$baseUrl$path/page/$page/"                      // Pages 2+ – /page/N/
+        }
+        return GET(url, headers)
     }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = Jsoup.parse(response.body.string())
         val filters = getFilterList()
 
-        val isScenes = filters.any { it is ScenesFilter && it.state }
         val isTop100 = filters.any { it is Top100Filter && it.state }
 
         val animes = when {
-            isScenes -> parseScenes(document)
-            else -> parseMovies(document)
+            isTop100 -> parseTop100(document)
+            else -> parseMovies(document)   // Movies, Countries, Studios, Quality, Scenes
         }
 
-        val hasNext = parsePagination(document, isScenes)
+        val hasNext = parsePagination(document, isTop100)
         return AnimesPage(animes, hasNext)
     }
 
+    // ---------- Universal movie/scene parser (div.short) ----------
     private fun parseMovies(document: org.jsoup.nodes.Document): List<SAnime> {
         return document.select("div.short").mapNotNull { element ->
-            val title = element.selectFirst("a.th-title")?.text() ?: return@mapNotNull null
-            val posterLink = element.selectFirst("a.short-poster") ?: return@mapNotNull null
-            val img = posterLink.selectFirst("img")
-            val thumbnail = when {
-                img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
-                else -> img?.attr("data-src")
-            } ?: return@mapNotNull null
+            try {
+                val title = element.selectFirst("a.th-title")?.text()
+                    ?: element.selectFirst(".title-box .th-title")?.text()
+                    ?: element.selectFirst("h3.title")?.text()
+                    ?: return@mapNotNull null
 
-            SAnime.create().apply {
-                this.title = title
-                setUrlWithoutDomain(posterLink.attr("href"))
-                thumbnail_url = thumbnail
+                val posterLink = element.selectFirst("a.short-poster") ?: return@mapNotNull null
+                val url = posterLink.attr("href")
+                if (url.isBlank()) return@mapNotNull null
+
+                val img = posterLink.selectFirst("img")
+                val thumbnail = when {
+                    img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
+                    else -> img?.attr("data-src")
+                } ?: img?.attr("src") ?: return@mapNotNull null
+
+                SAnime.create().apply {
+                    this.title = title
+                    setUrlWithoutDomain(url)
+                    thumbnail_url = thumbnail
+                }
+            } catch (e: Exception) {
+                null
             }
         }
     }
 
-    private fun parseScenes(document: org.jsoup.nodes.Document): List<SAnime> {
-        return document.select("div.collections.t2").mapNotNull { element ->
-            val link = element.selectFirst("a") ?: return@mapNotNull null
-            val title = element.selectFirst(".collections__title")?.text() ?: return@mapNotNull null
-            val img = element.selectFirst(".collections__image")
-            val thumbnail = when {
-                img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
-                else -> img?.attr("data-src")
-            } ?: return@mapNotNull null
+    // ---------- Top 100 parser (li.top100-item) ----------
+    private fun parseTop100(document: org.jsoup.nodes.Document): List<SAnime> {
+        return document.select("li.top100-item").mapNotNull { element ->
+            try {
+                val link = element.selectFirst("a") ?: return@mapNotNull null
+                val url = link.attr("href")
+                if (url.isBlank()) return@mapNotNull null
 
-            SAnime.create().apply {
-                this.title = title
-                setUrlWithoutDomain(link.attr("href"))
-                thumbnail_url = thumbnail
+                val title = element.selectFirst(".top100-name")?.text() ?: return@mapNotNull null
+                val img = element.selectFirst(".top100-img img")
+                val thumbnail = when {
+                    img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
+                    else -> img?.attr("data-src")
+                } ?: img?.attr("src") ?: return@mapNotNull null
+
+                SAnime.create().apply {
+                    this.title = title
+                    setUrlWithoutDomain(url)
+                    thumbnail_url = thumbnail
+                }
+            } catch (e: Exception) {
+                null
             }
         }
     }
 
-    private fun parsePagination(document: org.jsoup.nodes.Document, isScenes: Boolean): Boolean {
-        return when {
-            document.selectFirst("a.next") != null -> true
-            document.selectFirst("a[title='Load More']") != null -> true
-            document.select(".navigation a[href*='page=']").any { it.text().toIntOrNull() ?: 0 > 0 } -> {
-                val currentPage = document.select(".navigation span[class*='current']")?.text()?.toIntOrNull() ?: 1
-                val lastPage = document.select(".navigation a[href*='page=']")
-                    .mapNotNull { it.text().toIntOrNull() }
-                    .maxOrNull() ?: currentPage
-                currentPage < lastPage
-            }
-            else -> false
+    // ---------- Pagination – works with /page/N/ ----------
+    private fun parsePagination(document: org.jsoup.nodes.Document, isTop100: Boolean): Boolean {
+        // Top 100 has no pagination
+        if (isTop100) return false
+
+        // 1. Explicit "next" link
+        if (document.selectFirst("a.next") != null) return true
+        if (document.selectFirst("span.pnext a") != null) return true
+
+        // 2. Numeric pagination (Movies, Scenes, Countries, Studios)
+        val pageLinks = document.select(".navigation a[href*='/page/']")
+        if (pageLinks.isNotEmpty()) {
+            val currentPage = document.select(".navigation span[class*='current']")?.text()?.toIntOrNull() ?: 1
+            val lastPage = pageLinks.mapNotNull { it.text().toIntOrNull() }.maxOrNull() ?: currentPage
+            return currentPage < lastPage
         }
+
+        return false
     }
 
     // ============================== Latest ==============================
@@ -127,9 +157,7 @@ class Xmovix : AnimeHttpSource() {
 
     override fun searchAnimeParse(response: Response): AnimesPage {
         val document = Jsoup.parse(response.body.string())
-        val animes = document.select("div.short").mapNotNull { element ->
-            popularAnimeFromElementOrNull(element)
-        }
+        val animes = parseMovies(document)
 
         val hasNext = document.select(".infosearch p")?.text()?.let { infoText ->
             val regex = Regex("""results (\d+)-(\d+) of (\d+)""")
@@ -138,28 +166,10 @@ class Xmovix : AnimeHttpSource() {
                 val currentEnd = match.groupValues[2].toIntOrNull() ?: 0
                 val total = match.groupValues[3].toIntOrNull() ?: 0
                 currentEnd < total
-            } else {
-                false
-            }
+            } else false
         } ?: false
 
         return AnimesPage(animes, hasNext)
-    }
-
-    private fun popularAnimeFromElementOrNull(element: Element): SAnime? {
-        val title = element.selectFirst("a.th-title")?.text() ?: return null
-        val posterLink = element.selectFirst("a.short-poster") ?: return null
-        val img = posterLink.selectFirst("img")
-        val thumbnail = when {
-            img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
-            else -> img?.attr("data-src")
-        } ?: return null
-
-        return SAnime.create().apply {
-            this.title = title
-            setUrlWithoutDomain(posterLink.attr("href"))
-            thumbnail_url = thumbnail
-        }
     }
 
     // ============================== Details ==============================
@@ -246,7 +256,7 @@ class Xmovix : AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> = emptyList()
     override fun videoUrlParse(response: Response): String = ""
 
-    // ============================== Filters ==============================
+    // ============================== FILTERS ==============================
     override fun getFilterList(): AnimeFilterList {
         return AnimeFilterList(
             AnimeFilter.Header("🎬 Scenes & Top Lists"),
@@ -265,7 +275,6 @@ class Xmovix : AnimeHttpSource() {
     }
 
     private fun buildPathFromFilters(filters: AnimeFilterList): String {
-        // Priority: Scenes > Top 100 > Studio > Country > Movies
         for (filter in filters) {
             when (filter) {
                 is ScenesFilter -> if (filter.state) return "/en/porno-video/"
@@ -273,7 +282,6 @@ class Xmovix : AnimeHttpSource() {
                 else -> {}
             }
         }
-
         for (filter in filters) {
             when (filter) {
                 is StudioFilter -> if (filter.state != 0) return filter.getPath()
@@ -282,25 +290,24 @@ class Xmovix : AnimeHttpSource() {
                 else -> {}
             }
         }
-
         return "/en/movies/"
     }
 
-    // ----- Individual Filter Classes – CORRECT PATHS based on user's working URLs -----
+    // ----- Filter definitions – EXACT working paths (from your examples) -----
     private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
     private class Top100Filter : AnimeFilter.CheckBox("Top 100")
 
     private class MoviesFilter : AnimeFilter.Select<String>(
         "Movies",
         arrayOf(
-            "All Movies", // 0
-            "News", // 1
-            "Movies in FullHD", // 2
-            "Movies in HD", // 3
-            "Russian porn movies", // 4
-            "Russian translation", // 5
-            "Vintage", // 6
-            "Parodies", // 7
+            "All Movies",
+            "News",
+            "Movies in FullHD",
+            "Movies in HD",
+            "Russian porn movies",
+            "Russian translation",
+            "Vintage",
+            "Parodies",
         ),
     ) {
         fun getPath(): String = when (state) {
@@ -319,16 +326,16 @@ class Xmovix : AnimeHttpSource() {
     private class CountryFilter : AnimeFilter.Select<String>(
         "Country",
         arrayOf(
-            "None", // 0
-            "Italy", // 1
-            "USA", // 2
-            "Germany", // 3
-            "France", // 4
-            "Sweden", // 5
-            "Brazil", // 6
-            "Spain", // 7
-            "Europe", // 8
-            "Russia", // 9
+            "None",
+            "Italy",
+            "USA",
+            "Germany",
+            "France",
+            "Sweden",
+            "Brazil",
+            "Spain",
+            "Europe",
+            "Russia",
         ),
     ) {
         fun getPath(): String = when (state) {
@@ -349,17 +356,17 @@ class Xmovix : AnimeHttpSource() {
     private class StudioFilter : AnimeFilter.Select<String>(
         "Studio",
         arrayOf(
-            "None", // 0
-            "Marc Dorcel", // 1
-            "Wicked Pictures", // 2
-            "Hustler", // 3
-            "Daring", // 4
-            "Pure Taboo", // 5
-            "Digital Playground", // 6
-            "Mario Salieri", // 7
-            "Private", // 8
-            "New Sensations", // 9
-            "Brasileirinhas", // 10
+            "None",
+            "Marc Dorcel",
+            "Wicked Pictures",
+            "Hustler",
+            "Daring",
+            "Pure Taboo",
+            "Digital Playground",
+            "Mario Salieri",
+            "Private",
+            "New Sensations",
+            "Brasileirinhas",
         ),
     ) {
         fun getPath(): String = when (state) {
