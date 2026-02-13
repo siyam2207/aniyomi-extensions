@@ -268,8 +268,8 @@ class Xmovix : AnimeHttpSource() {
         // Priority: Scenes > Top 100 > Studio > Country > Movies
         for (filter in filters) {
             when (filter) {
-                is ScenesFilter -> if (filter.state) return "/en/porn-scenes/"
-                is Top100Filter -> if (filter.state) return "/en/top100.html"
+                is ScenesFilter -> if (filter.state) return "/en/porno-video/"
+                is Top100Filter -> if (filter.state) return "/en/top.html"
                 else -> {}
             }
         }
@@ -283,10 +283,10 @@ class Xmovix : AnimeHttpSource() {
             }
         }
 
-        return "/en"
+        return "/en/movies/"
     }
 
-    // ----- Individual Filter Classes – EXACT menu order, no multi‑spaces -----
+    // ----- Individual Filter Classes – CORRECT PATHS based on user's working URLs -----
     private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
     private class Top100Filter : AnimeFilter.CheckBox("Top 100")
 
@@ -304,15 +304,15 @@ class Xmovix : AnimeHttpSource() {
         ),
     ) {
         fun getPath(): String = when (state) {
-            0 -> "/en"
-            1 -> "/en/watch/year/2025"
-            2 -> "/en/movies/hd-1080p"
-            3 -> "/en/movies/hd-720p"
-            4 -> "/en/russian"
-            5 -> "/en/with-translation"
-            6 -> "/en/vintagexxx"
-            7 -> "/en/porno-parodies"
-            else -> "/en"
+            0 -> "/en/movies/"
+            1 -> "/en/watch/year/2025/"
+            2 -> "/en/movies/hd-1080p/"
+            3 -> "/en/movies/hd-720p/"
+            4 -> "/en/russian/"
+            5 -> "/en/with-translation/"
+            6 -> "/en/vintagexxx/"
+            7 -> "/en/porno-parodies/"
+            else -> "/en/movies/"
         }
     }
 
@@ -333,15 +333,15 @@ class Xmovix : AnimeHttpSource() {
     ) {
         fun getPath(): String = when (state) {
             0 -> ""
-            1 -> "/en/watch/country/italy"
-            2 -> "/en/watch/country/usa"
-            3 -> "/en/watch/country/germany"
-            4 -> "/en/watch/country/france"
-            5 -> "/en/watch/country/sweden"
-            6 -> "/en/watch/country/brazil"
-            7 -> "/en/watch/country/spain"
-            8 -> "/en/watch/country/europe"
-            9 -> "/en/watch/country/russia"
+            1 -> "/en/watch/country/italy/"
+            2 -> "/en/watch/country/usa/"
+            3 -> "/en/watch/country/germany/"
+            4 -> "/en/watch/country/france/"
+            5 -> "/en/watch/country/sweden/"
+            6 -> "/en/watch/country/brazil/"
+            7 -> "/en/watch/country/spain/"
+            8 -> "/en/watch/country/europe/"
+            9 -> "/en/watch/country/russia/"
             else -> ""
         }
     }
@@ -364,16 +364,16 @@ class Xmovix : AnimeHttpSource() {
     ) {
         fun getPath(): String = when (state) {
             0 -> ""
-            1 -> "/en/marc_dorcel"
-            2 -> "/en/wicked-pictures"
-            3 -> "/en/hustler"
-            4 -> "/en/daring"
-            5 -> "/en/pure-taboo"
-            6 -> "/en/digital-playground"
-            7 -> "/en/mario-salieri"
-            8 -> "/en/private"
-            9 -> "/en/new-sensations"
-            10 -> "/en/brasileirinhas"
+            1 -> "/en/movies/marc_dorcel/"
+            2 -> "/en/movies/wicked-pictures/"
+            3 -> "/en/movies/hustler/"
+            4 -> "/en/movies/daring/"
+            5 -> "/en/movies/pure-taboo/"
+            6 -> "/en/movies/digital-playground/"
+            7 -> "/en/movies/mario-salieri/"
+            8 -> "/en/movies/private/"
+            9 -> "/en/movies/new-sensations/"
+            10 -> "/en/movies/brasileirinhas/"
             else -> ""
         }
     }
