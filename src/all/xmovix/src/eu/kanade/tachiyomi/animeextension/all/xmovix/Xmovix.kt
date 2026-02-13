@@ -275,21 +275,21 @@ class Xmovix : AnimeHttpSource() {
         }
     }
 
-    // ----- Individual Filter Classes – EXACT menu order -----
+    // ----- Individual Filter Classes – EXACT menu order, no multi‑spaces -----
     private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
     private class Top100Filter : AnimeFilter.CheckBox("Top 100")
 
     private class MoviesFilter : AnimeFilter.Select<String>(
         "Movies",
         arrayOf(
-            "All Movies",               // 0
-            "News",                    // 1
-            "Movies in FullHD",        // 2
-            "Movies in HD",           // 3
-            "Russian porn movies",    // 4
-            "Russian translation",    // 5
-            "Vintage",               // 6
-            "Parodies",              // 7
+            "All Movies", // 0
+            "News", // 1
+            "Movies in FullHD", // 2
+            "Movies in HD", // 3
+            "Russian porn movies", // 4
+            "Russian translation", // 5
+            "Vintage", // 6
+            "Parodies", // 7
         ),
     ) {
         fun getPath(): String = when (state) {
@@ -308,16 +308,16 @@ class Xmovix : AnimeHttpSource() {
     private class CountryFilter : AnimeFilter.Select<String>(
         "Country",
         arrayOf(
-            "None",     // 0
-            "Italy",    // 1
-            "USA",      // 2
-            "Germany",  // 3
-            "France",   // 4
-            "Sweden",   // 5
-            "Brazil",   // 6
-            "Spain",    // 7
-            "Europe",   // 8
-            "Russia",   // 9
+            "None", // 0
+            "Italy", // 1
+            "USA", // 2
+            "Germany", // 3
+            "France", // 4
+            "Sweden", // 5
+            "Brazil", // 6
+            "Spain", // 7
+            "Europe", // 8
+            "Russia", // 9
         ),
     ) {
         fun getPath(): String = when (state) {
@@ -338,17 +338,17 @@ class Xmovix : AnimeHttpSource() {
     private class StudioFilter : AnimeFilter.Select<String>(
         "Studio",
         arrayOf(
-            "None",                 // 0
-            "Marc Dorcel",         // 1
-            "Wicked Pictures",     // 2
-            "Hustler",            // 3
-            "Daring",            // 4
-            "Pure Taboo",        // 5
+            "None", // 0
+            "Marc Dorcel", // 1
+            "Wicked Pictures", // 2
+            "Hustler", // 3
+            "Daring", // 4
+            "Pure Taboo", // 5
             "Digital Playground", // 6
-            "Mario Salieri",     // 7
-            "Private",           // 8
-            "New Sensations",    // 9
-            "Brasileirinhas",    // 10
+            "Mario Salieri", // 7
+            "Private", // 8
+            "New Sensations", // 9
+            "Brasileirinhas", // 10
         ),
     ) {
         fun getPath(): String = when (state) {
