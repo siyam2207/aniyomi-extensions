@@ -53,31 +53,37 @@ class Xmovix : AnimeHttpSource() {
     }
 
     private fun parseMovies(document: org.jsoup.nodes.Document): List<SAnime> {
-        return document.select("div.short").map { element ->
+        return document.select("div.short").mapNotNull { element ->
+            val title = element.selectFirst("a.th-title")?.text() ?: return@mapNotNull null
+            val posterLink = element.selectFirst("a.short-poster") ?: return@mapNotNull null
+            val img = posterLink.selectFirst("img")
+            val thumbnail = when {
+                img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
+                else -> img?.attr("data-src")
+            } ?: return@mapNotNull null
+
             SAnime.create().apply {
-                title = element.selectFirst("a.th-title")?.text() ?: ""
-                val posterLink = element.selectFirst("a.short-poster") ?: return@map
+                this.title = title
                 setUrlWithoutDomain(posterLink.attr("href"))
-                val img = posterLink.selectFirst("img")
-                thumbnail_url = when {
-                    img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
-                    else -> img?.attr("data-src")
-                }
+                thumbnail_url = thumbnail
             }
         }
     }
 
     private fun parseScenes(document: org.jsoup.nodes.Document): List<SAnime> {
-        return document.select("div.collections.t2").map { element ->
+        return document.select("div.collections.t2").mapNotNull { element ->
+            val link = element.selectFirst("a") ?: return@mapNotNull null
+            val title = element.selectFirst(".collections__title")?.text() ?: return@mapNotNull null
+            val img = element.selectFirst(".collections__image")
+            val thumbnail = when {
+                img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
+                else -> img?.attr("data-src")
+            } ?: return@mapNotNull null
+
             SAnime.create().apply {
-                val link = element.selectFirst("a") ?: return@map
-                title = element.selectFirst(".collections__title")?.text() ?: ""
+                this.title = title
                 setUrlWithoutDomain(link.attr("href"))
-                val img = element.selectFirst(".collections__image")
-                thumbnail_url = when {
-                    img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
-                    else -> img?.attr("data-src")
-                }
+                thumbnail_url = thumbnail
             }
         }
     }
@@ -121,8 +127,8 @@ class Xmovix : AnimeHttpSource() {
 
     override fun searchAnimeParse(response: Response): AnimesPage {
         val document = Jsoup.parse(response.body.string())
-        val animes = document.select("div.short").map { element ->
-            popularAnimeFromElement(element)
+        val animes = document.select("div.short").mapNotNull { element ->
+            popularAnimeFromElementOrNull(element)
         }
 
         val hasNext = document.select(".infosearch p")?.text()?.let { infoText ->
@@ -138,6 +144,22 @@ class Xmovix : AnimeHttpSource() {
         } ?: false
 
         return AnimesPage(animes, hasNext)
+    }
+
+    private fun popularAnimeFromElementOrNull(element: Element): SAnime? {
+        val title = element.selectFirst("a.th-title")?.text() ?: return null
+        val posterLink = element.selectFirst("a.short-poster") ?: return null
+        val img = posterLink.selectFirst("img")
+        val thumbnail = when {
+            img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
+            else -> img?.attr("data-src")
+        } ?: return null
+
+        return SAnime.create().apply {
+            this.title = title
+            setUrlWithoutDomain(posterLink.attr("href"))
+            thumbnail_url = thumbnail
+        }
     }
 
     // ============================== Details ==============================
@@ -262,17 +284,6 @@ class Xmovix : AnimeHttpSource() {
         }
 
         return "/en"
-    }
-
-    private fun popularAnimeFromElement(element: Element): SAnime = SAnime.create().apply {
-        title = element.selectFirst("a.th-title")?.text() ?: ""
-        val posterLink = element.selectFirst("a.short-poster") ?: return@apply
-        setUrlWithoutDomain(posterLink.attr("href"))
-        val img = posterLink.selectFirst("img")
-        thumbnail_url = when {
-            img?.hasAttr("src") == true && !img.attr("src").startsWith("data:") -> img.attr("src")
-            else -> img?.attr("data-src")
-        }
     }
 
     // ----- Individual Filter Classes – EXACT menu order, no multi‑spaces -----
