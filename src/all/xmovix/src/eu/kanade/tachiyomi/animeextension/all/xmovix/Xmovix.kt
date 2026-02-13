@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.all.xmovix
 
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -29,8 +30,11 @@ class Xmovix : AnimeHttpSource() {
         .add("Origin", baseUrl)
 
     // ============================== Popular ==============================
-    override fun popularAnimeRequest(page: Int): Request =
-        GET("$baseUrl/en?page=$page", headers)
+    override fun popularAnimeRequest(page: Int): Request {
+        val filters = getFilterList()
+        val path = buildPathFromFilters(filters)
+        return GET("$baseUrl$path?page=$page", headers)
+    }
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = Jsoup.parse(response.body.string())
@@ -102,60 +106,49 @@ class Xmovix : AnimeHttpSource() {
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
         return SAnime.create().apply {
-            // ----- Clean title -----
             title = document.selectFirst("h1 span[itemprop=name]")?.text()
                 ?: document.selectFirst("h1")?.ownText()
                 ?: ""
 
-            // ----- Thumbnail -----
             thumbnail_url = document.selectFirst("div.poster img")?.attr("src")
                 ?: document.selectFirst("meta[property=og:image]")?.attr("content")
 
-            // ----- Build rich description -----
             val descriptionParts = mutableListOf<String>()
 
-            // 1. Main description
             document.selectFirst("div#s-desc h2")?.text()?.takeIf { it.isNotBlank() }?.let {
                 descriptionParts.add(it)
             }
 
-            // 2. Director(s)
             val director = document.select("span[itemprop=director] a").joinToString { it.text() }
             if (director.isNotBlank()) {
                 descriptionParts.add("🎬 Director: $director")
             }
 
-            // 3. Duration
             document.selectFirst("li:contains(Duration:)")?.ownText()?.takeIf { it.isNotBlank() }?.let {
                 descriptionParts.add("⏱️ Duration: $it")
             }
 
-            // 4. Country & Year
             val year = document.selectFirst("span[itemprop=dateCreated] a")?.text()
             val country = document.select(".parameters-info span.str675")?.getOrNull(1)?.text()
             if (year != null || country != null) {
                 descriptionParts.add("📅 ${year ?: ""} ${country ?: ""}".trim())
             }
 
-            // 5. Cast / Actors
             val actors = document.select("span[itemprop=actors] a").joinToString { it.text() }
             if (actors.isNotBlank()) {
                 descriptionParts.add("🎭 Cast: $actors")
             }
 
-            // 6. Tags / Genres – comma separated
             val tags = document.select("ul.flist-col3 a[href*=/tags/]").joinToString(", ") { it.text() }
             if (tags.isNotBlank()) {
                 descriptionParts.add("🏷️ Tags: $tags")
                 genre = tags
             }
 
-            // 7. Studio / Production (if available)
             document.selectFirst("li:contains(Maker:)")?.ownText()?.takeIf { it.isNotBlank() }?.let {
                 descriptionParts.add("🏢 Studio: $it")
             }
 
-            // Fallback to meta description
             if (descriptionParts.isEmpty()) {
                 document.selectFirst("meta[name=description]")?.attr("content")?.let {
                     descriptionParts.add(it)
@@ -163,12 +156,8 @@ class Xmovix : AnimeHttpSource() {
             }
 
             description = descriptionParts.joinToString("\n\n")
-
-            // ----- Additional metadata -----
             artist = actors.takeIf { it.isNotBlank() }
             author = director.takeIf { it.isNotBlank() }
-
-            // ----- All movies complete -----
             status = SAnime.COMPLETED
         }
     }
@@ -191,11 +180,152 @@ class Xmovix : AnimeHttpSource() {
     override fun videoListRequest(episode: SEpisode): Request =
         GET(episode.url, headers)
 
-    override fun videoListParse(response: Response): List<Video> {
-        // 🚧 VIDEO EXTRACTION TEMPORARILY DISABLED
-        return emptyList()
+    override fun videoListParse(response: Response): List<Video> = emptyList()
+    override fun videoUrlParse(response: Response): String = ""
+
+    // ============================== Filters ==============================
+    override fun getFilterList(): AnimeFilterList {
+        return AnimeFilterList(
+            AnimeFilter.Header("🎬 Scenes & Top Lists"),
+            ScenesFilter(),
+            Top100Filter(),
+
+            AnimeFilter.Header("🎥 Movies"),
+            MoviesFilter(),
+
+            AnimeFilter.Header("🌍 Country"),
+            CountryFilter(),
+
+            AnimeFilter.Header("📺 Quality"),
+            QualityFilter(),
+
+            AnimeFilter.Header("🏢 Studio"),
+            StudioFilter(),
+        )
     }
 
-    override fun videoUrlParse(response: Response): String =
-        videoListParse(response).firstOrNull()?.videoUrl ?: ""
+    private fun buildPathFromFilters(filters: AnimeFilterList): String {
+        // Priority: Scenes > Top 100 > Studio > Quality > Country > Movies
+        for (filter in filters) {
+            when (filter) {
+                is ScenesFilter -> if (filter.state) return "/en/porn-scenes/"
+                is Top100Filter -> if (filter.state) return "/en/top100.html"
+            }
+        }
+
+        for (filter in filters) {
+            when (filter) {
+                is StudioFilter -> if (filter.state != 0) return filter.getPath()
+                is QualityFilter -> if (filter.state != 0) return filter.getPath()
+                is CountryFilter -> if (filter.state != 0) return filter.getPath()
+                is MoviesFilter -> return filter.getPath() // Always returns a path (default All Movies)
+            }
+        }
+
+        return "/en" // Fallback
+    }
+
+    // ----- Individual Filter Classes -----
+    private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
+    private class Top100Filter : AnimeFilter.CheckBox("Top 100")
+
+    private class MoviesFilter : AnimeFilter.Select<String>(
+        "Movies",
+        arrayOf(
+            "All Movies",
+            "News",
+            "Russian porn movies",
+            "Russian translation",
+            "Vintage",
+            "Parodies",
+        ),
+    ) {
+        fun getPath(): String = when (state) {
+            0 -> "/en"
+            1 -> "/en/watch/year/2025"
+            2 -> "/en/russian"
+            3 -> "/en/with-translation"
+            4 -> "/en/vintagexxx"
+            5 -> "/en/porno-parodies"
+            else -> "/en"
+        }
+    }
+
+    private class CountryFilter : AnimeFilter.Select<String>(
+        "Country",
+        arrayOf(
+            "None",
+            "Italy",
+            "USA",
+            "Germany",
+            "France",
+            "Sweden",
+            "Brazil",
+            "Spain",
+            "Europe",
+            "Russia",
+        ),
+    ) {
+        fun getPath(): String = when (state) {
+            0 -> "" // None – will be ignored
+            1 -> "/en/watch/country/italy"
+            2 -> "/en/watch/country/usa"
+            3 -> "/en/watch/country/germany"
+            4 -> "/en/watch/country/france"
+            5 -> "/en/watch/country/sweden"
+            6 -> "/en/watch/country/brazil"
+            7 -> "/en/watch/country/spain"
+            8 -> "/en/watch/country/europe"
+            9 -> "/en/watch/country/russia"
+            else -> ""
+        }
+    }
+
+    private class QualityFilter : AnimeFilter.Select<String>(
+        "Quality",
+        arrayOf(
+            "None",
+            "FullHD (1080p)",
+            "HD (720p)",
+        ),
+    ) {
+        fun getPath(): String = when (state) {
+            0 -> ""
+            1 -> "/en/movies/hd-1080p"
+            2 -> "/en/movies/hd-720p"
+            else -> ""
+        }
+    }
+
+    private class StudioFilter : AnimeFilter.Select<String>(
+        "Studio",
+        arrayOf(
+            "None",
+            "Marc Dorcel",
+            "Wicked Pictures",
+            "Hustler",
+            "Daring",
+            "Pure Taboo",
+            "Digital Playground",
+            "Mario Salieri",
+            "Private",
+            "New Sensations",
+            "Brasileirinhas",
+        ),
+    ) {
+        fun getPath(): String = when (state) {
+            0 -> ""
+            1 -> "/en/marc_dorcel"
+            2 -> "/en/wicked-pictures"
+            3 -> "/en/hustler"
+            4 -> "/en/daring"
+            5 -> "/en/pure-taboo"
+            6 -> "/en/digital-playground"
+            7 -> "/en/mario-salieri"
+            8 -> "/en/private"
+            9 -> "/en/new-sensations"
+            10 -> "/en/brasileirinhas"
+            else -> ""
+        }
+    }
 }
