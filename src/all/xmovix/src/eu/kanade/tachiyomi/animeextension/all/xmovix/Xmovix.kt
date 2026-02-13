@@ -210,6 +210,7 @@ class Xmovix : AnimeHttpSource() {
             when (filter) {
                 is ScenesFilter -> if (filter.state) return "/en/porn-scenes/"
                 is Top100Filter -> if (filter.state) return "/en/top100.html"
+                else -> {} // Ignore other filter types
             }
         }
 
@@ -218,7 +219,8 @@ class Xmovix : AnimeHttpSource() {
                 is StudioFilter -> if (filter.state != 0) return filter.getPath()
                 is QualityFilter -> if (filter.state != 0) return filter.getPath()
                 is CountryFilter -> if (filter.state != 0) return filter.getPath()
-                is MoviesFilter -> return filter.getPath() // Always returns a path (default All Movies)
+                is MoviesFilter -> return filter.getPath() // Always returns a path
+                else -> {} // Ignore other filter types
             }
         }
 
