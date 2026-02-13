@@ -29,7 +29,7 @@ class Xmovix : AnimeHttpSource() {
         .add("Origin", baseUrl)
 
     // ============================== Popular ==============================
-    // Always loads default movie listing – filters do not apply here.
+    // Always default movie listing – filters do not apply here.
     override fun popularAnimeRequest(page: Int): Request {
         val url = if (page == 1) {
             "$baseUrl/en/movies/"
@@ -47,18 +47,17 @@ class Xmovix : AnimeHttpSource() {
     }
 
     // ============================== Latest ==============================
-    // Uses same logic as Popular (no filters).
     override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
     override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     // ============================== Search ==============================
-    // Filters are applied HERE – this is the only place they work.
+    // Filters are applied here – this is the only place they work.
     override fun searchAnimeRequest(
         page: Int,
         query: String,
         filters: AnimeFilterList,
     ): Request {
-        // 1. If user typed something → do a text search (POST)
+        // 1. Text search → POST
         if (query.isNotBlank()) {
             val formBody = FormBody.Builder()
                 .add("do", "search")
@@ -76,11 +75,11 @@ class Xmovix : AnimeHttpSource() {
                 .build()
         }
 
-        // 2. No text query → user is browsing with filters
+        // 2. Browsing with filters → GET with path from filters
         val path = buildPathFromFilters(filters)
 
         val url = if (path == "/en/top.html") {
-            "$baseUrl$path" // Top 100 has no pagination
+            "$baseUrl$path" // Top 100 – no pagination
         } else if (page == 1) {
             "$baseUrl$path"
         } else {
@@ -100,7 +99,7 @@ class Xmovix : AnimeHttpSource() {
             parseMovies(document)
         }
 
-        // Pagination for search results page (text search)
+        // Pagination for text search results
         val hasNext = if (requestUrl.contains("do=search")) {
             document.select(".infosearch p")?.text()?.let { infoText ->
                 val regex = Regex("""results (\d+)-(\d+) of (\d+)""")
@@ -295,14 +294,20 @@ class Xmovix : AnimeHttpSource() {
         )
     }
 
-    // Build path from user‑selected filters (called only from searchAnimeRequest).
+    // Build path from user‑selected filters – called only from searchAnimeRequest.
     private fun buildPathFromFilters(filters: AnimeFilterList): String {
+        // 🏆 Top 100 has absolute priority – return immediately
+        filters.forEach { filter ->
+            if (filter is Top100Filter && filter.state) {
+                return "/en/top.html"
+            }
+        }
+
         var path = "/en/movies/" // default
 
-        for (filter in filters) {
+        filters.forEach { filter ->
             when (filter) {
                 is ScenesFilter -> if (filter.state) path = "/en/porno-video/"
-                is Top100Filter -> if (filter.state) path = "/en/top.html"
                 is MoviesFilter -> path = filter.getPath()
                 is CountryFilter -> if (filter.state != 0) path = filter.getPath()
                 is StudioFilter -> if (filter.state != 0) path = filter.getPath()
