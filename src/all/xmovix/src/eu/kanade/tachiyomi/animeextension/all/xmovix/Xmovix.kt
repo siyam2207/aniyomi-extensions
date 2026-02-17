@@ -263,11 +263,33 @@ class Xmovix : AnimeHttpSource() {
         GET(episode.url, headers)
 
     override fun videoListParse(response: Response): List<Video> {
-        val url = response.request.url.toString()
-        return when {
-            "filmcdm.top" in url -> extractFilmCdmMaster(url, url)
-            else -> emptyList()
+        val document = Jsoup.parse(response.body.string())
+        val videos = mutableListOf<Video>()
+
+        // Extract embed URLs from the movie page's click handlers
+        document.select("div.fplay.tabs-b.video-box").forEach { container ->
+            val containerDiv = container.selectFirst("div[id]") ?: return@forEach
+            val containerId = containerDiv.id()
+
+            val script = document.select("script")
+                .firstOrNull { it.data().contains("'click', '#$containerId'") }
+                ?.data()
+                ?: return@forEach
+
+            val embedUrl = Regex("""s2\.src\s*=\s*["']([^"']+)["']""")
+                .find(script)
+                ?.groupValues
+                ?.get(1)
+                ?: return@forEach
+
+            // Only handle filmcdm.top for now
+            if ("filmcdm.top" in embedUrl) {
+                val resolved = extractFilmCdmMaster(embedUrl, response.request.url.toString())
+                videos.addAll(resolved)
+            }
         }
+
+        return videos.distinctBy { it.url }
     }
 
     override fun videoUrlParse(response: Response): String =
@@ -310,50 +332,43 @@ class Xmovix : AnimeHttpSource() {
         // 5. Try each candidate – find the master.m3u8
         for (candidate in candidates) {
             try {
-                // HEAD request to check content type
-                val headRequest = Request.Builder()
-                    .url(candidate)
-                    .method("HEAD", null)
-                    .headers(headers)
-                    .build()
-                val headResponse = client.newCall(headRequest).execute()
-                val contentType = headResponse.header("Content-Type") ?: ""
-                headResponse.close()
-
-                if (contentType.contains("mpegurl") || contentType.contains("vnd.apple.mpegurl")) {
-                    // Fetch master playlist
-                    val playlistResponse = client.newCall(GET(candidate, headers)).execute()
+                // Use GET directly to avoid HEAD issues
+                val playlistResponse = client.newCall(GET(candidate, headers)).execute()
+                if (playlistResponse.isSuccessful) {
                     val playlistBody = playlistResponse.body.string()
                     playlistResponse.close()
 
-                    val videos = mutableListOf<Video>()
-                    val lines = playlistBody.lines()
-                    var i = 0
-                    while (i < lines.size) {
-                        val line = lines[i]
-                        if (line.startsWith("#EXT-X-STREAM-INF:")) {
-                            val resolution = Regex("RESOLUTION=(\\d+x\\d+)").find(line)?.groupValues?.get(1) ?: "unknown"
-                            val quality = when {
-                                resolution.contains("1920") -> "1080p"
-                                resolution.contains("1280") -> "720p"
-                                resolution.contains("852") -> "480p"
-                                else -> resolution
-                            }
-                            i++
-                            if (i < lines.size) {
-                                val segmentPlaylist = lines[i].trim()
-                                if (segmentPlaylist.isNotBlank() && !segmentPlaylist.startsWith("#")) {
-                                    val baseUrl = candidate.substringBeforeLast("/") + "/"
-                                    val playlistUrl = baseUrl + segmentPlaylist
-                                    videos.add(Video(playlistUrl, "HLS • $quality", playlistUrl, headers))
+                    // Check if it's an HLS playlist
+                    if (playlistBody.contains("#EXTM3U")) {
+                        val videos = mutableListOf<Video>()
+                        val lines = playlistBody.lines()
+                        var i = 0
+                        while (i < lines.size) {
+                            val line = lines[i]
+                            if (line.startsWith("#EXT-X-STREAM-INF:")) {
+                                val resolution = Regex("RESOLUTION=(\\d+x\\d+)").find(line)?.groupValues?.get(1) ?: "unknown"
+                                val quality = when {
+                                    resolution.contains("1920") -> "1080p"
+                                    resolution.contains("1280") -> "720p"
+                                    resolution.contains("852")  -> "480p"
+                                    else -> resolution
+                                }
+                                i++
+                                if (i < lines.size) {
+                                    val segmentPlaylist = lines[i].trim()
+                                    if (segmentPlaylist.isNotBlank() && !segmentPlaylist.startsWith("#")) {
+                                        val baseUrl = candidate.substringBeforeLast("/") + "/"
+                                        val playlistUrl = baseUrl + segmentPlaylist
+                                        videos.add(Video(playlistUrl, "HLS • $quality", playlistUrl, headers))
+                                    }
                                 }
                             }
+                            i++
                         }
-                        i++
+                        if (videos.isNotEmpty()) return videos
+                        // Fallback to master URL itself
+                        return listOf(Video(candidate, "HLS • Auto", candidate, headers))
                     }
-                    if (videos.isNotEmpty()) return videos
-                    // Fallback to master URL itself
-                    return listOf(Video(candidate, "HLS • Auto", candidate, headers))
                 }
             } catch (e: Exception) {
                 // try next candidate
