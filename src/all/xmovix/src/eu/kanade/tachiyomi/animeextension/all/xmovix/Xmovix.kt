@@ -305,7 +305,7 @@ class Xmovix : AnimeHttpSource() {
     override fun videoUrlParse(response: Response): String =
         videoListParse(response).firstOrNull()?.videoUrl ?: ""
 
-    // ---------- filmcdm.top HLS extractor ----------
+    // ---------- Improved filmcdm.top HLS extractor ----------
     private fun extractFilmCdmMaster(embedUrl: String, referer: String): List<Video> {
         val headers = headersBuilder()
             .add("Referer", referer)
@@ -316,16 +316,21 @@ class Xmovix : AnimeHttpSource() {
             Jsoup.parse(response.body.string())
         }
 
-        // 2. Find script with player config
+        // 2. Find script with packed player config (contains jwplayer)
         val script = document.select("script").firstOrNull { it.data().contains("jwplayer") }?.data()
             ?: return emptyList()
 
-        // 3. Extract obfuscated URLs (var p = {...})
+        // 3. Extract the var p object (it may be "g p=" or "var p=")
+        val pObjectRegex = Regex("""(?:var|g)\s+p\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
+        val pObjectMatch = pObjectRegex.find(script) ?: return emptyList()
+        val pObjectStr = pObjectMatch.groupValues[1]
+
+        // 4. Extract the three obfuscated URLs from the object
         val urlPattern = Regex("""["']1[ci]?["']\s*:\s*"([^"]+)"""")
-        val obfuscated = urlPattern.findAll(script).map { it.groupValues[1] }.toList()
+        val obfuscated = urlPattern.findAll(pObjectStr).map { it.groupValues[1] }.toList()
         if (obfuscated.isEmpty()) return emptyList()
 
-        // 4. Decode (shift each letter back by 1, "1g://" → "https://")
+        // 5. Decode (shift each letter back by 1, "1g://" → "https://")
         fun decode(obfuscated: String): String {
             return obfuscated.map { char ->
                 when {
@@ -339,16 +344,14 @@ class Xmovix : AnimeHttpSource() {
 
         val candidates = obfuscated.map { decode(it) }
 
-        // 5. Try each candidate – find the master.m3u8
+        // 6. Try each candidate – find the master.m3u8
         for (candidate in candidates) {
             try {
-                // Use GET directly to avoid HEAD issues
                 val playlistResponse = client.newCall(GET(candidate, headers)).execute()
                 if (playlistResponse.isSuccessful) {
                     val playlistBody = playlistResponse.body.string()
                     playlistResponse.close()
 
-                    // Check if it's an HLS playlist
                     if (playlistBody.contains("#EXTM3U")) {
                         val videos = mutableListOf<Video>()
                         val lines = playlistBody.lines()
