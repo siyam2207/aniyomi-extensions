@@ -21,12 +21,22 @@ class Xmovix : AnimeHttpSource() {
     override val lang = "en"
     override val supportsLatest = true
 
+    // Headers matching browser XHR exactly
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36")
-        .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        .add("Accept-Language", "en-US,en;q=0.5")
+        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
+        .add("Accept", "*/*")
+        .add("Accept-Language", "en")
         .add("Referer", baseUrl)
         .add("Origin", baseUrl)
+        .add("Cache-Control", "no-cache")
+        .add("Pragma", "no-cache")
+        .add("Priority", "u=1, i")
+        .add("Sec-CH-UA", "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\", \"Google Chrome\";v=\"144\"")
+        .add("Sec-CH-UA-Mobile", "?0")
+        .add("Sec-CH-UA-Platform", "\"Windows\"")
+        .add("Sec-Fetch-Dest", "empty")
+        .add("Sec-Fetch-Mode", "cors")
+        .add("Sec-Fetch-Site", "same-origin")
 
     // ============================== Popular ==============================
     override fun popularAnimeRequest(page: Int): Request {
