@@ -99,7 +99,9 @@ class Xmovix : AnimeHttpSource() {
                     val currentEnd = match.groupValues[2].toIntOrNull() ?: 0
                     val total = match.groupValues[3].toIntOrNull() ?: 0
                     currentEnd < total
-                } else false
+                } else {
+                    false
+                }
             } ?: false
         } else {
             parsePagination(document, requestUrl.contains("/top.html"))
@@ -399,7 +401,7 @@ class Xmovix : AnimeHttpSource() {
         return path
     }
 
-    // ----- Filter classes -----
+    // ----- Filter classes (single space before // comments) -----
     private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
     private class Top100Filter : AnimeFilter.CheckBox("Top 100")
 
