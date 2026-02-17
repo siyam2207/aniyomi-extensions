@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.util.JsUnpacker
 import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.Request
@@ -305,7 +306,7 @@ class Xmovix : AnimeHttpSource() {
     override fun videoUrlParse(response: Response): String =
         videoListParse(response).firstOrNull()?.videoUrl ?: ""
 
-    // ---------- Improved filmcdm.top HLS extractor ----------
+    // ---------- filmcdm.top HLS extractor (handles packed JavaScript) ----------
     private fun extractFilmCdmMaster(embedUrl: String, referer: String): List<Video> {
         val headers = headersBuilder()
             .add("Referer", referer)
@@ -316,87 +317,26 @@ class Xmovix : AnimeHttpSource() {
             Jsoup.parse(response.body.string())
         }
 
-        // 2. Find the main player script (the packed one)
-        val script = document.select("script").firstOrNull { it.data().contains("jwplayer") }?.data()
+        // 2. Find the packed script containing the player configuration
+        val packedScript = document.select("script")
+            .map { it.data() }
+            .firstOrNull { it.contains("eval(function(p,a,c,k,e,d)") }
             ?: return emptyList()
 
-        // 3. Try to extract video URL directly from jwplayer setup (look for file:)
-        val fileRegex = Regex("""file:\s*["']([^"']+\.m3u8[^"']*)["']""")
-        val fileMatch = fileRegex.find(script)
-        if (fileMatch != null) {
-            val videoUrl = fileMatch.groupValues[1]
-            // Sometimes it's relative, sometimes absolute
-            val fullUrl = if (videoUrl.startsWith("http")) videoUrl else "https://filmcdm.top$videoUrl"
-            return listOf(Video(fullUrl, "HLS", fullUrl, headers))
-        }
+        // 3. Unpack the packed script
+        val unpacked = JsUnpacker(packedScript).unpack() ?: packedScript
 
-        // 4. Fallback: extract the obfuscated p object
-        val pObjectRegex = Regex("""(?:var|g)\s+p\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
-        val pObjectMatch = pObjectRegex.find(script) ?: return emptyList()
-        val pObjectStr = pObjectMatch.groupValues[1]
+        // 4. Extract the master .m3u8 URL from the unpacked script
+        val fileRegex = Regex("""file\s*:\s*["']([^"']+\.m3u8[^"']*)["']""")
+        val match = fileRegex.find(unpacked) ?: return emptyList()
 
-        val urlPattern = Regex("""["']1[ci]?["']\s*:\s*"([^"]+)"""")
-        val obfuscated = urlPattern.findAll(pObjectStr).map { it.groupValues[1] }.toList()
-        if (obfuscated.isEmpty()) return emptyList()
+        val masterUrl = match.groupValues[1]
 
-        // 5. Decode (shift each letter back by 1, "1g://" → "https://")
-        fun decode(obfuscated: String): String {
-            return obfuscated.map { char ->
-                when {
-                    char.isDigit() -> char
-                    char in 'a'..'z' -> (char.code - 1).toChar()
-                    char in 'A'..'Z' -> (char.code - 1).toChar()
-                    else -> char
-                }
-            }.joinToString("").replace("1g://", "https://")
-        }
+        // 5. Ensure absolute URL
+        val videoUrl = if (masterUrl.startsWith("http")) masterUrl else "https://filmcdm.top$masterUrl"
 
-        val candidates = obfuscated.map { decode(it) }
-
-        // 6. Try each candidate – find the master.m3u8
-        for (candidate in candidates) {
-            try {
-                val playlistResponse = client.newCall(GET(candidate, headers)).execute()
-                if (playlistResponse.isSuccessful) {
-                    val playlistBody = playlistResponse.body.string()
-                    playlistResponse.close()
-
-                    if (playlistBody.contains("#EXTM3U")) {
-                        val videos = mutableListOf<Video>()
-                        val lines = playlistBody.lines()
-                        var i = 0
-                        while (i < lines.size) {
-                            val line = lines[i]
-                            if (line.startsWith("#EXT-X-STREAM-INF:")) {
-                                val resolution = Regex("RESOLUTION=(\\d+x\\d+)").find(line)?.groupValues?.get(1) ?: "unknown"
-                                val quality = when {
-                                    resolution.contains("1920") -> "1080p"
-                                    resolution.contains("1280") -> "720p"
-                                    resolution.contains("852") -> "480p"
-                                    else -> resolution
-                                }
-                                i++
-                                if (i < lines.size) {
-                                    val segmentPlaylist = lines[i].trim()
-                                    if (segmentPlaylist.isNotBlank() && !segmentPlaylist.startsWith("#")) {
-                                        val baseUrl = candidate.substringBeforeLast("/") + "/"
-                                        val playlistUrl = baseUrl + segmentPlaylist
-                                        videos.add(Video(playlistUrl, "HLS • $quality", playlistUrl, headers))
-                                    }
-                                }
-                            }
-                            i++
-                        }
-                        if (videos.isNotEmpty()) return videos
-                        return listOf(Video(candidate, "HLS • Auto", candidate, headers))
-                    }
-                }
-            } catch (e: Exception) {
-                // try next
-            }
-        }
-
-        return emptyList()
+        // 6. Return as a video (single HLS stream)
+        return listOf(Video(videoUrl, "HLS • Auto", videoUrl, headers))
     }
 
     // ============================== FILTERS ==============================
