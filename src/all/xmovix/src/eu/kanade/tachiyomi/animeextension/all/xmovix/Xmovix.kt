@@ -336,7 +336,7 @@ class Xmovix : AnimeHttpSource() {
                             val quality = when {
                                 resolution.contains("1920") -> "1080p"
                                 resolution.contains("1280") -> "720p"
-                                resolution.contains("852")  -> "480p"
+                                resolution.contains("852") -> "480p"
                                 else -> resolution
                             }
                             i++
