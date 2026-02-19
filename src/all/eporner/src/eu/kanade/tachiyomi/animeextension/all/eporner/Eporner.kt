@@ -123,9 +123,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Anime Details ====================
     override fun animeDetailsRequest(anime: SAnime): Request {
-        // Ensure URL is normalized before request
-        val normalizedUrl = normalizeUrl(anime.url)
-        return GET(normalizedUrl, headers).newBuilder().tag(SAnime::class.java to anime).build()
+        // anime.url is already the embed URL (stored from API)
+        return GET(anime.url, headers).newBuilder().tag(SAnime::class.java to anime).build()
     }
 
     override fun animeDetailsParse(response: Response): SAnime {
@@ -163,21 +162,19 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Episode List ====================
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // The response is from the embed page request, its URL is the embed URL
-        val embedUrl = normalizeUrl(response.request.url.toString())
+        // Single episode – the video itself
         return listOf(
             SEpisode.create().apply {
                 name = "Video"
                 episode_number = 1F
-                url = embedUrl
+                url = response.request.url.toString() // embed URL
             },
         )
     }
 
     // ==================== Video List ====================
     override fun videoListRequest(episode: SEpisode): Request {
-        val normalizedUrl = normalizeUrl(episode.url)
-        return GET(normalizedUrl, headers)
+        return GET(episode.url, headers)
     }
 
     override fun videoListParse(response: Response): List<Video> {
@@ -262,20 +259,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // ==================== Helper Methods ====================
-    private fun normalizeUrl(url: String): String {
-        var normalized = url.trim()
-        if (!normalized.startsWith("http", ignoreCase = true)) {
-            normalized = "https://$normalized"
-        }
-        // Fix cases like "https://www.eporner.comhttps://..."
-        val httpsIndex = normalized.indexOf("https://")
-        val lastHttpsIndex = normalized.lastIndexOf("https://")
-        if (httpsIndex != lastHttpsIndex) {
-            normalized = normalized.substring(lastHttpsIndex)
-        }
-        return normalized
-    }
-
     private fun videoHeaders(embedUrl: String): Headers {
         return Headers.Builder()
             .add("User-Agent", USER_AGENT)
@@ -505,7 +488,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     ) {
         fun toSAnime(): SAnime = SAnime.create().apply {
             this.title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown"
-            this.url = normalizeUrl(this@ApiVideo.embed) // normalize embed URL
+            this.url = this@ApiVideo.embed // store embed URL directly
             this.thumbnail_url = this@ApiVideo.defaultThumb.src.takeIf { it.isNotBlank() }
             this.genre = this@ApiVideo.keywords.takeIf { it.isNotBlank() }
             this.description = "Views: ${this@ApiVideo.views}\n\nTags: ${this@ApiVideo.keywords}"
