@@ -1,32 +1,8 @@
 ext {
     extName = 'Eporner'
     extClass = '.Eporner'
-    extVersionCode = 29
+    extVersionCode = 1
     isNsfw = true
 }
 
 apply from: "$rootDir/common.gradle"
-
-dependencies {
-    // ====== ANTI-BOT PROTECTION ======
-    implementation(project(':lib:cloudflare-interceptor'))
-    
-    // ====== CORE PARSING ======
-    implementation(project(':lib:playlist-utils'))
-    implementation(project(':lib:unpacker'))
-    
-    // ====== EPORNER-SPECIFIC EXTRACTOR ====== 
-    implementation(project(':lib:eporner-extractor'))  // ADD THIS LINE
-    
-    // ====== REMOVE THESE (we don't need them anymore) ======
-    // implementation(project(':lib:streamwish-extractor'))
-    // implementation(project(':lib:voe-extractor'))
-    // implementation(project(':lib:mp4upload-extractor'))
-    // implementation(project(':lib:universal-extractor'))
-    
-    // ====== USE VERSION CATALOG REFERENCES ======
-    implementation libs.kotlin.stdlib
-    implementation libs.kotlin.json
-    implementation libs.jsoup
-    implementation libs.okhttp
-}
