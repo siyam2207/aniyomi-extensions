@@ -135,7 +135,7 @@ class Eporner : AnimeHttpSource() {
         val episode = SEpisode.create().apply {
             name = "Video"
             episode_number = 1f
-            url = embedUrl  // store embed URL
+            url = embedUrl // store embed URL
             date_upload = parseDateToUnix(apiVideo.added)
         }
         return listOf(episode)
