@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.animeextension.all.eporner
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.preference.ListPreference
+import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
@@ -12,8 +13,8 @@ import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
-import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.await
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -22,6 +23,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -183,16 +185,37 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
             val masterUrl = findMasterUrl(html) ?: return emptyList()
 
-            // Use PlaylistUtils with proper headers
-            PlaylistUtils(client, videoHeaders(embedUrl))
-                .extractFromHls(masterUrl, embedUrl) { quality -> quality.toString() }
-                .sortedByDescending { video ->
-                    video.quality.replace("p", "").toIntOrNull() ?: 0
-                }
+            // Manually fetch and parse master playlist
+            val masterPlaylist = client.newCall(GET(masterUrl, videoHeaders(embedUrl))).execute().body.string()
+            parseMasterPlaylist(masterPlaylist, masterUrl, embedUrl)
         } catch (e: Exception) {
             Log.e(tag, "Video list parse error", e)
             emptyList()
         }
+    }
+
+    private fun parseMasterPlaylist(playlist: String, masterUrl: String, embedUrl: String): List<Video> {
+        val videos = mutableListOf<Video>()
+        val baseUrl = masterUrl.substringBeforeLast('/') + '/'
+
+        // Regex to extract resolution and URL from EXT-X-STREAM-INF lines
+        val regex = Regex("""#EXT-X-STREAM-INF:.*RESOLUTION=(\d+x\d+).*\n(.*\.m3u8.*)""")
+        val matches = regex.findAll(playlist)
+
+        for (match in matches) {
+            val resolution = match.groupValues[1]
+            val url = match.groupValues[2].trim()
+            val quality = resolution.substringBefore('x') + "p"
+            val fullUrl = if (url.startsWith("http")) url else baseUrl + url
+            videos.add(Video(fullUrl, quality, fullUrl, headers = videoHeaders(embedUrl)))
+        }
+
+        // Fallback: if no variants found, just use the master URL itself
+        if (videos.isEmpty()) {
+            videos.add(Video(masterUrl, "HLS", masterUrl, headers = videoHeaders(embedUrl)))
+        }
+
+        return videos.sortedByDescending { it.quality.replace("p", "").toIntOrNull() ?: 0 }
     }
 
     // ==================== Helper Methods ====================
@@ -261,8 +284,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         val parts = mutableListOf<String>()
 
         // Start with existing description (from API) which contains tags and stats
-        if (!anime.description.isNullOrBlank()) {
-            parts.add(anime.description)
+        val existingDescription = anime.description
+        if (!existingDescription.isNullOrBlank()) {
+            parts.add(existingDescription)
         }
 
         // Add actors
@@ -338,7 +362,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Settings ====================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        preferences = androidx.preference.PreferenceManager.getDefaultSharedPreferences(screen.context)
+        preferences = PreferenceManager.getDefaultSharedPreferences(screen.context)
 
         ListPreference(screen.context).apply {
             key = PREF_QUALITY_KEY
