@@ -22,12 +22,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
-import java.util.concurrent.TimeUnit
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
@@ -191,22 +191,21 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // Transform hash to XHR hash
             val xhrHash = transformHash(embedHash)
 
-            // Build XHR request
-            val xhrUrl = "https://www.eporner.com/xhr/video/$vid"
-            val timestamp = System.currentTimeMillis()
-            val params = mapOf(
-                "hash" to xhrHash,
-                "domain" to "www.eporner.com",
-                "pixelRatio" to "1",
-                "playerWidth" to "0",
-                "playerHeight" to "0",
-                "fallback" to "false",
-                "embed" to "true",
-                "supportedFormats" to "hls,dash,vp9,av1,mp4",
-                "_" to timestamp.toString()
-            )
+            // Build XHR request URL with parameters
+            val xhrUrl = "https://www.eporner.com/xhr/video/$vid".toHttpUrlOrNull()!!.newBuilder()
+                .addQueryParameter("hash", xhrHash)
+                .addQueryParameter("domain", "www.eporner.com")
+                .addQueryParameter("pixelRatio", "1")
+                .addQueryParameter("playerWidth", "0")
+                .addQueryParameter("playerHeight", "0")
+                .addQueryParameter("fallback", "false")
+                .addQueryParameter("embed", "true")
+                .addQueryParameter("supportedFormats", "hls,dash,vp9,av1,mp4")
+                .addQueryParameter("_", System.currentTimeMillis().toString())
+                .build()
+                .toString()
 
-            val xhrRequest = GET(xhrUrl, headers = videoHeaders(embedUrl), headers = paramsToHeaders(params))
+            val xhrRequest = GET(xhrUrl, headers = videoHeaders(embedUrl))
             val xhrResponse = client.newCall(xhrRequest).execute()
             val xhrBody = xhrResponse.body.string()
             val data = json.decodeFromString<XhrResponse>(xhrBody)
@@ -257,14 +256,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             n /= 36
         }
         return result
-    }
-
-    private fun paramsToHeaders(params: Map<String, String>): Headers {
-        val builder = Headers.Builder()
-        params.forEach { (key, value) ->
-            builder.add(key, value)
-        }
-        return builder.build()
     }
 
     // ==================== Helper Methods ====================
@@ -517,28 +508,28 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     private data class XhrResponse(
         val available: Boolean,
         val sources: XhrSources,
-        val message: String? = null
+        val message: String? = null,
     )
 
     @Serializable
     private data class XhrSources(
         val hls: XhrHls? = null,
-        val mp4: Map<String, XhrMp4>? = null
+        val mp4: Map<String, XhrMp4>? = null,
     )
 
     @Serializable
     private data class XhrHls(
-        val auto: XhrHlsAuto? = null
+        val auto: XhrHlsAuto? = null,
     )
 
     @Serializable
     private data class XhrHlsAuto(
         val src: String,
-        val srcFallback: String? = null
+        val srcFallback: String? = null,
     )
 
     @Serializable
     private data class XhrMp4(
-        val src: String
+        val src: String,
     )
 }
