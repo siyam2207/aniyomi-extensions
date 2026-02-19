@@ -7,7 +7,6 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.awaitSuccess
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -146,7 +145,7 @@ class Eporner : AnimeHttpSource() {
     }
 
     override fun videoListParse(response: Response): List<Video> {
-        val document = response.awaitSuccess().use { Jsoup.parse(it.body.string()) }
+        val document = Jsoup.parse(response.body.string())
         val videos = mutableListOf<Video>()
 
         val scripts = document.select("script").eachText()
@@ -182,7 +181,7 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Helper Functions ======
     private fun parseSearchResponse(response: Response): ApiSearchResponse {
-        val responseBody = response.awaitSuccess().use { it.body.string() }
+        val responseBody = response.body.string()
         if (responseBody.isBlank()) {
             return ApiSearchResponse(emptyList(), 0, 1, 40, 1)
         }
@@ -194,7 +193,7 @@ class Eporner : AnimeHttpSource() {
     }
 
     private fun parseIdResponse(response: Response): ApiIdResponse {
-        val responseBody = response.awaitSuccess().use { it.body.string() }
+        val responseBody = response.body.string()
         return json.decodeFromString<ApiIdResponse>(responseBody)
     }
 
