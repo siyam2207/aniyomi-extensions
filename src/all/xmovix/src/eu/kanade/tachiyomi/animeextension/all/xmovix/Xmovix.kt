@@ -8,7 +8,7 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.JsUnpacker
+import eu.kanade.tachiyomi.util.Unpacker
 import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.Request
