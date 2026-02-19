@@ -10,7 +10,6 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -287,7 +286,7 @@ class Eporner : AnimeHttpSource() {
                 }
             }
         } catch (e: Exception) {
-            // Silently ignore; return empty list
+            // ignore
         }
         return videos
     }
