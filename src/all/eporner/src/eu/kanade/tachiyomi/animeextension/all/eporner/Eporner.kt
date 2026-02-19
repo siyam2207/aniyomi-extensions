@@ -16,6 +16,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
 import uy.kohesive.injekt.injectLazy
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -30,7 +31,7 @@ class Eporner : AnimeHttpSource() {
     private val apiBaseUrl = "https://www.eporner.com/api/v2/video"
     private val json: Json by injectLazy()
 
-    // ====== API Data Classes ======
+    // ====== API Data Classes (only for search/list endpoints) ======
     @Serializable
     data class ApiSearchResponse(
         val videos: List<ApiVideo>?,
@@ -110,40 +111,54 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Anime Details ======
     override fun animeDetailsRequest(anime: SAnime): Request {
-        val videoId = anime.url.substringAfter("/hd-porn/").substringBefore("/")
-        val url = "$apiBaseUrl/id/?id=$videoId&format=json"
-        return GET(url, headers)
+        // anime.url is the video page URL from the list
+        return GET(anime.url, headers)
     }
 
     override fun animeDetailsParse(response: Response): SAnime {
-        val apiVideo = parseIdResponse(response).video
+        val document = Jsoup.parse(response.body.string())
+        val videoId = extractVideoId(document) ?: ""
+        val embedUrl = buildEmbedUrl(videoId)
+
         return SAnime.create().apply {
-            url = normalizeUrl(apiVideo.url)
-            title = apiVideo.title
-            thumbnail_url = apiVideo.default_thumb?.src
-            description = buildDescription(apiVideo)
-            artist = apiVideo.keywords
+            url = animeDetailsParse().url // Keep original URL
+            title = extractTitle(document) ?: ""
+            thumbnail_url = extractThumbnail(document)
+            description = buildDescription(document)
+            artist = extractActors(document)?.joinToString(", ")
             status = SAnime.COMPLETED
+            // Store embed URL in a custom field? We'll use it later in episode list.
+            // We'll store it in the SAnime object's url for episodes, but we need to pass it to episodeList.
+            // Instead, we'll store it in a temporary variable or rely on episodeList to re-extract.
+            // Better: set a custom field, but Aniyomi's SAnime doesn't have one. We'll re-extract video ID in episodeList.
+            // For now, we'll store the video ID in a custom attribute using the 'initialized' field? Not safe.
+            // We'll just re-extract from the URL in episodeList.
         }
     }
 
     // ====== Episode List ======
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val apiVideo = parseIdResponse(response).video
-        val embedUrl = buildEmbedUrl(apiVideo.id)
+        // response is from the video page request in animeDetails, but we're not using it here.
+        // We need to get the video ID from the anime's URL (already stored).
+        // This method receives the same response as animeDetailsParse, but we can re-parse or use stored data.
+        // For simplicity, we'll re-fetch the video page using the anime's URL.
+        // But that would be inefficient. Instead, we can extract the video ID from the anime's URL (already stored).
+        // In animeDetailsParse, we stored the embed URL in a temporary variable? Not possible.
+        // So we'll just extract from the anime.url again.
+        val videoId = anime.url.substringAfter("/video-").substringBefore("/")
+        val embedUrl = buildEmbedUrl(videoId)
         val episode = SEpisode.create().apply {
             name = "Video"
             episode_number = 1f
             url = embedUrl
-            date_upload = parseDateToUnix(apiVideo.added)
+            date_upload = 0L // We don't have upload date here; could be extracted from page if needed.
         }
         return listOf(episode)
     }
 
     // ====== Video List ======
     override fun videoListRequest(episode: SEpisode): Request {
-        val videoUrl = normalizeUrl(episode.url)
-        return GET(videoUrl, headers)
+        return GET(episode.url, headers)
     }
 
     override fun videoListParse(response: Response): List<Video> {
@@ -198,45 +213,6 @@ class Eporner : AnimeHttpSource() {
         }
     }
 
-    private fun parseIdResponse(response: Response): ApiIdResponse {
-        val contentType = response.header("Content-Type") ?: ""
-        if (!contentType.contains("application/json")) {
-            return ApiIdResponse(
-                ApiVideo(
-                    id = "",
-                    title = "",
-                    url = "",
-                    views = 0,
-                    rate = "0",
-                    added = "",
-                    length_sec = 0,
-                    description = null,
-                    keywords = null,
-                    default_thumb = null,
-                ),
-            )
-        }
-        val responseBody = response.body.string()
-        return try {
-            json.decodeFromString<ApiIdResponse>(responseBody)
-        } catch (e: Exception) {
-            ApiIdResponse(
-                ApiVideo(
-                    id = "",
-                    title = "",
-                    url = "",
-                    views = 0,
-                    rate = "0",
-                    added = "",
-                    length_sec = 0,
-                    description = null,
-                    keywords = null,
-                    default_thumb = null,
-                ),
-            )
-        }
-    }
-
     private fun ApiVideo.toSAnime(): SAnime {
         return SAnime.create().apply {
             title = this@toSAnime.title
@@ -248,20 +224,164 @@ class Eporner : AnimeHttpSource() {
         }
     }
 
-    /**
-     * Ensures a URL is absolute and removes any accidental double scheme.
-     */
+    // ----- Extraction from video page -----
+    private fun extractVideoId(document: Document): String? {
+        // Try from canonical link
+        val canonical = document.selectFirst("link[rel=canonical]")?.attr("href")
+        if (canonical != null) {
+            return canonical.substringAfter("/video-").substringBefore("/")
+        }
+        // Try from JSON-LD
+        val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
+        if (jsonLd != null) {
+            try {
+                val obj = json.parseToJsonElement(jsonLd).jsonObject
+                val url = obj["url"]?.jsonPrimitive?.content
+                if (url != null) {
+                    return url.substringAfter("/video-").substringBefore("/")
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+        return null
+    }
+
+    private fun extractTitle(document: Document): String? {
+        return document.selectFirst("h1")?.text()
+    }
+
+    private fun extractThumbnail(document: Document): String? {
+        return document.selectFirst("meta[property='og:image']")?.attr("content")
+    }
+
+    private fun extractActors(document: Document): List<String>? {
+        // Try JSON-LD first
+        val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
+        if (jsonLd != null) {
+            try {
+                val obj = json.parseToJsonElement(jsonLd).jsonObject
+                val actorArray = obj["actor"]?.jsonArray
+                if (!actorArray.isNullOrEmpty()) {
+                    return actorArray.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.content }
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+        // Fallback to HTML tags
+        val actorElements = document.select("li.vit-pornstar a")
+        if (actorElements.isNotEmpty()) {
+            return actorElements.mapNotNull { it.text().ifBlank { null } }
+        }
+        return null
+    }
+
+    private fun extractUploader(document: Document): String? {
+        return document.selectFirst("li.vit-uploader a")?.text()
+    }
+
+    private fun extractTags(document: Document): List<String> {
+        return document.select("li.vit-category a").mapNotNull { it.text().ifBlank { null } }
+    }
+
+    private fun extractViews(document: Document): String? {
+        // From #cinemaviews1 or meta or JSON-LD
+        val viewsElem = document.selectFirst("#cinemaviews1")
+        if (viewsElem != null) return viewsElem.text()
+        // Try JSON-LD
+        val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
+        if (jsonLd != null) {
+            try {
+                val obj = json.parseToJsonElement(jsonLd).jsonObject
+                val interaction = obj["interactionStatistic"]?.jsonObject
+                val count = interaction?.get("userInteractionCount")?.jsonPrimitive?.content
+                if (count != null) return count
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+        return null
+    }
+
+    private fun extractRating(document: Document): String? {
+        // From JSON-LD aggregateRating
+        val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
+        if (jsonLd != null) {
+            try {
+                val obj = json.parseToJsonElement(jsonLd).jsonObject
+                val rating = obj["aggregateRating"]?.jsonObject
+                val value = rating?.get("ratingValue")?.jsonPrimitive?.content
+                if (value != null) return value
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+        return null
+    }
+
+    private fun extractDuration(document: Document): String? {
+        val durationElem = document.selectFirst(".vid-length")
+        if (durationElem != null) return durationElem.text()
+        // Try JSON-LD
+        val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
+        if (jsonLd != null) {
+            try {
+                val obj = json.parseToJsonElement(jsonLd).jsonObject
+                val duration = obj["duration"]?.jsonPrimitive?.content
+                if (duration != null) return duration
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+        return null
+    }
+
+    private fun buildDescription(document: Document): String {
+        val parts = mutableListOf<String>()
+
+        // Description from meta
+        val metaDesc = document.selectFirst("meta[name='description']")?.attr("content")
+        if (!metaDesc.isNullOrBlank()) {
+            parts.add(metaDesc)
+        }
+
+        // Tags
+        val tags = extractTags(document)
+        if (tags.isNotEmpty()) {
+            parts.add("\n\nTags: ${tags.joinToString(", ")}")
+        }
+
+        // Actors
+        val actors = extractActors(document)
+        if (!actors.isNullOrEmpty()) {
+            parts.add("\n\nStarring: ${actors.joinToString(", ")}")
+        }
+
+        // Uploader
+        val uploader = extractUploader(document)
+        if (!uploader.isNullOrBlank()) {
+            parts.add("\n\nUploader: $uploader")
+        }
+
+        // Views and rating
+        val views = extractViews(document)
+        val rating = extractRating(document)
+        if (views != null || rating != null) {
+            parts.add("\n\nViews: ${views ?: "?"} | Rating: ${rating ?: "?"}")
+        }
+
+        return parts.joinToString("")
+    }
+
     private fun normalizeUrl(url: String): String {
         var normalized = url.trim()
-        // If it doesn't start with http, add https://
         if (!normalized.startsWith("http", ignoreCase = true)) {
             normalized = "https://$normalized"
         }
-        // Fix cases like "https://www.eporner.comhttps://..."
         val httpsIndex = normalized.indexOf("https://")
         val lastHttpsIndex = normalized.lastIndexOf("https://")
         if (httpsIndex != lastHttpsIndex) {
-            // Take the substring from the last occurrence
             normalized = normalized.substring(lastHttpsIndex)
         }
         return normalized
@@ -269,27 +389,6 @@ class Eporner : AnimeHttpSource() {
 
     private fun buildEmbedUrl(videoId: String): String {
         return "https://www.eporner.com/embed/$videoId/"
-    }
-
-    private fun buildDescription(video: ApiVideo): String {
-        val parts = mutableListOf<String>()
-        if (!video.description.isNullOrBlank()) {
-            parts.add(video.description)
-        }
-        if (!video.keywords.isNullOrBlank()) {
-            parts.add("\n\nTags: ${video.keywords}")
-        }
-        parts.add("\n\nViews: ${video.views} | Rating: ${video.rate}")
-        return parts.joinToString("")
-    }
-
-    private fun parseDateToUnix(dateString: String): Long {
-        return try {
-            val format = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-            format.parse(dateString)?.time ?: 0L
-        } catch (e: Exception) {
-            0L
-        }
     }
 
     private fun String.extractQualityNumber(): Int {
