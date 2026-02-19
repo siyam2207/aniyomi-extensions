@@ -118,7 +118,7 @@ class Eporner : AnimeHttpSource() {
     override fun animeDetailsParse(response: Response): SAnime {
         val apiVideo = parseIdResponse(response).video
         return SAnime.create().apply {
-            url = apiVideo.url
+            url = ensureAbsoluteUrl(apiVideo.url)
             title = apiVideo.title
             thumbnail_url = apiVideo.default_thumb?.src
             description = buildDescription(apiVideo)
@@ -130,10 +130,12 @@ class Eporner : AnimeHttpSource() {
     // ====== Episode List ======
     override fun episodeListParse(response: Response): List<SEpisode> {
         val apiVideo = parseIdResponse(response).video
+        // Use the embed page URL for video extraction
+        val embedUrl = buildEmbedUrl(apiVideo.id)
         val episode = SEpisode.create().apply {
             name = "Video"
             episode_number = 1f
-            url = apiVideo.url
+            url = embedUrl  // store embed URL
             date_upload = parseDateToUnix(apiVideo.added)
         }
         return listOf(episode)
@@ -141,6 +143,7 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Video List ======
     override fun videoListRequest(episode: SEpisode): Request {
+        // episode.url is the embed page URL
         return GET(episode.url, headers)
     }
 
@@ -148,6 +151,7 @@ class Eporner : AnimeHttpSource() {
         val document = Jsoup.parse(response.body.string())
         val videos = mutableListOf<Video>()
 
+        // Look for a script tag containing the player configuration
         val scripts = document.select("script").eachText()
         for (script in scripts) {
             if (script.contains("sources") && script.contains("src")) {
@@ -162,6 +166,7 @@ class Eporner : AnimeHttpSource() {
             }
         }
 
+        // Fallback: look for direct video source tags (rare on embed page)
         if (videos.isEmpty()) {
             val videoElements = document.select("video source[src], source[src*=.mp4], source[src*=.m3u8]")
             videoElements.forEach { element ->
@@ -181,6 +186,10 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Helper Functions ======
     private fun parseSearchResponse(response: Response): ApiSearchResponse {
+        val contentType = response.header("Content-Type") ?: ""
+        if (!contentType.contains("application/json")) {
+            return ApiSearchResponse(emptyList(), 0, 1, 40, 1)
+        }
         val responseBody = response.body.string()
         if (responseBody.isBlank()) {
             return ApiSearchResponse(emptyList(), 0, 1, 40, 1)
@@ -193,19 +202,35 @@ class Eporner : AnimeHttpSource() {
     }
 
     private fun parseIdResponse(response: Response): ApiIdResponse {
+        val contentType = response.header("Content-Type") ?: ""
+        if (!contentType.contains("application/json")) {
+            return ApiIdResponse(ApiVideo("", "", url = ""))
+        }
         val responseBody = response.body.string()
-        return json.decodeFromString<ApiIdResponse>(responseBody)
+        return try {
+            json.decodeFromString<ApiIdResponse>(responseBody)
+        } catch (e: Exception) {
+            ApiIdResponse(ApiVideo("", "", url = ""))
+        }
     }
 
     private fun ApiVideo.toSAnime(): SAnime {
         return SAnime.create().apply {
             title = this@toSAnime.title
-            url = this@toSAnime.url
+            url = ensureAbsoluteUrl(this@toSAnime.url)
             thumbnail_url = this@toSAnime.default_thumb?.src
             description = this@toSAnime.keywords ?: this@toSAnime.description
             artist = this@toSAnime.keywords
             status = SAnime.COMPLETED
         }
+    }
+
+    private fun ensureAbsoluteUrl(url: String): String {
+        return if (url.startsWith("http")) url else baseUrl + url
+    }
+
+    private fun buildEmbedUrl(videoId: String): String {
+        return "https://www.eporner.com/embed/$videoId/"
     }
 
     private fun buildDescription(video: ApiVideo): String {
@@ -266,6 +291,7 @@ class Eporner : AnimeHttpSource() {
         val videos = mutableListOf<Video>()
         try {
             val element = json.parseToJsonElement(jsonStr)
+            // Look for sources array at various common paths
             val sources = element.jsonObject["sources"]?.jsonArray
                 ?: element.jsonObject["video"]?.jsonObject?.get("sources")?.jsonArray
                 ?: element.jsonObject["playlist"]?.jsonArray?.firstOrNull()?.jsonObject?.get("sources")?.jsonArray
