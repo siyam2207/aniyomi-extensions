@@ -30,6 +30,9 @@ class Eporner : AnimeHttpSource() {
     private val apiBaseUrl = "https://www.eporner.com/api/v2/video"
     private val json: Json by injectLazy()
 
+    // Temporary storage for video ID extracted during details parsing
+    private var currentVideoId: String? = null
+
     // ====== API Data Classes (for search/list endpoints only) ======
     @Serializable
     data class ApiSearchResponse(
@@ -110,8 +113,12 @@ class Eporner : AnimeHttpSource() {
 
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
+        // Extract and store video ID for later use in episode list
+        currentVideoId = extractVideoIdFromDocument(document)
+
         return SAnime.create().apply {
-            url = this@Eporner.anime.url
+            // Use the original URL from the request
+            url = response.request.url.toString()
             title = extractTitle(document) ?: ""
             thumbnail_url = extractThumbnail(document)
             description = buildDescription(document)
@@ -122,7 +129,8 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Episode List ======
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val videoId = anime.url.substringAfter("/video-").substringBefore("/")
+        // Use the stored video ID (extracted during details parsing)
+        val videoId = currentVideoId ?: return emptyList()
         val embedUrl = buildEmbedUrl(videoId)
         val episode = SEpisode.create().apply {
             name = "Video"
@@ -202,6 +210,28 @@ class Eporner : AnimeHttpSource() {
     }
 
     // ----- Extraction from video page -----
+    private fun extractVideoIdFromDocument(document: Document): String? {
+        // Try from canonical link
+        val canonical = document.selectFirst("link[rel=canonical]")?.attr("href")
+        if (canonical != null) {
+            return canonical.substringAfter("/video-").substringBefore("/")
+        }
+        // Try from JSON-LD
+        val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
+        if (jsonLd != null) {
+            try {
+                val obj = json.parseToJsonElement(jsonLd).jsonObject
+                val url = obj["url"]?.jsonPrimitive?.content
+                if (url != null) {
+                    return url.substringAfter("/video-").substringBefore("/")
+                }
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+        return null
+    }
+
     private fun extractTitle(document: Document): String? {
         return document.selectFirst("h1")?.text()
     }
