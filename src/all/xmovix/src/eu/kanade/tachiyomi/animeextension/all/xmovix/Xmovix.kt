@@ -8,7 +8,6 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.Unpacker
 import okhttp3.FormBody
 import okhttp3.Headers
 import okhttp3.Request
@@ -22,24 +21,15 @@ class Xmovix : AnimeHttpSource() {
     override val lang = "en"
     override val supportsLatest = true
 
-    // Headers matching browser XHR exactly
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
-        .add("Accept", "*/*")
-        .add("Accept-Language", "en")
+        .add("User-Agent", "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36")
+        .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .add("Accept-Language", "en-US,en;q=0.5")
         .add("Referer", baseUrl)
         .add("Origin", baseUrl)
-        .add("Cache-Control", "no-cache")
-        .add("Pragma", "no-cache")
-        .add("Priority", "u=1, i")
-        .add("Sec-CH-UA", "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\", \"Google Chrome\";v=\"144\"")
-        .add("Sec-CH-UA-Mobile", "?0")
-        .add("Sec-CH-UA-Platform", "\"Windows\"")
-        .add("Sec-Fetch-Dest", "empty")
-        .add("Sec-Fetch-Mode", "cors")
-        .add("Sec-Fetch-Site", "same-origin")
 
     // ============================== Popular ==============================
+    // Always loads default movie listing – filters do not apply here.
     override fun popularAnimeRequest(page: Int): Request {
         val url = if (page == 1) {
             "$baseUrl/en/movies/"
@@ -61,11 +51,13 @@ class Xmovix : AnimeHttpSource() {
     override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     // ============================== Search ==============================
+    // Filters are applied here – this is the only place they work.
     override fun searchAnimeRequest(
         page: Int,
         query: String,
         filters: AnimeFilterList,
     ): Request {
+        // 1. Text search → POST
         if (query.isNotBlank()) {
             val formBody = FormBody.Builder()
                 .add("do", "search")
@@ -83,12 +75,17 @@ class Xmovix : AnimeHttpSource() {
                 .build()
         }
 
+        // 2. Browsing with filters → GET with path from filters
         val path = buildPathFromFilters(filters)
-        val url = when {
-            path == "/en/top.html" -> "$baseUrl$path"
-            page == 1 -> "$baseUrl$path"
-            else -> "$baseUrl$path/page/$page/"
+
+        val url = if (path == "/en/top.html") {
+            "$baseUrl$path" // Top 100 – no pagination
+        } else if (page == 1) {
+            "$baseUrl$path"
+        } else {
+            "$baseUrl$path/page/$page/"
         }
+
         return GET(url, headers)
     }
 
@@ -102,6 +99,7 @@ class Xmovix : AnimeHttpSource() {
             parseMovies(document)
         }
 
+        // Pagination for text search results
         val hasNext = if (requestUrl.contains("do=search")) {
             document.select(".infosearch p")?.text()?.let { infoText ->
                 val regex = Regex("""results (\d+)-(\d+) of (\d+)""")
@@ -177,9 +175,10 @@ class Xmovix : AnimeHttpSource() {
         }
     }
 
-    // ---------- Pagination ----------
+    // ---------- Pagination (works with /page/N/) ----------
     private fun parsePagination(document: org.jsoup.nodes.Document, isTop100: Boolean): Boolean {
         if (isTop100) return false
+
         if (document.selectFirst("a.next") != null) return true
         if (document.selectFirst("span.pnext a") != null) return true
 
@@ -189,6 +188,7 @@ class Xmovix : AnimeHttpSource() {
             val lastPage = pageLinks.mapNotNull { it.text().toIntOrNull() }.maxOrNull() ?: currentPage
             return currentPage < lastPage
         }
+
         return false
     }
 
@@ -269,75 +269,12 @@ class Xmovix : AnimeHttpSource() {
         )
     }
 
-    // ============================== VIDEOS ==============================
+    // ============================== Videos ==============================
     override fun videoListRequest(episode: SEpisode): Request =
         GET(episode.url, headers)
 
-    override fun videoListParse(response: Response): List<Video> {
-        val document = Jsoup.parse(response.body.string())
-        val videos = mutableListOf<Video>()
-
-        // Extract embed URLs from the movie page's click handlers
-        document.select("div.fplay.tabs-b.video-box").forEach { container ->
-            val containerDiv = container.selectFirst("div[id]") ?: return@forEach
-            val containerId = containerDiv.id()
-
-            val script = document.select("script")
-                .firstOrNull { it.data().contains("'click', '#$containerId'") }
-                ?.data()
-                ?: return@forEach
-
-            val embedUrl = Regex("""s2\.src\s*=\s*["']([^"']+)["']""")
-                .find(script)
-                ?.groupValues
-                ?.get(1)
-                ?: return@forEach
-
-            // Only handle filmcdm.top for now
-            if ("filmcdm.top" in embedUrl) {
-                val resolved = extractFilmCdmMaster(embedUrl, response.request.url.toString())
-                videos.addAll(resolved)
-            }
-        }
-
-        return videos.distinctBy { it.url }
-    }
-
-    override fun videoUrlParse(response: Response): String =
-        videoListParse(response).firstOrNull()?.videoUrl ?: ""
-
-    // ---------- filmcdm.top HLS extractor (handles packed JavaScript) ----------
-    private fun extractFilmCdmMaster(embedUrl: String, referer: String): List<Video> {
-        val headers = headersBuilder()
-            .add("Referer", referer)
-            .build()
-
-        // 1. Fetch embed page
-        val document = client.newCall(GET(embedUrl, headers)).execute().use { response ->
-            Jsoup.parse(response.body.string())
-        }
-
-        // 2. Find the packed script containing the player configuration
-        val packedScript = document.select("script")
-            .map { it.data() }
-            .firstOrNull { it.contains("eval(function(p,a,c,k,e,d)") }
-            ?: return emptyList()
-
-        // 3. Unpack the packed script
-        val unpacked = JsUnpacker(packedScript).unpack() ?: packedScript
-
-        // 4. Extract the master .m3u8 URL from the unpacked script
-        val fileRegex = Regex("""file\s*:\s*["']([^"']+\.m3u8[^"']*)["']""")
-        val match = fileRegex.find(unpacked) ?: return emptyList()
-
-        val masterUrl = match.groupValues[1]
-
-        // 5. Ensure absolute URL
-        val videoUrl = if (masterUrl.startsWith("http")) masterUrl else "https://filmcdm.top$masterUrl"
-
-        // 6. Return as a video (single HLS stream)
-        return listOf(Video(videoUrl, "HLS • Auto", videoUrl, headers))
-    }
+    override fun videoListParse(response: Response): List<Video> = emptyList()
+    override fun videoUrlParse(response: Response): String = ""
 
     // ============================== FILTERS ==============================
     override fun getFilterList(): AnimeFilterList {
@@ -357,15 +294,24 @@ class Xmovix : AnimeHttpSource() {
         )
     }
 
+    // Build path from user‑selected filters – called only from searchAnimeRequest.
     private fun buildPathFromFilters(filters: AnimeFilterList): String {
+        // 🏆 Top 100 has absolute priority
         filters.forEach { filter ->
-            if (filter is Top100Filter && filter.state) return "/en/top.html"
-        }
-        filters.forEach { filter ->
-            if (filter is ScenesFilter && filter.state) return "/en/porno-video/"
+            if (filter is Top100Filter && filter.state) {
+                return "/en/top.html"
+            }
         }
 
-        var path = "/en/movies/"
+        // 🎬 Scenes has absolute priority (overrides everything else except Top 100)
+        filters.forEach { filter ->
+            if (filter is ScenesFilter && filter.state) {
+                return "/en/porno-video/"
+            }
+        }
+
+        var path = "/en/movies/" // default
+
         filters.forEach { filter ->
             when (filter) {
                 is MoviesFilter -> path = filter.getPath()
@@ -374,10 +320,11 @@ class Xmovix : AnimeHttpSource() {
                 else -> {}
             }
         }
+
         return path
     }
 
-    // ----- Filter classes (single space before // comments) -----
+    // ----- Filter definitions – EXACT working paths (single space before //) -----
     private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
     private class Top100Filter : AnimeFilter.CheckBox("Top 100")
 
