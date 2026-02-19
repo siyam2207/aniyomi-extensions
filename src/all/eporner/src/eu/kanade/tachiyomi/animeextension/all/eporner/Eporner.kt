@@ -9,8 +9,6 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -43,7 +41,7 @@ class Eporner : AnimeHttpSource() {
         val videos: List<ApiVideo>?,
         val total: Int,
         val page: Int,
-        val perpage: Int
+        val perpage: Int,
     )
 
     @Serializable
@@ -54,20 +52,20 @@ class Eporner : AnimeHttpSource() {
         val keywords: String? = null,
         val views: Int,
         val rate: String,
-        val url: String,          // slug like "/vid123/title"
-        val added: String,        // date string
+        val url: String, // slug like "/vid123/title"
+        val added: String, // date string
         val length_sec: Int,
-        val thumb: ThumbDetails? = null
+        val thumb: ThumbDetails? = null,
     )
 
     @Serializable
     data class ThumbDetails(
-        val src: String? = null
+        val src: String? = null,
     )
 
     @Serializable
     data class ApiVideoDetails(
-        val video: ApiVideoDetail
+        val video: ApiVideoDetail,
     )
 
     @Serializable
@@ -82,14 +80,14 @@ class Eporner : AnimeHttpSource() {
         val added: String,
         val length_sec: Int,
         val thumb: ThumbDetails? = null,
-        val files: List<VideoFile>? = null
+        val files: List<VideoFile>? = null,
     )
 
     @Serializable
     data class VideoFile(
-        val quality: String,   // e.g. "1080p", "720p"
-        val url: String,       // direct video URL
-        val mime: String? = null
+        val quality: String, // e.g. "1080p", "720p"
+        val url: String, // direct video URL
+        val mime: String? = null,
     )
 
     // ====== Popular ======
@@ -125,7 +123,7 @@ class Eporner : AnimeHttpSource() {
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val urlBuilder = "$apiBaseUrl/search/".toHttpUrlOrNull()!!.newBuilder()
             .addQueryParameter("query", query)
-            .addQueryParameter("order", "latest") // default; could be made filterable
+            .addQueryParameter("order", "latest")
             .addQueryParameter("per_page", "40")
             .addQueryParameter("page", page.toString())
         // Add filter params if implemented
@@ -151,7 +149,6 @@ class Eporner : AnimeHttpSource() {
             description = apiVideo.description
             artist = apiVideo.keywords
             status = SAnime.COMPLETED
-            // Store video ID in a custom field? Not needed; we can extract from url later
         }
     }
 
@@ -183,10 +180,12 @@ class Eporner : AnimeHttpSource() {
             val videoUrl = file.url
             if (videoUrl.isNotBlank()) {
                 Video(quality, quality, videoUrl, headers = headers)
-            } else null
+            } else {
+                null
+            }
         }.sortedWith(
             compareByDescending<Video> { it.quality.extractQualityNumber() }
-                .thenBy { it.quality }
+                .thenBy { it.quality },
         )
     }
 
