@@ -22,6 +22,7 @@ import okhttp3.Response
 import org.jsoup.Jsoup
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
@@ -223,221 +224,126 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // METHOD 1: API – permanent direct MP4s (BEST, but sometimes missing all_qualities)
+    // NEW: XHR extraction with hash transformation
     // -----------------------------------------------------------------
-    private fun extractViaApi(embedUrl: String): List<Video> {
-        val videoId = Regex("""embed/([^/?]+)""").find(embedUrl)?.groupValues?.get(1)
-        if (videoId.isNullOrBlank()) {
-            Log.e(tag, "[API] Could not extract video ID from embed URL")
-            return emptyList()
+    private fun transformHash(embedHash: String): String {
+        // Split 32-char hex into four 8-char chunks, convert each to base-36
+        return embedHash.chunked(8).joinToString("") { chunk ->
+            chunk.toLong(16).toString(36) // base-36 conversion
         }
-        Log.d(tag, "[API] Video ID: $videoId")
+    }
 
-        val apiRequestUrl = "$apiUrl/video/search/?id=$videoId&per_page=1&thumbsize=big"
-        Log.d(tag, "[API] Request URL: $apiRequestUrl")
+    @Serializable
+    data class XhrVideoResponse(
+        val vid: String,
+        val videoFID: Long,
+        val available: Boolean,
+        val code: Int,
+        val message: String,
+        val sources: XhrSources
+    )
 
-        val apiResponse = try {
-            client.newCall(GET(apiRequestUrl, headers)).execute()
+    @Serializable
+    data class XhrSources(
+        val mp4: Map<String, XhrMp4Source>? = null,
+        val hls: Map<String, XhrHlsSource>? = null
+    )
+
+    @Serializable
+    data class XhrMp4Source(
+        val labelShort: String,
+        val src: String,
+        val type: String,
+        val default: Boolean
+    )
+
+    @Serializable
+    data class XhrHlsSource(
+        val src: String,
+        val srcFallback: String? = null,
+        val type: String,
+        val default: Boolean
+    )
+
+    private fun fetchViaXhr(embedUrl: String, vid: String, embedHash: String): List<Video> {
+        val xhrHash = transformHash(embedHash)
+
+        val url = "$baseUrl/xhr/video/$vid".toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("hash", xhrHash)
+            ?.addQueryParameter("domain", "www.eporner.com")
+            ?.addQueryParameter("pixelRatio", "1")
+            ?.addQueryParameter("playerWidth", "0")
+            ?.addQueryParameter("playerHeight", "0")
+            ?.addQueryParameter("fallback", "false")
+            ?.addQueryParameter("embed", "true")
+            ?.addQueryParameter("supportedFormats", "hls,dash,vp9,av1,mp4")
+            ?.addQueryParameter("_", System.currentTimeMillis().toString())
+            ?.build()?.toString() ?: return emptyList()
+
+        val request = GET(url, headers)
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) return emptyList()
+
+        val xhrResponse = try {
+            json.decodeFromString<XhrVideoResponse>(response.body.string())
         } catch (e: Exception) {
-            Log.e(tag, "[API] Network error", e)
+            Log.e(tag, "XHR JSON parse error", e)
             return emptyList()
         }
 
-        if (!apiResponse.isSuccessful) {
-            Log.e(tag, "[API] HTTP ${apiResponse.code}")
+        if (!xhrResponse.available) {
+            Log.e(tag, "XHR: video not available – ${xhrResponse.message}")
             return emptyList()
         }
-
-        val apiBody = apiResponse.body.string()
-        Log.d(tag, "[API] Response body: $apiBody")
-
-        val searchResponse = try {
-            json.decodeFromString<ApiSearchResponse>(apiBody)
-        } catch (e: Exception) {
-            Log.e(tag, "[API] JSON parse error", e)
-            return emptyList()
-        }
-
-        val video = searchResponse.videos.firstOrNull()
-        if (video == null) {
-            Log.e(tag, "[API] No video object in response")
-            return emptyList()
-        }
-
-        val allQualities = video.allQualities
-        if (allQualities.isNullOrEmpty()) {
-            Log.e(tag, "[API] all_qualities is null or empty")
-            return emptyList()
-        }
-
-        val headers = headersBuilder()
-            .add("Referer", embedUrl)
-            .add("Origin", baseUrl)
-            .build()
 
         val videos = mutableListOf<Video>()
-        allQualities.forEach { (quality, url) ->
+        val headersWithReferer = headersBuilder()
+            .add("Referer", embedUrl)
+            .build()
+
+        // Add HLS master as a single "Auto" option (adaptive)
+        xhrResponse.sources.hls?.forEach { (_, source) ->
             videos.add(
                 Video(
-                    url = url,
-                    quality = "MP4 • ${quality}p",
-                    videoUrl = url,
-                    headers = headers,
-                ),
+                    url = source.src,
+                    quality = "HLS • Auto",
+                    videoUrl = source.src,
+                    headers = headersWithReferer
+                )
+            )
+            source.srcFallback?.let {
+                videos.add(
+                    Video(
+                        url = it,
+                        quality = "HLS • Auto (fallback)",
+                        videoUrl = it,
+                        headers = headersWithReferer
+                    )
+                )
+            }
+        }
+
+        // Add MP4 direct URLs
+        xhrResponse.sources.mp4?.forEach { (_, source) ->
+            videos.add(
+                Video(
+                    url = source.src,
+                    quality = "MP4 • ${source.labelShort}",
+                    videoUrl = source.src,
+                    headers = headersWithReferer
+                )
             )
         }
 
-        Log.i(tag, "[API] Found ${videos.size} permanent MP4 URLs")
-        videos.sort()
-        return videos
+        return videos.sortedByDescending { extractQuality(it.quality) }
+    }
+
+    private fun extractQuality(quality: String): Int {
+        return Regex("""\d+""").find(quality)?.value?.toIntOrNull() ?: 0
     }
 
     // -----------------------------------------------------------------
-    // METHOD 2: Direct `dwnld` MP4 URLs – NO EXPIRY, constructed from video ID
-    // -----------------------------------------------------------------
-    private fun extractDirectDwnldUrls(embedUrl: String): List<Video> {
-        val videoId = Regex("""embed/([^/?]+)""").find(embedUrl)?.groupValues?.get(1)
-            ?: return emptyList()
-        Log.d(tag, "[DWNLD] Video ID: $videoId")
-
-        val qualities = listOf("2160", "1080", "720", "480", "360", "240")
-        val baseUrl = "https://static.eporner.com/dwnld"
-        val headers = headersBuilder()
-            .add("Referer", embedUrl)
-            .add("Origin", baseUrl)
-            .build()
-
-        val videos = mutableListOf<Video>()
-
-        for (quality in qualities) {
-            val url = "$baseUrl/$videoId/${quality}p/${videoId}_${quality}p.mp4"
-            try {
-                val headRequest = Request.Builder()
-                    .url(url)
-                    .method("HEAD", null)
-                    .headers(headers)
-                    .build()
-                val headResponse = client.newCall(headRequest).execute()
-                if (headResponse.isSuccessful) {
-                    videos.add(
-                        Video(
-                            url = url,
-                            quality = "MP4 • ${quality}p",
-                            videoUrl = url,
-                            headers = headers,
-                        ),
-                    )
-                }
-                headResponse.close()
-            } catch (_: Exception) {
-                // ignore – quality not available
-            }
-        }
-
-        if (videos.isNotEmpty()) {
-            Log.i(tag, "[DWNLD] Found ${videos.size} permanent MP4 URLs")
-            videos.sort()
-        }
-        return videos
-    }
-
-    // -----------------------------------------------------------------
-    // METHOD 3: `video_sources` JSON (direct MP4, sometimes present)
-    // -----------------------------------------------------------------
-    private fun extractFromVideoSources(html: String, embedUrl: String): List<Video> {
-        val regex = Regex("""var\s+video_sources\s*=\s*(\{.*?\});""", RegexOption.DOT_MATCHES_ALL)
-        val match = regex.find(html) ?: return emptyList()
-        val jsonStr = match.groupValues[1]
-
-        return try {
-            val sources: Map<String, String> = json.decodeFromString(jsonStr)
-            val videos = mutableListOf<Video>()
-            val headers = headersBuilder()
-                .add("Referer", embedUrl)
-                .add("Origin", baseUrl)
-                .build()
-
-            sources.forEach { (quality, url) ->
-                videos.add(
-                    Video(
-                        url = url,
-                        quality = "MP4 • ${quality}p",
-                        videoUrl = url,
-                        headers = headers,
-                    ),
-                )
-            }
-            videos.sort()
-            videos
-        } catch (e: Exception) {
-            Log.e(tag, "Failed to parse video_sources", e)
-            emptyList()
-        }
-    }
-
-    // -----------------------------------------------------------------
-    // METHOD 4: Signed MP4 URLs (temporary – expires after ~30s)
-    // -----------------------------------------------------------------
-    private fun extractSignedMp4Urls(html: String, embedUrl: String): List<Video> {
-        val hash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)""")
-            .find(html)?.groupValues?.get(1)
-        val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""")
-            .find(html)?.groupValues?.get(1)
-        val expires = Regex("""expires["']?\s*[:=]\s*["']?(\d+)""")
-            .find(html)?.groupValues?.get(1)
-        val ip = Regex("""ip["']?\s*[:=]\s*["']?([\d\.]+)""")
-            .find(html)?.groupValues?.get(1)
-
-        if (hash.isNullOrBlank() || vid.isNullOrBlank() || expires.isNullOrBlank()) {
-            return emptyList()
-        }
-
-        var numericId = Regex("""video_id["']?\s*:\s*["']?(\d+)""")
-            .find(html)?.groupValues?.get(1)
-        if (numericId.isNullOrBlank()) {
-            numericId = Regex("""/(\d+)_\d+\.jpg""").find(html)?.groupValues?.get(1)
-        }
-        if (numericId.isNullOrBlank()) return emptyList()
-
-        val cdnServers = listOf(
-            "vid-s1-n50-fr-cdn.eporner.com",
-            "vid-s2-n50-fr-cdn.eporner.com",
-            "vid-s3-n50-fr-cdn.eporner.com",
-            "vid-s4-n50-fr-cdn.eporner.com",
-            "vid-s13-n50-fr-cdn.eporner.com",
-            "vid-s24-n50-fr-cdn.eporner.com",
-        )
-
-        val qualities = listOf("2160", "1080", "720", "480", "360", "240")
-        val headers = headersBuilder()
-            .add("Referer", embedUrl)
-            .add("Origin", baseUrl)
-            .build()
-
-        val videos = mutableListOf<Video>()
-
-        for (cdn in cdnServers) {
-            for (quality in qualities) {
-                val url = "https://$cdn/v3/$hash/${expires}_${ip}_$vid/$numericId-$quality.mp4"
-                videos.add(
-                    Video(
-                        url = url,
-                        quality = "MP4 • ${quality}p (signed)",
-                        videoUrl = url,
-                        headers = headers,
-                    ),
-                )
-            }
-            break // take first CDN only
-        }
-
-        Log.w(tag, "[Signed] Generated ${videos.size} signed MP4 URLs (expire soon!)")
-        videos.sort()
-        return videos
-    }
-
-    // -----------------------------------------------------------------
-    // METHOD 5: Direct HLS URL from Video.js player source (MOST RELIABLE HLS METHOD)
+    // Fallback: extract HLS directly from HTML (rarely needed)
     // -----------------------------------------------------------------
     private fun extractHlsFromPlayer(html: String, embedUrl: String): List<Video> {
         val hlsRegex = Regex("""https://[^"'\s]+master\.m3u8[^"'\s]*""")
@@ -492,163 +398,28 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // -----------------------------------------------------------------
-    // METHOD 6: Constructed HLS master playlist (legacy fallback)
-    // -----------------------------------------------------------------
-    private fun extractHls(html: String, embedUrl: String): List<Video> {
-        val hash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)""")
-            .find(html)?.groupValues?.get(1)
-        val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)""")
-            .find(html)?.groupValues?.get(1)
-        if (hash.isNullOrBlank() || vid.isNullOrBlank()) return emptyList()
-
-        var numericId = Regex("""video_id["']?\s*:\s*["']?(\d+)""")
-            .find(html)?.groupValues?.get(1)
-        if (numericId.isNullOrBlank()) {
-            numericId = Regex("""/(\d+)_\d+\.jpg""").find(html)?.groupValues?.get(1)
-        }
-        if (numericId.isNullOrBlank()) return emptyList()
-
-        val expires = Regex("""expires["']?\s*[:=]\s*["']?(\d+)""")
-            .find(html)?.groupValues?.get(1)
-        val ip = Regex("""ip["']?\s*[:=]\s*["']?([\d\.]+)""")
-            .find(html)?.groupValues?.get(1)
-
-        val cdnServers = listOf(
-            "dash-s1-c50-fr-cdn.eporner.com",
-            "dash-s2-c50-fr-cdn.eporner.com",
-            "dash-s3-c50-fr-cdn.eporner.com",
-            "dash-s4-c50-fr-cdn.eporner.com",
-            "dash-s13-c50-fr-cdn.eporner.com",
-            "dash-s24-c50-fr-cdn.eporner.com",
-        )
-
-        val headers = headersBuilder()
-            .add("Referer", embedUrl)
-            .add("Origin", baseUrl)
-            .build()
-
-        var masterBody: String? = null
-        var masterUrl: String? = null
-
-        for (cdn in cdnServers) {
-            val url = StringBuilder()
-                .append("https://$cdn/hls/v5/")
-                .append("$numericId-,240p,360p,480p,720p,.mp4.urlset/master.m3u8")
-                .append("?hash=$hash")
-                .apply {
-                    if (!expires.isNullOrBlank()) append("&expires=$expires")
-                    if (!ip.isNullOrBlank()) append("&ip=$ip")
-                }
-                .toString()
-
-            try {
-                val res = client.newCall(GET(url, headers)).execute()
-                if (res.isSuccessful) {
-                    masterBody = res.body.string()
-                    masterUrl = url
-                    break
-                }
-            } catch (_: Exception) {}
-        }
-
-        if (masterBody.isNullOrBlank() || masterUrl == null) return emptyList()
-
-        val videos = mutableListOf<Video>()
-        var quality = "Auto"
-
-        masterBody.split("\n").forEach { line ->
-            when {
-                line.startsWith("#EXT-X-STREAM-INF") -> {
-                    val q = Regex("""RESOLUTION=\d+x(\d+)""").find(line)?.groupValues?.get(1)
-                    quality = q?.plus("p") ?: "Auto"
-                }
-                line.startsWith("http") -> {
-                    videos.add(
-                        Video(
-                            url = line,
-                            quality = "HLS • $quality",
-                            videoUrl = line,
-                            headers = headers,
-                        ),
-                    )
-                }
-            }
-        }
-
-        if (videos.isEmpty()) {
-            videos.add(
-                Video(
-                    url = masterUrl,
-                    quality = "HLS • Auto",
-                    videoUrl = masterUrl,
-                    headers = headers,
-                ),
-            )
-        }
-
-        videos.sort()
-        return videos
-    }
-
-    // -----------------------------------------------------------------
-    // ✅ MAIN – tries methods in order of reliability
+    // ✅ MAIN – tries XHR first, then fallback
     // -----------------------------------------------------------------
     override fun videoListParse(response: Response): List<Video> {
         val html = response.body.string()
         val embedUrl = response.request.url.toString()
         Log.d(tag, "Embed URL: $embedUrl")
 
-        // 1️⃣ API (permanent MP4) – best, but sometimes missing all_qualities
-        extractViaApi(embedUrl).let { videos ->
+        // Extract vid and embed hash from the embed page
+        val vid = Regex("""EP\.video\.player\.vid\s*=\s*['"]([^'"]+)['"]""").find(html)?.groupValues?.get(1)
+        val embedHash = Regex("""EP\.video\.player\.hash\s*=\s*['"]([^'"]+)['"]""").find(html)?.groupValues?.get(1)
+
+        if (vid != null && embedHash != null) {
+            val videos = fetchViaXhr(embedUrl, vid, embedHash)
             if (videos.isNotEmpty()) {
-                Log.i(tag, "✅ Using API permanent MP4 (${videos.size} qualities)")
+                Log.i(tag, "✅ Using XHR API (${videos.size} streams)")
                 return videos
             }
         }
 
-        // 2️⃣ Direct dwnld URLs (permanent MP4) – constructed from video ID
-        extractDirectDwnldUrls(embedUrl).let { videos ->
-            if (videos.isNotEmpty()) {
-                Log.i(tag, "✅ Using direct dwnld MP4 (${videos.size} qualities)")
-                return videos
-            }
-        }
-
-        // 3️⃣ video_sources JSON (permanent MP4) – not always present
-        extractFromVideoSources(html, embedUrl).let { videos ->
-            if (videos.isNotEmpty()) {
-                Log.i(tag, "✅ Using video_sources JSON (${videos.size} qualities)")
-                return videos
-            }
-        }
-
-        // 4️⃣ Signed MP4 URLs (expire after ~30s) – temporary fallback
-        extractSignedMp4Urls(html, embedUrl).let { videos ->
-            if (videos.isNotEmpty()) {
-                Log.w(tag, "⚠️ Using signed MP4 URLs – WILL EXPIRE SOON!")
-                return videos
-            }
-        }
-
-        // 5️⃣ DIRECT HLS URL from player (MOST RELIABLE HLS METHOD)
-        extractHlsFromPlayer(html, embedUrl).let { videos ->
-            if (videos.isNotEmpty()) {
-                Log.i(tag, "✅ Using HLS URL from player (${videos.size} streams)")
-                return videos
-            }
-        }
-
-        // 6️⃣ Constructed HLS master playlist (legacy fallback)
-        Log.w(tag, "⚠️ Falling back to constructed HLS")
-        extractHls(html, embedUrl).let { videos ->
-            if (videos.isNotEmpty()) {
-                Log.i(tag, "✅ Using constructed HLS (${videos.size} streams)")
-                return videos
-            }
-        }
-
-        Log.e(tag, "❌ No videos found with any method")
-        return emptyList()
+        // Fallback: try to extract HLS directly from HTML (rarely needed)
+        Log.w(tag, "⚠️ Falling back to direct HLS extraction")
+        return extractHlsFromPlayer(html, embedUrl)
     }
 
     override fun videoUrlParse(response: Response): String {
