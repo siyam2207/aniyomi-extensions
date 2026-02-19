@@ -9,8 +9,6 @@ import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
@@ -31,7 +29,7 @@ class Eporner : AnimeHttpSource() {
     private val apiBaseUrl = "https://www.eporner.com/api/v2/video"
     private val json: Json by injectLazy()
 
-    // ====== API Data Classes (only for search/list endpoints) ======
+    // ====== API Data Classes (for search/list endpoints only) ======
     @Serializable
     data class ApiSearchResponse(
         val videos: List<ApiVideo>?,
@@ -58,11 +56,6 @@ class Eporner : AnimeHttpSource() {
     @Serializable
     data class ThumbDetails(
         val src: String,
-    )
-
-    @Serializable
-    data class ApiIdResponse(
-        val video: ApiVideo,
     )
 
     // ====== Popular ======
@@ -117,41 +110,26 @@ class Eporner : AnimeHttpSource() {
 
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
-        val videoId = extractVideoId(document) ?: ""
-        val embedUrl = buildEmbedUrl(videoId)
-
         return SAnime.create().apply {
-            url = animeDetailsParse().url // Keep original URL
+            url = anime.url  // keep the original video page URL
             title = extractTitle(document) ?: ""
             thumbnail_url = extractThumbnail(document)
             description = buildDescription(document)
             artist = extractActors(document)?.joinToString(", ")
             status = SAnime.COMPLETED
-            // Store embed URL in a custom field? We'll use it later in episode list.
-            // We'll store it in the SAnime object's url for episodes, but we need to pass it to episodeList.
-            // Instead, we'll store it in a temporary variable or rely on episodeList to re-extract.
-            // Better: set a custom field, but Aniyomi's SAnime doesn't have one. We'll re-extract video ID in episodeList.
-            // For now, we'll store the video ID in a custom attribute using the 'initialized' field? Not safe.
-            // We'll just re-extract from the URL in episodeList.
         }
     }
 
     // ====== Episode List ======
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // response is from the video page request in animeDetails, but we're not using it here.
-        // We need to get the video ID from the anime's URL (already stored).
-        // This method receives the same response as animeDetailsParse, but we can re-parse or use stored data.
-        // For simplicity, we'll re-fetch the video page using the anime's URL.
-        // But that would be inefficient. Instead, we can extract the video ID from the anime's URL (already stored).
-        // In animeDetailsParse, we stored the embed URL in a temporary variable? Not possible.
-        // So we'll just extract from the anime.url again.
+        // response is the same as in animeDetailsParse, but we can re‑extract the video ID from the stored URL
         val videoId = anime.url.substringAfter("/video-").substringBefore("/")
         val embedUrl = buildEmbedUrl(videoId)
         val episode = SEpisode.create().apply {
             name = "Video"
             episode_number = 1f
             url = embedUrl
-            date_upload = 0L // We don't have upload date here; could be extracted from page if needed.
+            date_upload = 0L  // upload date not needed for video extraction
         }
         return listOf(episode)
     }
@@ -225,28 +203,6 @@ class Eporner : AnimeHttpSource() {
     }
 
     // ----- Extraction from video page -----
-    private fun extractVideoId(document: Document): String? {
-        // Try from canonical link
-        val canonical = document.selectFirst("link[rel=canonical]")?.attr("href")
-        if (canonical != null) {
-            return canonical.substringAfter("/video-").substringBefore("/")
-        }
-        // Try from JSON-LD
-        val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
-        if (jsonLd != null) {
-            try {
-                val obj = json.parseToJsonElement(jsonLd).jsonObject
-                val url = obj["url"]?.jsonPrimitive?.content
-                if (url != null) {
-                    return url.substringAfter("/video-").substringBefore("/")
-                }
-            } catch (e: Exception) {
-                // ignore
-            }
-        }
-        return null
-    }
-
     private fun extractTitle(document: Document): String? {
         return document.selectFirst("h1")?.text()
     }
@@ -286,10 +242,8 @@ class Eporner : AnimeHttpSource() {
     }
 
     private fun extractViews(document: Document): String? {
-        // From #cinemaviews1 or meta or JSON-LD
         val viewsElem = document.selectFirst("#cinemaviews1")
         if (viewsElem != null) return viewsElem.text()
-        // Try JSON-LD
         val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
         if (jsonLd != null) {
             try {
@@ -305,7 +259,6 @@ class Eporner : AnimeHttpSource() {
     }
 
     private fun extractRating(document: Document): String? {
-        // From JSON-LD aggregateRating
         val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
         if (jsonLd != null) {
             try {
@@ -320,51 +273,29 @@ class Eporner : AnimeHttpSource() {
         return null
     }
 
-    private fun extractDuration(document: Document): String? {
-        val durationElem = document.selectFirst(".vid-length")
-        if (durationElem != null) return durationElem.text()
-        // Try JSON-LD
-        val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
-        if (jsonLd != null) {
-            try {
-                val obj = json.parseToJsonElement(jsonLd).jsonObject
-                val duration = obj["duration"]?.jsonPrimitive?.content
-                if (duration != null) return duration
-            } catch (e: Exception) {
-                // ignore
-            }
-        }
-        return null
-    }
-
     private fun buildDescription(document: Document): String {
         val parts = mutableListOf<String>()
 
-        // Description from meta
         val metaDesc = document.selectFirst("meta[name='description']")?.attr("content")
         if (!metaDesc.isNullOrBlank()) {
             parts.add(metaDesc)
         }
 
-        // Tags
         val tags = extractTags(document)
         if (tags.isNotEmpty()) {
             parts.add("\n\nTags: ${tags.joinToString(", ")}")
         }
 
-        // Actors
         val actors = extractActors(document)
         if (!actors.isNullOrEmpty()) {
             parts.add("\n\nStarring: ${actors.joinToString(", ")}")
         }
 
-        // Uploader
         val uploader = extractUploader(document)
         if (!uploader.isNullOrBlank()) {
             parts.add("\n\nUploader: $uploader")
         }
 
-        // Views and rating
         val views = extractViews(document)
         val rating = extractRating(document)
         if (views != null || rating != null) {
