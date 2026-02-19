@@ -10,9 +10,6 @@ import eu.kanade.tachiyomi.network.GET
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -108,14 +105,13 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Anime Details ======
     override fun animeDetailsRequest(anime: SAnime): Request {
-        // anime.url is the video page URL from the list
         return GET(anime.url, headers)
     }
 
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
         return SAnime.create().apply {
-            url = this@Eporner.anime.url // keep the original video page URL
+            url = this@Eporner.anime.url
             title = extractTitle(document) ?: ""
             thumbnail_url = extractThumbnail(document)
             description = buildDescription(document)
@@ -126,14 +122,13 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Episode List ======
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // The anime object is accessible via the property 'anime' from the parent class
         val videoId = anime.url.substringAfter("/video-").substringBefore("/")
         val embedUrl = buildEmbedUrl(videoId)
         val episode = SEpisode.create().apply {
             name = "Video"
             episode_number = 1f
             url = embedUrl
-            date_upload = 0L // upload date not needed for video extraction
+            date_upload = 0L
         }
         return listOf(episode)
     }
@@ -216,7 +211,6 @@ class Eporner : AnimeHttpSource() {
     }
 
     private fun extractActors(document: Document): List<String>? {
-        // Try JSON-LD first
         val jsonLd = document.selectFirst("script[type='application/ld+json']")?.data()
         if (jsonLd != null) {
             try {
@@ -229,7 +223,6 @@ class Eporner : AnimeHttpSource() {
                 // ignore
             }
         }
-        // Fallback to HTML tags
         val actorElements = document.select("li.vit-pornstar a")
         if (actorElements.isNotEmpty()) {
             return actorElements.mapNotNull { it.text().ifBlank { null } }
@@ -363,7 +356,6 @@ class Eporner : AnimeHttpSource() {
         val videos = mutableListOf<Video>()
         try {
             val element = json.parseToJsonElement(jsonStr)
-            // Try to locate sources array at various paths
             val sourcesElement = element.jsonObject["sources"]
                 ?: element.jsonObject["video"]?.jsonObject?.get("sources")
                 ?: element.jsonObject["playlist"]?.jsonArray?.firstOrNull()?.jsonObject?.get("sources")
