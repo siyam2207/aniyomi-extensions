@@ -1,12 +1,12 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.awaitSuccess
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -104,7 +104,7 @@ class Eporner : AnimeHttpSource() {
         val apiResponse = parseApiResponse(response)
         val animeList = apiResponse.videos?.mapNotNull { it.toSAnime() } ?: emptyList()
         val hasNextPage = (apiResponse.videos?.size ?: 0) == apiResponse.perpage
-        return AnimesPage.create(animeList, hasNextPage)
+        return AnimesPage(animeList, hasNextPage)
     }
 
     // ====== Latest ======
@@ -157,7 +157,7 @@ class Eporner : AnimeHttpSource() {
         val apiVideo = parseVideoDetailFromResponse(response) // reuse details
         val episode = SEpisode.create().apply {
             name = "Video"
-            episode_number = 1
+            episode_number = 1F // Float required
             // Store the video ID as the episode URL (to be used in videoListRequest)
             url = apiVideo.id
             date_upload = parseDateToUnix(apiVideo.added)
@@ -191,7 +191,7 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Helper Functions ======
     private fun parseApiResponse(response: Response): ApiResponse {
-        val responseBody = response.awaitSuccess().use { it.body.string() }
+        val responseBody = response.body.string()
         val jsonObject = json.parseToJsonElement(responseBody).jsonObject
         val videos = jsonObject["videos"]?.jsonArray?.mapNotNull { videoElement ->
             json.decodeFromJsonElement<ApiVideo>(videoElement)
@@ -203,7 +203,7 @@ class Eporner : AnimeHttpSource() {
     }
 
     private fun parseVideoDetailFromResponse(response: Response): ApiVideoDetail {
-        val responseBody = response.awaitSuccess().use { it.body.string() }
+        val responseBody = response.body.string()
         val jsonObject = json.parseToJsonElement(responseBody).jsonObject
         // The API returns {"video": {...}} for the /id/ endpoint
         val videoJson = jsonObject["video"] ?: error("No video object in response")
