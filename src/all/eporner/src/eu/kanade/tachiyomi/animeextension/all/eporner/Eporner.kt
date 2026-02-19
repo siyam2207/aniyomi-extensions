@@ -56,6 +56,31 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Origin", baseUrl)
     }
 
+    // ==================== Helper Methods (placed early) ====================
+    private fun normalizeUrl(url: String): String {
+        var normalized = url.trim()
+        if (!normalized.startsWith("http", ignoreCase = true)) {
+            normalized = "https://$normalized"
+        }
+        val httpsIndex = normalized.indexOf("https://")
+        val lastHttpsIndex = normalized.lastIndexOf("https://")
+        if (httpsIndex != lastHttpsIndex) {
+            normalized = normalized.substring(lastHttpsIndex)
+        }
+        return normalized
+    }
+
+    private fun videoHeaders(embedUrl: String): Headers {
+        return Headers.Builder()
+            .add("User-Agent", USER_AGENT)
+            .add("Referer", embedUrl)
+            .add("Origin", "https://www.eporner.com")
+            .add("Accept", "*/*")
+            .add("Accept-Language", "en-US,en;q=0.9")
+            .add("Connection", "keep-alive")
+            .build()
+    }
+
     // ==================== Popular Anime ====================
     override fun popularAnimeRequest(page: Int): Request {
         val order = preferences?.getString(PREF_SORT_KEY, PREF_SORT_DEFAULT) ?: PREF_SORT_DEFAULT
@@ -256,31 +281,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             n /= 36
         }
         return result
-    }
-
-    // ==================== Helper Methods ====================
-    private fun videoHeaders(embedUrl: String): Headers {
-        return Headers.Builder()
-            .add("User-Agent", USER_AGENT)
-            .add("Referer", embedUrl)
-            .add("Origin", "https://www.eporner.com")
-            .add("Accept", "*/*")
-            .add("Accept-Language", "en-US,en;q=0.9")
-            .add("Connection", "keep-alive")
-            .build()
-    }
-
-    private fun normalizeUrl(url: String): String {
-        var normalized = url.trim()
-        if (!normalized.startsWith("http", ignoreCase = true)) {
-            normalized = "https://$normalized"
-        }
-        val httpsIndex = normalized.indexOf("https://")
-        val lastHttpsIndex = normalized.lastIndexOf("https://")
-        if (httpsIndex != lastHttpsIndex) {
-            normalized = normalized.substring(lastHttpsIndex)
-        }
-        return normalized
     }
 
     // ----- Video page extraction for actors and uploader -----
