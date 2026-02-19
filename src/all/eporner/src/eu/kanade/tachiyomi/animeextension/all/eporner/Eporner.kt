@@ -240,13 +240,13 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         val available: Boolean,
         val code: Int,
         val message: String,
-        val sources: XhrSources
+        val sources: XhrSources,
     )
 
     @Serializable
     data class XhrSources(
         val mp4: Map<String, XhrMp4Source>? = null,
-        val hls: Map<String, XhrHlsSource>? = null
+        val hls: Map<String, XhrHlsSource>? = null,
     )
 
     @Serializable
@@ -254,7 +254,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         val labelShort: String,
         val src: String,
         val type: String,
-        val default: Boolean
+        val default: Boolean,
     )
 
     @Serializable
@@ -262,7 +262,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         val src: String,
         val srcFallback: String? = null,
         val type: String,
-        val default: Boolean
+        val default: Boolean,
     )
 
     private fun fetchViaXhr(embedUrl: String, vid: String, embedHash: String): List<Video> {
@@ -308,8 +308,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     url = source.src,
                     quality = "HLS • Auto",
                     videoUrl = source.src,
-                    headers = headersWithReferer
-                )
+                    headers = headersWithReferer,
+                ),
             )
             source.srcFallback?.let {
                 videos.add(
@@ -317,8 +317,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                         url = it,
                         quality = "HLS • Auto (fallback)",
                         videoUrl = it,
-                        headers = headersWithReferer
-                    )
+                        headers = headersWithReferer,
+                    ),
                 )
             }
         }
@@ -330,8 +330,8 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     url = source.src,
                     quality = "MP4 • ${source.labelShort}",
                     videoUrl = source.src,
-                    headers = headersWithReferer
-                )
+                    headers = headersWithReferer,
+                ),
             )
         }
 
