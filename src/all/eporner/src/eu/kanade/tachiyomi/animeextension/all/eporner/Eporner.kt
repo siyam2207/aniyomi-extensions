@@ -167,20 +167,20 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             SEpisode.create().apply {
                 name = "Video"
                 episode_number = 1F
-                url = response.request.url.toString() // embed URL
+                url = normalizeUrl(response.request.url.toString()) // embed URL
             },
         )
     }
 
     // ==================== Video List ====================
     override fun videoListRequest(episode: SEpisode): Request {
-        return GET(episode.url, headers)
+        return GET(normalizeUrl(episode.url), headers)
     }
 
     override fun videoListParse(response: Response): List<Video> {
         return try {
             val html = response.body.string()
-            val embedUrl = response.request.url.toString()
+            val embedUrl = normalizeUrl(response.request.url.toString())
 
             // Extract vid and hash from embed page
             val vid = regexFind(html, """EP\.video\.player\.vid\s*=\s*['"]([^'"]+)['"]""")
@@ -268,6 +268,19 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Accept-Language", "en-US,en;q=0.9")
             .add("Connection", "keep-alive")
             .build()
+    }
+
+    private fun normalizeUrl(url: String): String {
+        var normalized = url.trim()
+        if (!normalized.startsWith("http", ignoreCase = true)) {
+            normalized = "https://$normalized"
+        }
+        val httpsIndex = normalized.indexOf("https://")
+        val lastHttpsIndex = normalized.lastIndexOf("https://")
+        if (httpsIndex != lastHttpsIndex) {
+            normalized = normalized.substring(lastHttpsIndex)
+        }
+        return normalized
     }
 
     // ----- Video page extraction for actors and uploader -----
@@ -488,7 +501,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     ) {
         fun toSAnime(): SAnime = SAnime.create().apply {
             this.title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown"
-            this.url = this@ApiVideo.embed // store embed URL directly
+            this.url = normalizeUrl(this@ApiVideo.embed) // store embed URL directly
             this.thumbnail_url = this@ApiVideo.defaultThumb.src.takeIf { it.isNotBlank() }
             this.genre = this@ApiVideo.keywords.takeIf { it.isNotBlank() }
             this.description = "Views: ${this@ApiVideo.views}\n\nTags: ${this@ApiVideo.keywords}"
