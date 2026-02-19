@@ -17,12 +17,12 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
