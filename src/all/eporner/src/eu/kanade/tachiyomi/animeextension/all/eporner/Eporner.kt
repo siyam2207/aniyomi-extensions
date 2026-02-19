@@ -27,6 +27,7 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
@@ -181,39 +182,89 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val html = response.body.string()
             val embedUrl = response.request.url.toString()
 
-            val masterUrl = findMasterUrl(html) ?: return emptyList()
+            // Extract vid and hash from embed page
+            val vid = regexFind(html, """EP\.video\.player\.vid\s*=\s*['"]([^'"]+)['"]""")
+                ?: return emptyList()
+            val embedHash = regexFind(html, """EP\.video\.player\.hash\s*=\s*['"]([^'"]+)['"]""")
+                ?: return emptyList()
 
-            // Manually fetch and parse master playlist
-            val masterPlaylist = client.newCall(GET(masterUrl, videoHeaders(embedUrl))).execute().body.string()
-            parseMasterPlaylist(masterPlaylist, masterUrl, embedUrl)
+            // Transform hash to XHR hash
+            val xhrHash = transformHash(embedHash)
+
+            // Build XHR request
+            val xhrUrl = "https://www.eporner.com/xhr/video/$vid"
+            val timestamp = System.currentTimeMillis()
+            val params = mapOf(
+                "hash" to xhrHash,
+                "domain" to "www.eporner.com",
+                "pixelRatio" to "1",
+                "playerWidth" to "0",
+                "playerHeight" to "0",
+                "fallback" to "false",
+                "embed" to "true",
+                "supportedFormats" to "hls,dash,vp9,av1,mp4",
+                "_" to timestamp.toString()
+            )
+
+            val xhrRequest = GET(xhrUrl, headers = videoHeaders(embedUrl), headers = paramsToHeaders(params))
+            val xhrResponse = client.newCall(xhrRequest).execute()
+            val xhrBody = xhrResponse.body.string()
+            val data = json.decodeFromString<XhrResponse>(xhrBody)
+
+            if (!data.available) {
+                return emptyList()
+            }
+
+            val videos = mutableListOf<Video>()
+
+            // Add MP4 sources
+            data.sources.mp4?.forEach { (quality, info) ->
+                videos.add(Video(info.src, quality, info.src, headers = videoHeaders(embedUrl)))
+            }
+
+            // Add HLS master as an adaptive stream
+            data.sources.hls?.auto?.src?.let { hlsUrl ->
+                videos.add(Video(hlsUrl, "HLS", hlsUrl, headers = videoHeaders(embedUrl)))
+            }
+
+            videos.sortedByDescending { it.quality.replace("p", "").toIntOrNull() ?: 0 }
         } catch (e: Exception) {
             Log.e(tag, "Video list parse error", e)
             emptyList()
         }
     }
 
-    private fun parseMasterPlaylist(playlist: String, masterUrl: String, embedUrl: String): List<Video> {
-        val videos = mutableListOf<Video>()
-        val baseUrl = masterUrl.substringBeforeLast('/') + '/'
+    private fun regexFind(text: String, pattern: String): String? {
+        return Regex(pattern).find(text)?.groupValues?.get(1)
+    }
 
-        // Regex to extract resolution and URL from EXT-X-STREAM-INF lines
-        val regex = Regex("""#EXT-X-STREAM-INF:.*RESOLUTION=(\d+x\d+).*\n(.*\.m3u8.*)""")
-        val matches = regex.findAll(playlist)
-
-        for (match in matches) {
-            val resolution = match.groupValues[1]
-            val url = match.groupValues[2].trim()
-            val quality = resolution.substringBefore('x') + "p"
-            val fullUrl = if (url.startsWith("http")) url else baseUrl + url
-            videos.add(Video(fullUrl, quality, fullUrl, headers = videoHeaders(embedUrl)))
+    private fun transformHash(embedHash: String): String {
+        // Split into 8-char chunks, convert hex to long, then to base36
+        return embedHash.chunked(8).joinToString("") { chunk ->
+            val num = chunk.toLong(16)
+            toBase36(num)
         }
+    }
 
-        // Fallback: if no variants found, just use the master URL itself
-        if (videos.isEmpty()) {
-            videos.add(Video(masterUrl, "HLS", masterUrl, headers = videoHeaders(embedUrl)))
+    private fun toBase36(num: Long): String {
+        if (num == 0L) return "0"
+        val digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+        var n = num
+        var result = ""
+        while (n > 0) {
+            val rem = (n % 36).toInt()
+            result = digits[rem] + result
+            n /= 36
         }
+        return result
+    }
 
-        return videos.sortedByDescending { it.quality.replace("p", "").toIntOrNull() ?: 0 }
+    private fun paramsToHeaders(params: Map<String, String>): Headers {
+        val builder = Headers.Builder()
+        params.forEach { (key, value) ->
+            builder.add(key, value)
+        }
+        return builder.build()
     }
 
     // ==================== Helper Methods ====================
@@ -226,21 +277,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Accept-Language", "en-US,en;q=0.9")
             .add("Connection", "keep-alive")
             .build()
-    }
-
-    private fun findMasterUrl(html: String): String? {
-        val regexes = listOf(
-            Regex("""https://[^"' ]+master\.m3u8[^"' ]*"""),
-            Regex("""var\s+master\s*=\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
-            Regex("""masterUrl\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
-            Regex("""hlsUrl\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
-        )
-        for (regex in regexes) {
-            val match = regex.find(html) ?: continue
-            val url = match.groups[1]?.value ?: match.value
-            return url
-        }
-        return null
     }
 
     // ----- Video page extraction for actors and uploader -----
@@ -474,5 +510,35 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("src") val src: String,
         @SerialName("width") val width: Int,
         @SerialName("height") val height: Int,
+    )
+
+    // ==================== XHR Response Data Classes ====================
+    @Serializable
+    private data class XhrResponse(
+        val available: Boolean,
+        val sources: XhrSources,
+        val message: String? = null
+    )
+
+    @Serializable
+    private data class XhrSources(
+        val hls: XhrHls? = null,
+        val mp4: Map<String, XhrMp4>? = null
+    )
+
+    @Serializable
+    private data class XhrHls(
+        val auto: XhrHlsAuto? = null
+    )
+
+    @Serializable
+    private data class XhrHlsAuto(
+        val src: String,
+        val srcFallback: String? = null
+    )
+
+    @Serializable
+    private data class XhrMp4(
+        val src: String
     )
 }
