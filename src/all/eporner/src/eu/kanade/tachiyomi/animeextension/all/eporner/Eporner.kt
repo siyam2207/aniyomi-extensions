@@ -29,6 +29,20 @@ import org.jsoup.nodes.Document
 import uy.kohesive.injekt.injectLazy
 import java.net.URLEncoder
 
+// Top-level helper function for URL normalization
+private fun normalizeUrl(url: String): String {
+    var normalized = url.trim()
+    if (!normalized.startsWith("http", ignoreCase = true)) {
+        normalized = "https://$normalized"
+    }
+    val httpsIndex = normalized.indexOf("https://")
+    val lastHttpsIndex = normalized.lastIndexOf("https://")
+    if (httpsIndex != lastHttpsIndex) {
+        normalized = normalized.substring(lastHttpsIndex)
+    }
+    return normalized
+}
+
 class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override val name = "Eporner"
@@ -56,20 +70,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Origin", baseUrl)
     }
 
-    // ==================== Helper Methods (placed early) ====================
-    private fun normalizeUrl(url: String): String {
-        var normalized = url.trim()
-        if (!normalized.startsWith("http", ignoreCase = true)) {
-            normalized = "https://$normalized"
-        }
-        val httpsIndex = normalized.indexOf("https://")
-        val lastHttpsIndex = normalized.lastIndexOf("https://")
-        if (httpsIndex != lastHttpsIndex) {
-            normalized = normalized.substring(lastHttpsIndex)
-        }
-        return normalized
-    }
-
+    // ==================== Helper Methods ====================
     private fun videoHeaders(embedUrl: String): Headers {
         return Headers.Builder()
             .add("User-Agent", USER_AGENT)
