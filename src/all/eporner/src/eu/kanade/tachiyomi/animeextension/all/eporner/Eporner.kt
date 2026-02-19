@@ -67,7 +67,21 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         return try {
             val body = response.body.string()
             val apiResponse = json.decodeFromString<ApiSearchResponse>(body)
-            val animeList = apiResponse.videos.map { it.toSAnime() }
+            val animeList = apiResponse.videos.map { video ->
+                SAnime.create().apply {
+                    title = video.title.takeIf { it.isNotBlank() } ?: "Unknown"
+                    // Store relative URL by stripping baseUrl if present
+                    url = if (video.embed.startsWith(baseUrl)) {
+                        video.embed.substring(baseUrl.length)
+                    } else {
+                        video.embed
+                    }
+                    thumbnail_url = video.defaultThumb.src.takeIf { it.isNotBlank() }
+                    genre = video.keywords.takeIf { it.isNotBlank() }
+                    description = "Views: ${video.views}\n\nTags: ${video.keywords}"
+                    status = SAnime.COMPLETED
+                }
+            }
             val hasNextPage = apiResponse.page < apiResponse.totalPages
             AnimesPage(animeList, hasNextPage)
         } catch (e: Exception) {
@@ -497,16 +511,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
         @SerialName("embed") val embed: String,
         @SerialName("views") val views: Long,
         @SerialName("default_thumb") val defaultThumb: ApiThumbnail,
-    ) {
-        fun toSAnime(): SAnime = SAnime.create().apply {
-            this.title = this@ApiVideo.title.takeIf { it.isNotBlank() } ?: "Unknown"
-            this.url = toRelativeUrl(this@ApiVideo.embed) // store relative URL
-            this.thumbnail_url = this@ApiVideo.defaultThumb.src.takeIf { it.isNotBlank() }
-            this.genre = this@ApiVideo.keywords.takeIf { it.isNotBlank() }
-            this.description = "Views: ${this@ApiVideo.views}\n\nTags: ${this@ApiVideo.keywords}"
-            this.status = SAnime.COMPLETED
-        }
-    }
+    )
 
     @Serializable
     private data class ApiThumbnail(
