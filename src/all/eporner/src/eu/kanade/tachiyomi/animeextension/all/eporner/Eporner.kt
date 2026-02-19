@@ -1,6 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.all.eporner
 
-import android.util.Log
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -32,10 +31,6 @@ class Eporner : AnimeHttpSource() {
 
     private val apiBaseUrl = "https://www.eporner.com/api/v2/video"
     private val json: Json by injectLazy()
-
-    companion object {
-        private const val TAG = "Eporner"
-    }
 
     // ====== API Data Classes ======
     @Serializable
@@ -180,10 +175,6 @@ class Eporner : AnimeHttpSource() {
             }
         }
 
-        if (videos.isEmpty()) {
-            Log.w(TAG, "No video sources found on page: ${response.request.url}")
-        }
-
         return videos.sortedWith(
             compareByDescending<Video> { it.quality.extractQualityNumber() }
                 .thenBy { it.quality },
@@ -199,7 +190,6 @@ class Eporner : AnimeHttpSource() {
         return try {
             json.decodeFromString<ApiSearchResponse>(responseBody)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse search response: ${e.message}")
             ApiSearchResponse(emptyList(), 0, 1, 40, 1)
         }
     }
@@ -297,7 +287,7 @@ class Eporner : AnimeHttpSource() {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse JSON for video sources", e)
+            // Silently ignore; return empty list
         }
         return videos
     }
