@@ -204,13 +204,40 @@ class Eporner : AnimeHttpSource() {
     private fun parseIdResponse(response: Response): ApiIdResponse {
         val contentType = response.header("Content-Type") ?: ""
         if (!contentType.contains("application/json")) {
-            return ApiIdResponse(ApiVideo("", "", url = ""))
+            // Return a dummy response with an empty video (with all required fields)
+            return ApiIdResponse(
+                ApiVideo(
+                    id = "",
+                    title = "",
+                    url = "",
+                    views = 0,
+                    rate = "0",
+                    added = "",
+                    length_sec = 0,
+                    description = null,
+                    keywords = null,
+                    default_thumb = null,
+                ),
+            )
         }
         val responseBody = response.body.string()
         return try {
             json.decodeFromString<ApiIdResponse>(responseBody)
         } catch (e: Exception) {
-            ApiIdResponse(ApiVideo("", "", url = ""))
+            ApiIdResponse(
+                ApiVideo(
+                    id = "",
+                    title = "",
+                    url = "",
+                    views = 0,
+                    rate = "0",
+                    added = "",
+                    length_sec = 0,
+                    description = null,
+                    keywords = null,
+                    default_thumb = null,
+                ),
+            )
         }
     }
 
