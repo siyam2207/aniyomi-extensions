@@ -16,8 +16,6 @@ import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import uy.kohesive.injekt.injectLazy
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 class Eporner : AnimeHttpSource() {
 
@@ -111,7 +109,7 @@ class Eporner : AnimeHttpSource() {
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
         return SAnime.create().apply {
-            url = anime.url  // keep the original video page URL
+            url = anime.url // keep the original video page URL
             title = extractTitle(document) ?: ""
             thumbnail_url = extractThumbnail(document)
             description = buildDescription(document)
@@ -129,7 +127,7 @@ class Eporner : AnimeHttpSource() {
             name = "Video"
             episode_number = 1f
             url = embedUrl
-            date_upload = 0L  // upload date not needed for video extraction
+            date_upload = 0L // upload date not needed for video extraction
         }
         return listOf(episode)
     }
