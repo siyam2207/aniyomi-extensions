@@ -9,6 +9,12 @@ import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
@@ -109,7 +115,7 @@ class Eporner : AnimeHttpSource() {
     override fun animeDetailsParse(response: Response): SAnime {
         val document = Jsoup.parse(response.body.string())
         return SAnime.create().apply {
-            url = anime.url // keep the original video page URL
+            url = this@Eporner.anime.url // keep the original video page URL
             title = extractTitle(document) ?: ""
             thumbnail_url = extractThumbnail(document)
             description = buildDescription(document)
@@ -120,7 +126,7 @@ class Eporner : AnimeHttpSource() {
 
     // ====== Episode List ======
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // response is the same as in animeDetailsParse, but we can re‑extract the video ID from the stored URL
+        // The anime object is accessible via the property 'anime' from the parent class
         val videoId = anime.url.substringAfter("/video-").substringBefore("/")
         val embedUrl = buildEmbedUrl(videoId)
         val episode = SEpisode.create().apply {
@@ -215,9 +221,9 @@ class Eporner : AnimeHttpSource() {
         if (jsonLd != null) {
             try {
                 val obj = json.parseToJsonElement(jsonLd).jsonObject
-                val actorArray = obj["actor"]?.jsonArray
-                if (!actorArray.isNullOrEmpty()) {
-                    return actorArray.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.content }
+                val actorElement = obj["actor"]
+                if (actorElement is JsonArray) {
+                    return actorElement.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.content }
                 }
             } catch (e: Exception) {
                 // ignore
@@ -357,11 +363,14 @@ class Eporner : AnimeHttpSource() {
         val videos = mutableListOf<Video>()
         try {
             val element = json.parseToJsonElement(jsonStr)
-            val sources = element.jsonObject["sources"]?.jsonArray
-                ?: element.jsonObject["video"]?.jsonObject?.get("sources")?.jsonArray
-                ?: element.jsonObject["playlist"]?.jsonArray?.firstOrNull()?.jsonObject?.get("sources")?.jsonArray
-            if (sources != null) {
-                for (srcElement in sources) {
+            // Try to locate sources array at various paths
+            val sourcesElement = element.jsonObject["sources"]
+                ?: element.jsonObject["video"]?.jsonObject?.get("sources")
+                ?: element.jsonObject["playlist"]?.jsonArray?.firstOrNull()?.jsonObject?.get("sources")
+
+            val sourcesArray = sourcesElement as? JsonArray
+            if (sourcesArray != null) {
+                for (srcElement in sourcesArray) {
                     val srcObj = srcElement.jsonObject
                     val src = srcObj["src"]?.jsonPrimitive?.content
                     val type = srcObj["type"]?.jsonPrimitive?.content
