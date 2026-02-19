@@ -29,7 +29,7 @@ class Xmovix : AnimeHttpSource() {
         .add("Origin", baseUrl)
 
     // ============================== Popular ==============================
-    // Always loads default movie listing – filters do not apply here.
+    // Always default movie listing – filters do not apply here.
     override fun popularAnimeRequest(page: Int): Request {
         val url = if (page == 1) {
             "$baseUrl/en/movies/"
@@ -296,17 +296,10 @@ class Xmovix : AnimeHttpSource() {
 
     // Build path from user‑selected filters – called only from searchAnimeRequest.
     private fun buildPathFromFilters(filters: AnimeFilterList): String {
-        // 🏆 Top 100 has absolute priority
+        // 🏆 Top 100 has absolute priority – return immediately
         filters.forEach { filter ->
             if (filter is Top100Filter && filter.state) {
                 return "/en/top.html"
-            }
-        }
-
-        // 🎬 Scenes has absolute priority (overrides everything else except Top 100)
-        filters.forEach { filter ->
-            if (filter is ScenesFilter && filter.state) {
-                return "/en/porno-video/"
             }
         }
 
@@ -314,6 +307,7 @@ class Xmovix : AnimeHttpSource() {
 
         filters.forEach { filter ->
             when (filter) {
+                is ScenesFilter -> if (filter.state) path = "/en/porno-video/"
                 is MoviesFilter -> path = filter.getPath()
                 is CountryFilter -> if (filter.state != 0) path = filter.getPath()
                 is StudioFilter -> if (filter.state != 0) path = filter.getPath()
@@ -324,7 +318,7 @@ class Xmovix : AnimeHttpSource() {
         return path
     }
 
-    // ----- Filter definitions – EXACT working paths (single space before //) -----
+    // ----- Filter definitions – EXACT working paths -----
     private class ScenesFilter : AnimeFilter.CheckBox("Scenes")
     private class Top100Filter : AnimeFilter.CheckBox("Top 100")
 
