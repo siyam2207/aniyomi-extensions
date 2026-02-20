@@ -71,11 +71,11 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             val animeList = apiResponse.videos.map { video ->
                 SAnime.create().apply {
                     title = video.title.takeIf { it.isNotBlank() } ?: "Unknown"
-                    // Store relative URL by stripping baseUrl if present
-                    url = if (video.embed.startsWith(baseUrl)) {
-                        video.embed.substring(baseUrl.length)
+                    // Store the video page URL (not the embed URL)
+                    url = if (video.url.startsWith(baseUrl)) {
+                        video.url.substring(baseUrl.length)
                     } else {
-                        video.embed
+                        video.url
                     }
                     thumbnail_url = video.defaultThumb.src.takeIf { it.isNotBlank() }
                     genre = video.keywords.takeIf { it.isNotBlank() }
@@ -138,7 +138,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Anime Details ====================
     override fun animeDetailsRequest(anime: SAnime): Request {
-        // Prepend baseUrl because anime.url is now relative
+        // Prepend baseUrl because anime.url is now relative (video page)
         val fullUrl = baseUrl + anime.url
         return GET(fullUrl, headers).newBuilder().tag(SAnime::class.java to anime).build()
     }
@@ -181,22 +181,23 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ==================== Episode List ====================
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // Convert the full request URL to relative before storing
-        val relativeUrl = toRelativeUrl(response.request.url.toString())
+        // The response is from the video page request. Extract video ID from its URL.
+        val videoPageUrl = response.request.url.toString()
+        val videoId = videoPageUrl.substringAfter("/video-").substringBefore("/")
+        val embedUrl = buildEmbedUrl(videoId)
         return listOf(
             SEpisode.create().apply {
                 name = "Video"
                 episode_number = 1F
-                url = relativeUrl
+                url = embedUrl // full embed URL
             },
         )
     }
 
     // ==================== Video List ====================
     override fun videoListRequest(episode: SEpisode): Request {
-        // Prepend baseUrl because episode.url is now relative
-        val fullUrl = baseUrl + episode.url
-        return GET(fullUrl, headers)
+        // episode.url is now the full embed URL
+        return GET(episode.url, headers)
     }
 
     override fun videoListParse(response: Response): List<Video> {
@@ -289,14 +290,6 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     // ==================== Helper Methods ====================
-    private fun toRelativeUrl(fullUrl: String): String {
-        return if (fullUrl.startsWith(baseUrl)) {
-            fullUrl.substring(baseUrl.length)
-        } else {
-            fullUrl // assume already relative
-        }
-    }
-
     private fun videoHeaders(embedUrl: String): Headers {
         return Headers.Builder()
             .add("User-Agent", USER_AGENT)
@@ -306,6 +299,10 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             .add("Accept-Language", "en-US,en;q=0.9")
             .add("Connection", "keep-alive")
             .build()
+    }
+
+    private fun buildEmbedUrl(videoId: String): String {
+        return "https://www.eporner.com/embed/$videoId/"
     }
 
     // ----- Video page extraction for actors and uploader -----
