@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.SerialName
@@ -239,9 +240,17 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                 videos.add(Video(info.src, quality, info.src, headers = videoHeaders(embedUrl)))
             }
 
-            // Add HLS master as an adaptive stream
+            // Add HLS streams using PlaylistUtils (individual qualities)
             data.sources.hls?.auto?.src?.let { hlsUrl ->
-                videos.add(Video(hlsUrl, "HLS", hlsUrl, headers = videoHeaders(embedUrl)))
+                val playlistUtils = PlaylistUtils(client, headers)
+                val hlsVideos = playlistUtils.extractFromHls(
+                    playlistUrl = hlsUrl,
+                    referer = embedUrl,
+                    masterHeaders = videoHeaders(embedUrl),
+                    videoHeaders = videoHeaders(embedUrl),
+                    videoNameGen = { quality -> quality }
+                )
+                videos.addAll(hlsVideos)
             }
 
             videos.sortedByDescending { it.quality.replace("p", "").toIntOrNull() ?: 0 }
