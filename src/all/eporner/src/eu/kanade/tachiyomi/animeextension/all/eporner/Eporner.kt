@@ -248,7 +248,7 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
                     referer = embedUrl,
                     masterHeaders = videoHeaders(embedUrl),
                     videoHeaders = videoHeaders(embedUrl),
-                    videoNameGen = { quality -> quality }
+                    videoNameGen = { quality -> quality },
                 )
                 videos.addAll(hlsVideos)
             }
