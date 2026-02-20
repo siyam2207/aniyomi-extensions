@@ -172,6 +172,9 @@ class Eporner : ConfigurableAnimeSource, AnimeHttpSource() {
             // Set artist field to actors (for searchability)
             artist = extractActors(document)?.joinToString(", ")
 
+            // Set author field to uploader (channel name)
+            author = extractUploader(document) ?: ""
+
             status = SAnime.COMPLETED
         }
     }
