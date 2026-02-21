@@ -6,6 +6,7 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.Headers
 import okhttp3.OkHttpClient
+import org.jsoup.nodes.Document
 
 /**
  * Extractor for filmcdm.top embeds.
@@ -21,21 +22,17 @@ class FilmCdmExtractor(private val client: OkHttpClient, private val headers: He
     fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
         // Step 1: Load embed page
         val document = client.newCall(GET(url, headers)).execute().asJsoup()
-        val html = document.html()
+        val masterUrl = extractMasterPlaylist(document) ?: return emptyList()
 
-        // Step 2: Look for a master playlist URL in script tags
-        val masterUrl = extractMasterPlaylist(html) ?: return emptyList()
-
-        // Step 3: Use PlaylistUtils to extract all qualities
+        // Step 2: Use PlaylistUtils to extract all qualities
         return playlistUtils.extractFromHls(
             playlistUrl = masterUrl,
             referer = url,
-            videoNameGen = { quality -> "${prefix}FilmCdm - $quality" }
+            videoNameGen = { quality -> "$prefix FilmCdm - $quality" },
         )
     }
 
-    private fun extractMasterPlaylist(html: String): String? {
-        // Common patterns for HLS playlists
+    private fun extractMasterPlaylist(document: Document): String? {
         val patterns = listOf(
             // e.g., sources: [{file: "https://.../master.m3u8"}]
             """sources:\s*\[\s*{\s*file:\s*"([^"]+\.m3u8[^"]*)"\s*}""".toRegex(),
@@ -44,27 +41,17 @@ class FilmCdmExtractor(private val client: OkHttpClient, private val headers: He
             // Direct .m3u8 URL in a string
             """(https?://[^"'\s]+\.m3u8[^"'\s]*)""".toRegex(),
             // Player setup with playlist URL
-            """playlist: ["']([^"']+\.m3u8[^"']*)"""".toRegex()
+            """playlist: ["']([^"']+\.m3u8[^"']*)"""".toRegex(),
         )
 
-        for (pattern in patterns) {
-            pattern.find(html)?.groupValues?.get(1)?.let { url ->
-                // Ensure it's an absolute URL
-                return if (url.startsWith("http")) url else "https:${url}"
-            }
-        }
-
-        // If not found in the whole HTML, try looking inside <script> tags specifically
-        val document = org.jsoup.Jsoup.parse(html)
         document.select("script").forEach { script ->
             val scriptHtml = script.html()
             for (pattern in patterns) {
                 pattern.find(scriptHtml)?.groupValues?.get(1)?.let { url ->
-                    return if (url.startsWith("http")) url else "https:${url}"
+                    return if (url.startsWith("http")) url else "https:$url"
                 }
             }
         }
-
         return null
     }
 }
