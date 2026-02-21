@@ -12,19 +12,15 @@ import org.jsoup.nodes.Document
  * Extractor for filmcdm.top embeds.
  *
  * Attempts to find the master playlist URL directly in the page source.
- * If that fails (e.g., dynamic loading), the extractor returns empty list,
- * and the main source can fall back to other methods (like UniversalExtractor).
  */
 class FilmCdmExtractor(private val client: OkHttpClient, private val headers: Headers) {
 
     private val playlistUtils by lazy { PlaylistUtils(client, headers) }
 
     fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
-        // Step 1: Load embed page
         val document = client.newCall(GET(url, headers)).execute().asJsoup()
         val masterUrl = extractMasterPlaylist(document) ?: return emptyList()
 
-        // Step 2: Use PlaylistUtils to extract all qualities
         return playlistUtils.extractFromHls(
             playlistUrl = masterUrl,
             referer = url,
@@ -34,14 +30,14 @@ class FilmCdmExtractor(private val client: OkHttpClient, private val headers: He
 
     private fun extractMasterPlaylist(document: Document): String? {
         val patterns = listOf(
-            // e.g., sources: [{file: "https://.../master.m3u8"}]
-            """sources:\s*\[\s*{\s*file:\s*"([^"]+\.m3u8[^"]*)"\s*}""".toRegex(),
-            // e.g., file: "https://.../master.m3u8"
+            // sources: [{file: "https://.../master.m3u8"}]  – braces escaped
+            """sources:\s*\[\s*\{\s*file:\s*"([^"]+\.m3u8[^"]*)"\s*\}""".toRegex(),
+            // file: "https://.../master.m3u8"
             """file:\s*"([^"]+\.m3u8[^"]*)"""".toRegex(),
-            // Direct .m3u8 URL in a string
+            // direct URL
             """(https?://[^"'\s]+\.m3u8[^"'\s]*)""".toRegex(),
-            // Player setup with playlist URL
-            """playlist: ["']([^"']+\.m3u8[^"']*)"""".toRegex(),
+            // playlist: "https://..."
+            """playlist:\s*["']([^"']+\.m3u8[^"']*)["']""".toRegex(),
         )
 
         document.select("script").forEach { script ->
