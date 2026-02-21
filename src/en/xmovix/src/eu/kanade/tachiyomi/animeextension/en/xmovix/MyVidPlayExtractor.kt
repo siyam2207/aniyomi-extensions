@@ -3,7 +3,6 @@ package eu.kanade.tachiyomi.animeextension.en.xmovix
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.Headers
 import okhttp3.OkHttpClient
@@ -61,7 +60,7 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
             playlistUtils.extractFromHls(
                 playlistUrl = finalUrl,
                 referer = url,
-                videoNameGen = { quality -> "${prefix}MyVidPlay - $quality" }
+                videoNameGen = { quality -> "${prefix}MyVidPlay - $quality" },
             )
         } else {
             listOf(Video(finalUrl, "${prefix}MyVidPlay", finalUrl, headers))
