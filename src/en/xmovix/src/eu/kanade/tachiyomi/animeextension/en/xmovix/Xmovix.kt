@@ -152,7 +152,9 @@ class Xmovix : ParsedAnimeHttpSource() {
                 val currentEnd = match.groupValues[2].toIntOrNull() ?: 0
                 val total = match.groupValues[3].toIntOrNull() ?: 0
                 currentEnd < total
-            } else false
+            } else {
+                false
+            }
         } ?: false
 
         return AnimesPage(animes, hasNext)
