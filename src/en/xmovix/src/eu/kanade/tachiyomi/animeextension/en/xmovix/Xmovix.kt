@@ -16,10 +16,6 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
-// Import the extractors
-import eu.kanade.tachiyomi.animeextension.en.xmovix.MyVidPlayExtractor
-import eu.kanade.tachiyomi.animeextension.en.xmovix.FilmCdmExtractor
-
 class Xmovix : ParsedAnimeHttpSource() {
 
     override val name = "Xmovix"
@@ -27,7 +23,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override val lang = "en"
     override val supportsLatest = true
 
-    // Initialize extractors
+    // Initialize extractors (same package, no imports needed)
     private val myVidPlayExtractor by lazy { MyVidPlayExtractor(client, headers) }
     private val filmCdmExtractor by lazy { FilmCdmExtractor(client, headers) }
 
@@ -397,7 +393,7 @@ class Xmovix : ParsedAnimeHttpSource() {
             return listOf(Video(videoUrl, "Default", videoUrl))
         }
 
-        // Delegate to extractors
+        // Delegate to extractors (same package, accessible without imports)
         embedUrls.forEach { url ->
             val videos = when {
                 url.contains("myvidplay.com") -> myVidPlayExtractor.videosFromUrl(url, "MyVidPlay")
