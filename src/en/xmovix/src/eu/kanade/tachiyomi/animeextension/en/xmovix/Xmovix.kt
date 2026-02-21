@@ -16,12 +16,20 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
+// Import the extractors
+import eu.kanade.tachiyomi.animeextension.en.xmovix.MyVidPlayExtractor
+import eu.kanade.tachiyomi.animeextension.en.xmovix.FilmCdmExtractor
+
 class Xmovix : ParsedAnimeHttpSource() {
 
     override val name = "Xmovix"
     override val baseUrl = "https://hd.xmovix.net"
     override val lang = "en"
     override val supportsLatest = true
+
+    // Initialize extractors
+    private val myVidPlayExtractor by lazy { MyVidPlayExtractor(client, headers) }
+    private val filmCdmExtractor by lazy { FilmCdmExtractor(client, headers) }
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
         .add("User-Agent", "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36")
@@ -357,7 +365,7 @@ class Xmovix : ParsedAnimeHttpSource() {
             SEpisode.create().apply {
                 name = "Movie"
                 episode_number = 1f
-                url = document.location() // same as anime details page
+                url = document.location()
             },
         )
     }
@@ -369,15 +377,37 @@ class Xmovix : ParsedAnimeHttpSource() {
 
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
+        val videoList = mutableListOf<Video>()
 
-        // Try common video source locations
-        val videoSrc = document.selectFirst("video source[src]")?.attr("src")
-            ?: document.selectFirst("video[src]")?.attr("src")
-            ?: document.selectFirst("iframe[src*='player']")?.attr("src")
-            ?: return emptyList()
+        // Extract all s2.src assignments from <script> tags
+        val embedUrls = mutableListOf<String>()
+        document.select("script").forEach { script ->
+            val data = script.data()
+            val match = Regex("""s2\.src\s*=\s*["']([^"']+)["']""").findAll(data)
+            match.forEach { embedUrls.add(it.groupValues[1]) }
+        }
 
-        val videoUrl = if (videoSrc.startsWith("http")) videoSrc else "$baseUrl$videoSrc"
-        return listOf(Video(videoUrl, "Default", videoUrl))
+        // Fallback to direct video/iframe if no s2.src found
+        if (embedUrls.isEmpty()) {
+            val videoSrc = document.selectFirst("video source[src]")?.attr("src")
+                ?: document.selectFirst("video[src]")?.attr("src")
+                ?: document.selectFirst("iframe[src*='player']")?.attr("src")
+                ?: return emptyList()
+            val videoUrl = if (videoSrc.startsWith("http")) videoSrc else "$baseUrl$videoSrc"
+            return listOf(Video(videoUrl, "Default", videoUrl))
+        }
+
+        // Delegate to extractors
+        embedUrls.forEach { url ->
+            val videos = when {
+                url.contains("myvidplay.com") -> myVidPlayExtractor.videosFromUrl(url, "MyVidPlay")
+                url.contains("filmcdm.top") -> filmCdmExtractor.videosFromUrl(url, "FilmCdm")
+                else -> emptyList()
+            }
+            videoList.addAll(videos)
+        }
+
+        return videoList
     }
 
     // Not used because we override videoListParse
