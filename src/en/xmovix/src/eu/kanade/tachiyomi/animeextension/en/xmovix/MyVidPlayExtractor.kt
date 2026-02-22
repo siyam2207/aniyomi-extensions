@@ -1,103 +1,88 @@
 package eu.kanade.tachiyomi.animeextension.en.xmovix
 
-import android.util.Log
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
 import okhttp3.Headers
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import java.net.URI
 import java.util.Random
 
-class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: Headers) {
+class MyVidPlayExtractor(private val client: OkHttpClient) {
 
     private val random = Random()
-    private val tag = "MyVidPlayExtractor"
 
-    fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
-        // Headers exactly as in Python script
-        val baseHeaders = Headers.Builder()
-            .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
-            .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-            .set("Accept-Language", "en-US,en;q=0.5")
-            .set("Referer", "https://myvidplay.com/")
-            .set("DNT", "1")
-            .build()
+    fun videoFromUrl(
+        url: String,
+        prefix: String = "",
+        redirect: Boolean = true,
+    ): Video? {
+        return runCatching {
+            // Step 1: Load embed page with headers matching Python script
+            val embedHeaders = Headers.Builder()
+                .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
+                .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                .set("Accept-Language", "en-US,en;q=0.5")
+                .set("Referer", "https://myvidplay.com/")
+                .set("DNT", "1")
+                .build()
 
-        Log.d(tag, "Fetching embed URL: $url")
-        val embedResponse = client.newCall(GET(url, baseHeaders)).execute()
-        val html = embedResponse.body.string()
-        embedResponse.close()
+            val response = client.newCall(GET(url, embedHeaders)).execute()
+            val newUrl = if (redirect) response.request.url.toString() else url
+            val host = getBaseUrl(newUrl)
+            val html = response.body.string()
+            if (!html.contains("/pass_md5/")) return null
 
-        // Log a snippet of HTML
-        Log.d(tag, "HTML snippet: ${html.take(500)}")
+            // Step 2: Extract token and expiry from HTML
+            val token = extractToken(html) ?: return null
+            val expiry = extractExpiry(html) ?: return null
 
-        val token = extractToken(html)
-        Log.d(tag, "Extracted token: $token")
-        if (token == null) {
-            Log.e(tag, "Token not found")
-            return emptyList()
-        }
+            // Step 3: Find pass_md5 path
+            val passPath = extractPassPath(html) ?: return null
+            val passUrl = "$host$passPath"
 
-        val expiry = extractExpiry(html)
-        Log.d(tag, "Extracted expiry: $expiry")
-        if (expiry == null) {
-            Log.e(tag, "Expiry not found")
-            return emptyList()
-        }
+            // Step 4: Call pass_md5 endpoint
+            val ajaxHeaders = Headers.Builder()
+                .set("User-Agent", embedHeaders["User-Agent"]!!)
+                .set("Referer", url)
+                .set("X-Requested-With", "XMLHttpRequest")
+                .build()
 
-        val passPath = extractPassPath(html)
-        Log.d(tag, "Extracted passPath: $passPath")
-        if (passPath == null) {
-            Log.e(tag, "pass_md5 path not found")
-            return emptyList()
-        }
+            val passResponse = client.newCall(GET(passUrl, ajaxHeaders)).execute()
+            val baseVideoUrl = passResponse.body.string().trim()
+            if (baseVideoUrl == "RELOAD") return null
 
-        val passUrl = "https://myvidplay.com$passPath"
-        Log.d(tag, "Pass URL: $passUrl")
+            // Step 5: Generate random suffix
+            val randomString = createRandomString(10)
 
-        val ajaxHeaders = baseHeaders.newBuilder()
-            .set("Referer", url)
-            .set("X-Requested-With", "XMLHttpRequest")
-            .build()
+            // Step 6: Build final video URL
+            val finalUrl = "$baseVideoUrl$randomString?token=$token&expiry=$expiry"
 
-        val ajaxResponse = client.newCall(GET(passUrl, ajaxHeaders)).execute()
-        val baseVideoUrl = ajaxResponse.body.string().trim()
-        ajaxResponse.close()
-        Log.d(tag, "Base video URL: $baseVideoUrl")
+            // Step 7: Prepare video headers (only Referer and User-Agent are essential)
+            val videoHeaders = Headers.Builder()
+                .set("User-Agent", embedHeaders["User-Agent"]!!)
+                .set("Referer", url)
+                .set("Accept", "*/*")
+                .build()
 
-        if (baseVideoUrl == "RELOAD") {
-            Log.e(tag, "Server requested RELOAD")
-            return emptyList()
-        }
+            // Determine quality (optional, from page title)
+            val quality = extractQuality(html) ?: "MP4"
+            val videoName = if (prefix.isNotEmpty()) "$prefix MyVidPlay" else "MyVidPlay"
 
-        val suffix = generateRandomString(10)
-        val finalUrl = "$baseVideoUrl$suffix?token=$token&expiry=$expiry"
-        Log.d(tag, "Final URL: $finalUrl")
+            Video(finalUrl, "$videoName - $quality", finalUrl, videoHeaders)
+        }.getOrNull()
+    }
 
-        // Prepare video headers – include all original headers + Referer + cookies
-        val videoHeaders = baseHeaders.newBuilder()
-            .set("Referer", url)
-            .apply {
-                // Add cookies from client's cookie jar (OkHttp automatically handles them, but we include explicitly)
-                val cookies = client.cookieJar.loadForRequest(url.toHttpUrl())
-                if (cookies.isNotEmpty()) {
-                    val cookieStr = cookies.joinToString("; ") { "${it.name}=${it.value}" }
-                    set("Cookie", cookieStr)
-                    Log.d(tag, "Added cookies: $cookieStr")
-                }
-            }
-            .build()
-
-        // Return as a single video (the URL is a direct mp4, as seen in network logs)
-        return listOf(Video(finalUrl, "${prefix}MyVidPlay", finalUrl, videoHeaders))
+    fun videosFromUrl(url: String, prefix: String = "", redirect: Boolean = true): List<Video> {
+        val video = videoFromUrl(url, prefix, redirect)
+        return video?.let(::listOf) ?: emptyList()
     }
 
     private fun extractToken(html: String): String? {
-        // Python regex: token=([^&"']+)
+        // token=([^&"']+)
         val tokenRegex = """token=([^&"'\\s]+)""".toRegex()
         tokenRegex.find(html)?.groupValues?.get(1)?.let { return it }
 
-        // Fallback: from pass_md5 path (like DoodExtractor)
+        // Fallback: from pass_md5 path (e.g., /pass_md5/abc123/token)
         val md5Regex = """/pass_md5/([^'"]+)""".toRegex()
         md5Regex.find(html)?.groupValues?.get(1)?.let { path ->
             val parts = path.split('/')
@@ -112,7 +97,7 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
     }
 
     private fun extractPassPath(html: String): String? {
-        // Python: \.get\('(/pass_md5/[^']+)'
+        // .get('/pass_md5/...')
         val passRegex = """\.get\('(/pass_md5/[^']+)'""".toRegex()
         passRegex.find(html)?.groupValues?.get(1)?.let { return it }
 
@@ -123,7 +108,20 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
         return null
     }
 
-    private fun generateRandomString(length: Int): String {
+    private fun extractQuality(html: String): String? {
+        return Regex("\\d{3,4}p")
+            .find(html.substringAfter("<title>").substringBefore("</title>"))
+            ?.groupValues
+            ?.getOrNull(0)
+    }
+
+    private fun getBaseUrl(url: String): String {
+        return URI(url).let {
+            "${it.scheme}://${it.host}"
+        }
+    }
+
+    private fun createRandomString(length: Int): String {
         val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         return (1..length)
             .map { chars[random.nextInt(chars.length)] }
