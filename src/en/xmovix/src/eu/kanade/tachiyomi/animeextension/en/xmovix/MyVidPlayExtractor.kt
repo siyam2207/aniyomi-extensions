@@ -4,7 +4,6 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
 import okhttp3.Headers
 import okhttp3.OkHttpClient
-import java.net.URI
 import java.util.Random
 
 class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: Headers) {
