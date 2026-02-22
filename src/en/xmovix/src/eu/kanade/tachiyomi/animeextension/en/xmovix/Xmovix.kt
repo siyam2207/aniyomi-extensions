@@ -16,9 +16,6 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
-// Import only MyVidPlayExtractor (FilmCdmExtractor removed)
-import eu.kanade.tachiyomi.animeextension.en.xmovix.MyVidPlayExtractor
-
 class Xmovix : ParsedAnimeHttpSource() {
 
     override val name = "Xmovix"
@@ -26,7 +23,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override val lang = "en"
     override val supportsLatest = true
 
-    // Initialize only MyVidPlayExtractor
+    // Initialize only MyVidPlayExtractor (same package, no import needed)
     private val myVidPlayExtractor by lazy { MyVidPlayExtractor(client, headers) }
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
