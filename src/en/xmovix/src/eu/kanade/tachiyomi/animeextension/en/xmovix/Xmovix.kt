@@ -432,7 +432,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override fun episodeListSelector(): String = throw UnsupportedOperationException()
     override fun episodeFromElement(element: Element): SEpisode = throw UnsupportedOperationException()
 
-    // ====================== MyVidPlay Extractor (Inner Class) with Logging ======================
+    // ====================== MyVidPlay Extractor (Inner Class) with Improved Fallbacks ======================
     private inner class MyVidPlayExtractor(private val client: okhttp3.OkHttpClient) {
 
         private val random = Random()
@@ -459,26 +459,32 @@ class Xmovix : ParsedAnimeHttpSource() {
                 val newUrl = response.request.url.toString()
                 val host = getBaseUrl(newUrl)
                 val html = response.body.string()
-                Log.d(tag, "Page HTML snippet: ${html.take(500)}")
+                Log.d(tag, "Page HTML snippet (first 2000 chars): ${html.take(2000)}")
 
                 if (!html.contains("/pass_md5/")) {
                     Log.e(tag, "HTML does not contain /pass_md5/")
                     return null
                 }
 
-                val token = extractToken(html)
+                // Extract token from URL parameter or from pass_md5 path
+                var token = extractToken(html)
+                if (token == null) {
+                    Log.d(tag, "Token not found via parameter, trying from pass_md5 path")
+                    token = extractTokenFromPath(html)
+                }
                 Log.d(tag, "Extracted token: $token")
                 if (token == null) {
                     Log.e(tag, "Token not found")
                     return null
                 }
 
-                val expiry = extractExpiry(html)
-                Log.d(tag, "Extracted expiry: $expiry")
+                // Extract expiry (if not found, use current time as fallback)
+                var expiry = extractExpiry(html)
                 if (expiry == null) {
-                    Log.e(tag, "Expiry not found")
-                    return null
+                    Log.d(tag, "Expiry not found in HTML, using current time as fallback")
+                    expiry = System.currentTimeMillis().toString()
                 }
+                Log.d(tag, "Using expiry: $expiry")
 
                 val passPath = extractPassPath(html)
                 Log.d(tag, "Extracted passPath: $passPath")
@@ -528,19 +534,27 @@ class Xmovix : ParsedAnimeHttpSource() {
 
         private fun extractToken(html: String): String? {
             val tokenRegex = """token=([^&"'\\s]+)""".toRegex()
-            tokenRegex.find(html)?.groupValues?.get(1)?.let { return it }
+            return tokenRegex.find(html)?.groupValues?.get(1)
+        }
 
-            val md5Regex = """/pass_md5/([^'"]+)""".toRegex()
-            md5Regex.find(html)?.groupValues?.get(1)?.let { path ->
-                val parts = path.split('/')
-                if (parts.size >= 2) return parts[1]
-            }
+        private fun extractTokenFromPath(html: String): String? {
+            val passRegex = """\.get\('(/pass_md5/([^/']+))""".toRegex()
+            passRegex.find(html)?.groupValues?.get(2)?.let { return it }
+
+            val fallbackRegex = """['"]/pass_md5/([^'"/]+)""".toRegex()
+            fallbackRegex.find(html)?.groupValues?.get(1)?.let { return it }
+
             return null
         }
 
         private fun extractExpiry(html: String): String? {
             val expiryRegex = """expiry=(\d+)""".toRegex()
-            return expiryRegex.find(html)?.groupValues?.get(1)
+            expiryRegex.find(html)?.groupValues?.get(1)?.let { return it }
+
+            val jsonExpiry = """"expiry":\s*(\d+)""".toRegex()
+            jsonExpiry.find(html)?.groupValues?.get(1)?.let { return it }
+
+            return null
         }
 
         private fun extractPassPath(html: String): String? {
