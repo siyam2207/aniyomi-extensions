@@ -10,12 +10,11 @@ import java.util.Random
 
 class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: Headers) {
 
-    private val playlistUtils by lazy { PlaylistUtils(client, headers) }
     private val random = Random()
 
     fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
-        // Base headers that match the Python script
-        val baseHeaders = headers.newBuilder()
+        // Base headers that match the Python script exactly
+        val baseHeaders = Headers.Builder()
             .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
             .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
             .set("Accept-Language", "en-US,en;q=0.5")
@@ -56,13 +55,16 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
         // Step 5: Build final URL
         val finalUrl = "$baseVideoUrl$suffix?token=$token&expiry=$expiry"
 
-        // Step 6: Prepare video headers (include cookies from session, if any)
-        val videoHeaders = baseHeaders.newBuilder()
+        // Step 6: Prepare video headers (same as Python streamer – only Referer)
+        val videoHeaders = Headers.Builder()
             .set("Referer", url)
             .build()
 
+        // Use a fresh PlaylistUtils with the same client and these videoHeaders
+        val playlistUtils = PlaylistUtils(client, videoHeaders)
+
         return if (finalUrl.contains(".m3u8")) {
-            // Use PlaylistUtils with the same headers for all requests
+            // Extract HLS with consistent headers for all requests
             playlistUtils.extractFromHls(
                 playlistUrl = finalUrl,
                 referer = url,
