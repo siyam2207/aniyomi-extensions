@@ -24,7 +24,8 @@ class Xmovix : ParsedAnimeHttpSource() {
     override val supportsLatest = true
 
     // Initialize only MyVidPlayExtractor (same package, no import needed)
-    private val myVidPlayExtractor by lazy { MyVidPlayExtractor(client, headers) }
+    // FIXED: removed the extra 'headers' argument
+    private val myVidPlayExtractor by lazy { MyVidPlayExtractor(client) }
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
         .add("User-Agent", "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36")
