@@ -16,6 +16,9 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
+// Import only MyVidPlayExtractor (FilmCdmExtractor removed)
+import eu.kanade.tachiyomi.animeextension.en.xmovix.MyVidPlayExtractor
+
 class Xmovix : ParsedAnimeHttpSource() {
 
     override val name = "Xmovix"
@@ -23,9 +26,8 @@ class Xmovix : ParsedAnimeHttpSource() {
     override val lang = "en"
     override val supportsLatest = true
 
-    // Initialize extractors (same package, no imports needed)
+    // Initialize only MyVidPlayExtractor
     private val myVidPlayExtractor by lazy { MyVidPlayExtractor(client, headers) }
-    private val filmCdmExtractor by lazy { FilmCdmExtractor(client, headers) }
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
         .add("User-Agent", "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36")
@@ -393,14 +395,13 @@ class Xmovix : ParsedAnimeHttpSource() {
             return listOf(Video(videoUrl, "Default", videoUrl))
         }
 
-        // Delegate to extractors (same package, accessible without imports)
+        // Delegate to MyVidPlayExtractor only
         embedUrls.forEach { url ->
-            val videos = when {
-                url.contains("myvidplay.com") -> myVidPlayExtractor.videosFromUrl(url, "MyVidPlay")
-                url.contains("filmcdm.top") -> filmCdmExtractor.videosFromUrl(url, "FilmCdm")
-                else -> emptyList()
+            if (url.contains("myvidplay.com")) {
+                val videos = myVidPlayExtractor.videosFromUrl(url, "MyVidPlay")
+                videoList.addAll(videos)
             }
-            videoList.addAll(videos)
+            // filmcdm.top is intentionally ignored
         }
 
         return videoList
