@@ -14,8 +14,8 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
     private val random = Random()
 
     fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
-        // Use a custom headers builder that matches the Python script
-        val customHeaders = headers.newBuilder()
+        // Base headers that match the Python script
+        val baseHeaders = headers.newBuilder()
             .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
             .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
             .set("Accept-Language", "en-US,en;q=0.5")
@@ -23,16 +23,19 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
             .set("DNT", "1")
             .build()
 
-        val document = client.newCall(GET(url, customHeaders)).execute().asJsoup()
+        // Step 1: Load the embed page
+        val document = client.newCall(GET(url, baseHeaders)).execute().asJsoup()
         val html = document.html()
 
+        // Step 2: Extract token and expiry
         val token = extractToken(html) ?: return emptyList()
         val expiry = extractExpiry(html) ?: return emptyList()
 
+        // Step 3: Find pass_md5 endpoint and call it
         val passPath = extractPassPath(html) ?: return emptyList()
         val passUrl = "https://myvidplay.com$passPath"
 
-        val ajaxHeaders = customHeaders.newBuilder()
+        val ajaxHeaders = baseHeaders.newBuilder()
             .set("Referer", url)
             .set("X-Requested-With", "XMLHttpRequest")
             .build()
@@ -47,17 +50,28 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
             return emptyList()
         }
 
+        // Step 4: Generate random suffix (10 chars)
         val suffix = generateRandomString(10)
+
+        // Step 5: Build final URL
         val finalUrl = "$baseVideoUrl$suffix?token=$token&expiry=$expiry"
 
+        // Step 6: Prepare video headers (include cookies from session, if any)
+        val videoHeaders = baseHeaders.newBuilder()
+            .set("Referer", url)
+            .build()
+
         return if (finalUrl.contains(".m3u8")) {
+            // Use PlaylistUtils with the same headers for all requests
             playlistUtils.extractFromHls(
                 playlistUrl = finalUrl,
                 referer = url,
+                masterHeadersGen = { _, _ -> videoHeaders },
+                videoHeadersGen = { _, _, _ -> videoHeaders },
                 videoNameGen = { quality -> "${prefix}MyVidPlay - $quality" },
             )
         } else {
-            listOf(Video(finalUrl, "${prefix}MyVidPlay", finalUrl, customHeaders))
+            listOf(Video(finalUrl, "${prefix}MyVidPlay", finalUrl, videoHeaders))
         }
     }
 
