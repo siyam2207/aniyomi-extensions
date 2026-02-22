@@ -8,33 +8,31 @@ import okhttp3.Headers
 import okhttp3.OkHttpClient
 import java.util.Random
 
-/**
- * Extractor for myvidplay.com embeds.
- *
- * Based on the Python downloader logic:
- * 1. Fetch embed page, extract token and expiry.
- * 2. Find the pass_md5 endpoint and call it to get base video URL.
- * 3. Append random suffix, token, and expiry to construct final URL.
- */
 class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: Headers) {
 
     private val playlistUtils by lazy { PlaylistUtils(client, headers) }
     private val random = Random()
 
     fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
-        // Step 1: Load the embed page
-        val document = client.newCall(GET(url, headers)).execute().asJsoup()
+        // Use a custom headers builder that matches the Python script
+        val customHeaders = headers.newBuilder()
+            .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
+            .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+            .set("Accept-Language", "en-US,en;q=0.5")
+            .set("Referer", "https://myvidplay.com/")
+            .set("DNT", "1")
+            .build()
+
+        val document = client.newCall(GET(url, customHeaders)).execute().asJsoup()
         val html = document.html()
 
-        // Step 2: Extract token and expiry
         val token = extractToken(html) ?: return emptyList()
         val expiry = extractExpiry(html) ?: return emptyList()
 
-        // Step 3: Find pass_md5 endpoint and call it
         val passPath = extractPassPath(html) ?: return emptyList()
         val passUrl = "https://myvidplay.com$passPath"
 
-        val ajaxHeaders = headers.newBuilder()
+        val ajaxHeaders = customHeaders.newBuilder()
             .set("Referer", url)
             .set("X-Requested-With", "XMLHttpRequest")
             .build()
@@ -49,13 +47,9 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
             return emptyList()
         }
 
-        // Step 4: Generate random suffix (10 chars)
         val suffix = generateRandomString(10)
-
-        // Step 5: Build final URL
         val finalUrl = "$baseVideoUrl$suffix?token=$token&expiry=$expiry"
 
-        // Step 6: Return as video (or HLS playlist)
         return if (finalUrl.contains(".m3u8")) {
             playlistUtils.extractFromHls(
                 playlistUrl = finalUrl,
@@ -63,16 +57,14 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
                 videoNameGen = { quality -> "${prefix}MyVidPlay - $quality" },
             )
         } else {
-            listOf(Video(finalUrl, "${prefix}MyVidPlay", finalUrl, headers))
+            listOf(Video(finalUrl, "${prefix}MyVidPlay", finalUrl, customHeaders))
         }
     }
 
     private fun extractToken(html: String): String? {
-        // Look for token in URL parameters (e.g., ?token=...)
         val tokenRegex = """token=([^&"'\\s]+)""".toRegex()
         tokenRegex.find(html)?.groupValues?.get(1)?.let { return it }
 
-        // Fallback: inside pass_md5 path (e.g., /pass_md5/abc123/token)
         val passMd5Regex = """\.get\('/pass_md5/([^']+)'""".toRegex()
         passMd5Regex.find(html)?.groupValues?.get(1)?.let { path ->
             val parts = path.split('/')
@@ -87,11 +79,9 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
     }
 
     private fun extractPassPath(html: String): String? {
-        // e.g., .get('/pass_md5/abc123')
         val passRegex = """\.get\('(/pass_md5/[^']+)'""".toRegex()
         passRegex.find(html)?.groupValues?.get(1)?.let { return it }
 
-        // Fallback: "/pass_md5/abc123" inside a string
         val fallbackRegex = """['"]/pass_md5/([^'"]+)['"]""".toRegex()
         fallbackRegex.find(html)?.groupValues?.get(0)?.let { return it }
         return null
