@@ -4,10 +4,10 @@ import android.util.Log
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import org.jsoup.Jsoup
 import java.util.Random
 
 class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: Headers) {
@@ -28,7 +28,7 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
         // 2. Load embed page
         val embedResponse = client.newCall(GET(url, baseHeaders)).execute()
         val html = embedResponse.body.string()
-        val document = org.jsoup.Jsoup.parse(html)
+        val document = Jsoup.parse(html)
 
         // Optional: log cookies received
         embedResponse.header("set-cookie")?.let { Log.d(tag, "Cookies from embed: $it") }
