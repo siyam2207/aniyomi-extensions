@@ -75,9 +75,10 @@ class FilmCdmExtractor(private val client: OkHttpClient, private val headers: He
 
         if (masterUrl.isNullOrBlank()) return emptyList()
 
-        // Build headers with cookies and referer
+        // Build headers with cookies, referer, and origin (as seen in Python script)
         val videoHeaders = headers.newBuilder()
             .set("Referer", url)
+            .set("Origin", "https://filmcdm.top")
             .apply {
                 if (cookies.isNotBlank()) {
                     set("Cookie", cookies)
@@ -87,9 +88,12 @@ class FilmCdmExtractor(private val client: OkHttpClient, private val headers: He
 
         val playlistUtils = PlaylistUtils(client, videoHeaders)
 
+        // Ensure headers are used for all requests (master playlist and segments)
         return playlistUtils.extractFromHls(
             playlistUrl = masterUrl,
             referer = url,
+            masterHeadersGen = { _, _ -> videoHeaders },
+            videoHeadersGen = { _, _, _ -> videoHeaders },
             videoNameGen = { quality -> "${prefix}FilmCdm - $quality" },
         )
     }
