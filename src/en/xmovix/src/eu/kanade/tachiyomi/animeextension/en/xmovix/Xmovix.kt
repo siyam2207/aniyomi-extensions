@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.en.xmovix
 
+import android.util.Log
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -384,8 +385,11 @@ class Xmovix : ParsedAnimeHttpSource() {
             match.forEach { embedUrls.add(it.groupValues[1]) }
         }
 
+        Log.d("Xmovix", "Found embed URLs: $embedUrls")
+
         // Fallback to direct video/iframe if no s2.src found
         if (embedUrls.isEmpty()) {
+            Log.d("Xmovix", "No s2.src found, falling back to direct video/iframe")
             val videoSrc = document.selectFirst("video source[src]")?.attr("src")
                 ?: document.selectFirst("video[src]")?.attr("src")
                 ?: document.selectFirst("iframe[src*='player']")?.attr("src")
@@ -397,7 +401,13 @@ class Xmovix : ParsedAnimeHttpSource() {
         // Delegate to MyVidPlayExtractor only
         embedUrls.forEach { url ->
             if (url.contains("myvidplay.com")) {
+                Log.d("Xmovix", "Processing myvidplay.com URL: $url")
                 val videos = myVidPlayExtractor.videosFromUrl(url, "MyVidPlay")
+                if (videos.isNotEmpty()) {
+                    Log.d("Xmovix", "Extractor returned ${videos.size} videos")
+                } else {
+                    Log.e("Xmovix", "Extractor returned no videos for $url")
+                }
                 videoList.addAll(videos)
             }
             // filmcdm.top is intentionally ignored
@@ -422,10 +432,11 @@ class Xmovix : ParsedAnimeHttpSource() {
     override fun episodeListSelector(): String = throw UnsupportedOperationException()
     override fun episodeFromElement(element: Element): SEpisode = throw UnsupportedOperationException()
 
-    // ====================== MyVidPlay Extractor (Inner Class) ======================
+    // ====================== MyVidPlay Extractor (Inner Class) with Logging ======================
     private inner class MyVidPlayExtractor(private val client: okhttp3.OkHttpClient) {
 
         private val random = Random()
+        private val tag = "MyVidPlayExtractor"
 
         fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
             val video = videoFromUrl(url, prefix)
@@ -434,7 +445,8 @@ class Xmovix : ParsedAnimeHttpSource() {
 
         private fun videoFromUrl(url: String, prefix: String = ""): Video? {
             return runCatching {
-                // Headers exactly as in Python script
+                Log.d(tag, "Starting extraction for: $url")
+
                 val embedHeaders = Headers.Builder()
                     .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
                     .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
@@ -447,13 +459,36 @@ class Xmovix : ParsedAnimeHttpSource() {
                 val newUrl = response.request.url.toString()
                 val host = getBaseUrl(newUrl)
                 val html = response.body.string()
-                if (!html.contains("/pass_md5/")) return null
+                Log.d(tag, "Page HTML snippet: ${html.take(500)}")
 
-                val token = extractToken(html) ?: return null
-                val expiry = extractExpiry(html) ?: return null
+                if (!html.contains("/pass_md5/")) {
+                    Log.e(tag, "HTML does not contain /pass_md5/")
+                    return null
+                }
 
-                val passPath = extractPassPath(html) ?: return null
+                val token = extractToken(html)
+                Log.d(tag, "Extracted token: $token")
+                if (token == null) {
+                    Log.e(tag, "Token not found")
+                    return null
+                }
+
+                val expiry = extractExpiry(html)
+                Log.d(tag, "Extracted expiry: $expiry")
+                if (expiry == null) {
+                    Log.e(tag, "Expiry not found")
+                    return null
+                }
+
+                val passPath = extractPassPath(html)
+                Log.d(tag, "Extracted passPath: $passPath")
+                if (passPath == null) {
+                    Log.e(tag, "pass_md5 path not found")
+                    return null
+                }
+
                 val passUrl = "$host$passPath"
+                Log.d(tag, "passUrl: $passUrl")
 
                 val ajaxHeaders = Headers.Builder()
                     .set("User-Agent", embedHeaders["User-Agent"]!!)
@@ -463,10 +498,16 @@ class Xmovix : ParsedAnimeHttpSource() {
 
                 val passResponse = client.newCall(GET(passUrl, ajaxHeaders)).execute()
                 val baseVideoUrl = passResponse.body.string().trim()
-                if (baseVideoUrl == "RELOAD") return null
+                Log.d(tag, "Base video URL: $baseVideoUrl")
+
+                if (baseVideoUrl == "RELOAD") {
+                    Log.e(tag, "Server requested RELOAD")
+                    return null
+                }
 
                 val randomString = createRandomString(10)
                 val finalUrl = "$baseVideoUrl$randomString?token=$token&expiry=$expiry"
+                Log.d(tag, "Final URL: $finalUrl")
 
                 val videoHeaders = Headers.Builder()
                     .set("User-Agent", embedHeaders["User-Agent"]!!)
@@ -477,7 +518,11 @@ class Xmovix : ParsedAnimeHttpSource() {
                 val quality = extractQuality(html) ?: "MP4"
                 val videoName = if (prefix.isNotEmpty()) "$prefix MyVidPlay" else "MyVidPlay"
 
+                Log.d(tag, "Returning Video object with URL: $finalUrl, quality: $quality")
+
                 Video(finalUrl, "$videoName - $quality", finalUrl, videoHeaders)
+            }.onFailure { e ->
+                Log.e(tag, "Exception in videoFromUrl", e)
             }.getOrNull()
         }
 
