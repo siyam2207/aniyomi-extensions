@@ -1,18 +1,21 @@
 package eu.kanade.tachiyomi.animeextension.en.xmovix
 
+import android.util.Log
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import java.util.Random
 
 class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: Headers) {
 
     private val random = Random()
+    private val tag = "MyVidPlayExtractor"
 
     fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
-        // 1. Load embed page with headers matching Python script
-        val embedHeaders = Headers.Builder()
+        // Headers exactly as in Python script
+        val baseHeaders = Headers.Builder()
             .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
             .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
             .set("Accept-Language", "en-US,en;q=0.5")
@@ -20,52 +23,78 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
             .set("DNT", "1")
             .build()
 
-        val embedResponse = client.newCall(GET(url, embedHeaders)).execute()
+        Log.d(tag, "Fetching embed URL: $url")
+        val embedResponse = client.newCall(GET(url, baseHeaders)).execute()
         val html = embedResponse.body.string()
+        embedResponse.close()
 
-        // 2. Extract token and expiry
-        val token = extractToken(html) ?: return emptyList()
-        val expiry = extractExpiry(html) ?: return emptyList()
+        // Log a snippet of HTML
+        Log.d(tag, "HTML snippet: ${html.take(500)}")
 
-        // 3. Find pass_md5 path (like DoodExtractor)
-        val passPath = extractPassPath(html) ?: return emptyList()
+        val token = extractToken(html)
+        Log.d(tag, "Extracted token: $token")
+        if (token == null) {
+            Log.e(tag, "Token not found")
+            return emptyList()
+        }
+
+        val expiry = extractExpiry(html)
+        Log.d(tag, "Extracted expiry: $expiry")
+        if (expiry == null) {
+            Log.e(tag, "Expiry not found")
+            return emptyList()
+        }
+
+        val passPath = extractPassPath(html)
+        Log.d(tag, "Extracted passPath: $passPath")
+        if (passPath == null) {
+            Log.e(tag, "pass_md5 path not found")
+            return emptyList()
+        }
+
         val passUrl = "https://myvidplay.com$passPath"
+        Log.d(tag, "Pass URL: $passUrl")
 
-        // 4. Request pass_md5 to get base video URL
-        val ajaxHeaders = embedHeaders.newBuilder()
+        val ajaxHeaders = baseHeaders.newBuilder()
             .set("Referer", url)
             .set("X-Requested-With", "XMLHttpRequest")
             .build()
 
-        val passResponse = client.newCall(GET(passUrl, ajaxHeaders)).execute()
-        val baseVideoUrl = passResponse.body.string().trim()
-        if (baseVideoUrl == "RELOAD") return emptyList()
+        val ajaxResponse = client.newCall(GET(passUrl, ajaxHeaders)).execute()
+        val baseVideoUrl = ajaxResponse.body.string().trim()
+        ajaxResponse.close()
+        Log.d(tag, "Base video URL: $baseVideoUrl")
 
-        // 5. Generate random suffix (same as DoodExtractor's createHashTable)
-        val randomString = generateRandomString(10)
+        if (baseVideoUrl == "RELOAD") {
+            Log.e(tag, "Server requested RELOAD")
+            return emptyList()
+        }
 
-        // 6. Construct final video URL
-        val finalUrl = "$baseVideoUrl$randomString?token=$token&expiry=$expiry"
+        val suffix = generateRandomString(10)
+        val finalUrl = "$baseVideoUrl$suffix?token=$token&expiry=$expiry"
+        Log.d(tag, "Final URL: $finalUrl")
 
-        // 7. Build headers for video request (include Referer and any cookies)
-        val videoHeaders = Headers.Builder()
-            .set("User-Agent", embedHeaders["User-Agent"]!!)
-            .set("Accept", embedHeaders["Accept"]!!)
-            .set("Accept-Language", embedHeaders["Accept-Language"]!!)
+        // Prepare video headers (same as baseHeaders but with Referer set to embed URL)
+        val videoHeaders = baseHeaders.newBuilder()
             .set("Referer", url)
-            .set("DNT", "1")
             .build()
 
-        // 8. Return as a single video (the URL is typically a direct stream or HLS playlist)
+        // Also try to add cookies from client's cookie jar
+        val cookies = client.cookieJar.loadForRequest(url.toHttpUrl())
+        if (cookies.isNotEmpty()) {
+            val cookieStr = cookies.joinToString("; ") { "${it.name}=${it.value}" }
+            videoHeaders.newBuilder().set("Cookie", cookieStr).build()
+            Log.d(tag, "Added cookies: $cookieStr")
+        }
+
+        // Return as a single video (it's likely a direct mp4)
         return listOf(Video(finalUrl, "${prefix}MyVidPlay", finalUrl, videoHeaders))
     }
 
     private fun extractToken(html: String): String? {
-        // First try: token in URL parameters
         val tokenRegex = """token=([^&"'\\s]+)""".toRegex()
         tokenRegex.find(html)?.groupValues?.get(1)?.let { return it }
 
-        // Second try: from pass_md5 path (like DoodExtractor)
         val md5Regex = """/pass_md5/([^'"]+)""".toRegex()
         md5Regex.find(html)?.groupValues?.get(1)?.let { path ->
             val parts = path.split('/')
@@ -80,13 +109,11 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
     }
 
     private fun extractPassPath(html: String): String? {
-        // Match .get('/pass_md5/...') or "/pass_md5/..." in strings
-        val passRegex = """['"]/pass_md5/([^'"]+)['"]""".toRegex()
-        passRegex.find(html)?.groupValues?.get(0)?.let { return it }
+        val passRegex = """\.get\('(/pass_md5/[^']+)'""".toRegex()
+        passRegex.find(html)?.groupValues?.get(1)?.let { return it }
 
-        // Fallback: direct path in JavaScript
-        val directRegex = """/pass_md5/[^'"\s]+""".toRegex()
-        directRegex.find(html)?.value?.let { return it }
+        val fallbackRegex = """['"]/pass_md5/([^'"]+)['"]""".toRegex()
+        fallbackRegex.find(html)?.groupValues?.get(0)?.let { return it }
 
         return null
     }
