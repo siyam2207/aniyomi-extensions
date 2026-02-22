@@ -15,6 +15,8 @@ import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import java.net.URI
+import java.util.Random
 
 class Xmovix : ParsedAnimeHttpSource() {
 
@@ -23,8 +25,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override val lang = "en"
     override val supportsLatest = true
 
-    // Initialize only MyVidPlayExtractor (same package, no import needed)
-    // FIXED: removed the extra 'headers' argument
+    // Initialize the inner extractor
     private val myVidPlayExtractor by lazy { MyVidPlayExtractor(client) }
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
@@ -420,4 +421,111 @@ class Xmovix : ParsedAnimeHttpSource() {
     override fun searchAnimeNextPageSelector(): String? = throw UnsupportedOperationException()
     override fun episodeListSelector(): String = throw UnsupportedOperationException()
     override fun episodeFromElement(element: Element): SEpisode = throw UnsupportedOperationException()
+
+    // ====================== MyVidPlay Extractor (Inner Class) ======================
+    private inner class MyVidPlayExtractor(private val client: okhttp3.OkHttpClient) {
+
+        private val random = Random()
+
+        fun videosFromUrl(url: String, prefix: String = ""): List<Video> {
+            val video = videoFromUrl(url, prefix)
+            return video?.let(::listOf) ?: emptyList()
+        }
+
+        private fun videoFromUrl(url: String, prefix: String = ""): Video? {
+            return runCatching {
+                // Headers exactly as in Python script
+                val embedHeaders = Headers.Builder()
+                    .set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
+                    .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                    .set("Accept-Language", "en-US,en;q=0.5")
+                    .set("Referer", "https://myvidplay.com/")
+                    .set("DNT", "1")
+                    .build()
+
+                val response = client.newCall(GET(url, embedHeaders)).execute()
+                val newUrl = response.request.url.toString()
+                val host = getBaseUrl(newUrl)
+                val html = response.body.string()
+                if (!html.contains("/pass_md5/")) return null
+
+                val token = extractToken(html) ?: return null
+                val expiry = extractExpiry(html) ?: return null
+
+                val passPath = extractPassPath(html) ?: return null
+                val passUrl = "$host$passPath"
+
+                val ajaxHeaders = Headers.Builder()
+                    .set("User-Agent", embedHeaders["User-Agent"]!!)
+                    .set("Referer", url)
+                    .set("X-Requested-With", "XMLHttpRequest")
+                    .build()
+
+                val passResponse = client.newCall(GET(passUrl, ajaxHeaders)).execute()
+                val baseVideoUrl = passResponse.body.string().trim()
+                if (baseVideoUrl == "RELOAD") return null
+
+                val randomString = createRandomString(10)
+                val finalUrl = "$baseVideoUrl$randomString?token=$token&expiry=$expiry"
+
+                val videoHeaders = Headers.Builder()
+                    .set("User-Agent", embedHeaders["User-Agent"]!!)
+                    .set("Referer", url)
+                    .set("Accept", "*/*")
+                    .build()
+
+                val quality = extractQuality(html) ?: "MP4"
+                val videoName = if (prefix.isNotEmpty()) "$prefix MyVidPlay" else "MyVidPlay"
+
+                Video(finalUrl, "$videoName - $quality", finalUrl, videoHeaders)
+            }.getOrNull()
+        }
+
+        private fun extractToken(html: String): String? {
+            val tokenRegex = """token=([^&"'\\s]+)""".toRegex()
+            tokenRegex.find(html)?.groupValues?.get(1)?.let { return it }
+
+            val md5Regex = """/pass_md5/([^'"]+)""".toRegex()
+            md5Regex.find(html)?.groupValues?.get(1)?.let { path ->
+                val parts = path.split('/')
+                if (parts.size >= 2) return parts[1]
+            }
+            return null
+        }
+
+        private fun extractExpiry(html: String): String? {
+            val expiryRegex = """expiry=(\d+)""".toRegex()
+            return expiryRegex.find(html)?.groupValues?.get(1)
+        }
+
+        private fun extractPassPath(html: String): String? {
+            val passRegex = """\.get\('(/pass_md5/[^']+)'""".toRegex()
+            passRegex.find(html)?.groupValues?.get(1)?.let { return it }
+
+            val fallbackRegex = """['"]/pass_md5/([^'"]+)['"]""".toRegex()
+            fallbackRegex.find(html)?.groupValues?.get(0)?.let { return it }
+
+            return null
+        }
+
+        private fun extractQuality(html: String): String? {
+            return Regex("\\d{3,4}p")
+                .find(html.substringAfter("<title>").substringBefore("</title>"))
+                ?.groupValues
+                ?.getOrNull(0)
+        }
+
+        private fun getBaseUrl(url: String): String {
+            return URI(url).let {
+                "${it.scheme}://${it.host}"
+            }
+        }
+
+        private fun createRandomString(length: Int): String {
+            val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+            return (1..length)
+                .map { chars[random.nextInt(chars.length)] }
+                .joinToString("")
+        }
+    }
 }
