@@ -74,27 +74,30 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
         val finalUrl = "$baseVideoUrl$suffix?token=$token&expiry=$expiry"
         Log.d(tag, "Final URL: $finalUrl")
 
-        // Prepare video headers (same as baseHeaders but with Referer set to embed URL)
+        // Prepare video headers – include all original headers + Referer + cookies
         val videoHeaders = baseHeaders.newBuilder()
             .set("Referer", url)
+            .apply {
+                // Add cookies from client's cookie jar (OkHttp automatically handles them, but we include explicitly)
+                val cookies = client.cookieJar.loadForRequest(url.toHttpUrl())
+                if (cookies.isNotEmpty()) {
+                    val cookieStr = cookies.joinToString("; ") { "${it.name}=${it.value}" }
+                    set("Cookie", cookieStr)
+                    Log.d(tag, "Added cookies: $cookieStr")
+                }
+            }
             .build()
 
-        // Also try to add cookies from client's cookie jar
-        val cookies = client.cookieJar.loadForRequest(url.toHttpUrl())
-        if (cookies.isNotEmpty()) {
-            val cookieStr = cookies.joinToString("; ") { "${it.name}=${it.value}" }
-            videoHeaders.newBuilder().set("Cookie", cookieStr).build()
-            Log.d(tag, "Added cookies: $cookieStr")
-        }
-
-        // Return as a single video (it's likely a direct mp4)
+        // Return as a single video (the URL is a direct mp4, as seen in network logs)
         return listOf(Video(finalUrl, "${prefix}MyVidPlay", finalUrl, videoHeaders))
     }
 
     private fun extractToken(html: String): String? {
+        // Python regex: token=([^&"']+)
         val tokenRegex = """token=([^&"'\\s]+)""".toRegex()
         tokenRegex.find(html)?.groupValues?.get(1)?.let { return it }
 
+        // Fallback: from pass_md5 path (like DoodExtractor)
         val md5Regex = """/pass_md5/([^'"]+)""".toRegex()
         md5Regex.find(html)?.groupValues?.get(1)?.let { path ->
             val parts = path.split('/')
@@ -109,9 +112,11 @@ class MyVidPlayExtractor(private val client: OkHttpClient, private val headers: 
     }
 
     private fun extractPassPath(html: String): String? {
+        // Python: \.get\('(/pass_md5/[^']+)'
         val passRegex = """\.get\('(/pass_md5/[^']+)'""".toRegex()
         passRegex.find(html)?.groupValues?.get(1)?.let { return it }
 
+        // Fallback: "/pass_md5/..." inside quotes
         val fallbackRegex = """['"]/pass_md5/([^'"]+)['"]""".toRegex()
         fallbackRegex.find(html)?.groupValues?.get(0)?.let { return it }
 
