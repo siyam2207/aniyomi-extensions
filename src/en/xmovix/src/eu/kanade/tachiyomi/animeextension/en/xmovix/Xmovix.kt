@@ -432,7 +432,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override fun episodeListSelector(): String = throw UnsupportedOperationException()
     override fun episodeFromElement(element: Element): SEpisode = throw UnsupportedOperationException()
 
-    // ====================== MyVidPlay Extractor (Inner Class) with Improved Fallbacks ======================
+    // ====================== MyVidPlay Extractor (Inner Class) with Correct Token Extraction ======================
     private inner class MyVidPlayExtractor(private val client: okhttp3.OkHttpClient) {
 
         private val random = Random()
@@ -466,7 +466,7 @@ class Xmovix : ParsedAnimeHttpSource() {
                     return null
                 }
 
-                // Extract token from URL parameter or from pass_md5 path
+                // Extract token from URL parameter (e.g., ?token=...)
                 var token = extractToken(html)
                 if (token == null) {
                     Log.d(tag, "Token not found via parameter, trying from pass_md5 path")
@@ -478,11 +478,11 @@ class Xmovix : ParsedAnimeHttpSource() {
                     return null
                 }
 
-                // Extract expiry (if not found, use current time as fallback)
+                // Extract expiry – if not found, use "None" (Python script uses None)
                 var expiry = extractExpiry(html)
                 if (expiry == null) {
-                    Log.d(tag, "Expiry not found in HTML, using current time as fallback")
-                    expiry = System.currentTimeMillis().toString()
+                    Log.d(tag, "Expiry not found in HTML, using 'None' as fallback (server accepts this)")
+                    expiry = "None"
                 }
                 Log.d(tag, "Using expiry: $expiry")
 
@@ -538,12 +538,23 @@ class Xmovix : ParsedAnimeHttpSource() {
         }
 
         private fun extractTokenFromPath(html: String): String? {
-            val passRegex = """\.get\('(/pass_md5/([^/']+))""".toRegex()
-            passRegex.find(html)?.groupValues?.get(2)?.let { return it }
-
-            val fallbackRegex = """['"]/pass_md5/([^'"/]+)""".toRegex()
-            fallbackRegex.find(html)?.groupValues?.get(1)?.let { return it }
-
+            // Find the whole path after /pass_md5/ up to the closing quote
+            val pathRegex = """\.get\('(/pass_md5/[^']+)'""".toRegex()
+            pathRegex.find(html)?.groupValues?.get(1)?.let { fullPath ->
+                val parts = fullPath.split('/')
+                if (parts.size >= 3) {
+                    // The token is the last segment
+                    return parts.last()
+                }
+            }
+            // Fallback: look for "/pass_md5/..." inside quotes
+            val fallbackRegex = """['"]/pass_md5/([^'"]+)['"]""".toRegex()
+            fallbackRegex.find(html)?.groupValues?.get(1)?.let { fullPath ->
+                val parts = fullPath.split('/')
+                if (parts.size >= 3) {
+                    return parts.last()
+                }
+            }
             return null
         }
 
