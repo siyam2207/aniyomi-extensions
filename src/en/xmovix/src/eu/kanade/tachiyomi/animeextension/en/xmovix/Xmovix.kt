@@ -432,7 +432,7 @@ class Xmovix : ParsedAnimeHttpSource() {
     override fun episodeListSelector(): String = throw UnsupportedOperationException()
     override fun episodeFromElement(element: Element): SEpisode = throw UnsupportedOperationException()
 
-    // ====================== MyVidPlay Extractor (Inner Class) with Full Headers ======================
+    // ====================== MyVidPlay Extractor (Inner Class) with Correct Token Extraction ======================
     private inner class MyVidPlayExtractor(private val client: okhttp3.OkHttpClient) {
 
         private val random = Random()
@@ -515,26 +515,11 @@ class Xmovix : ParsedAnimeHttpSource() {
                 val finalUrl = "$baseVideoUrl$randomString?token=$token&expiry=$expiry"
                 Log.d(tag, "Final URL: $finalUrl")
 
-                // Build video headers with all original headers + Referer + cookies
-                val videoHeadersBuilder = Headers.Builder()
+                val videoHeaders = Headers.Builder()
                     .set("User-Agent", embedHeaders["User-Agent"]!!)
-                    .set("Accept", embedHeaders["Accept"]!!)
-                    .set("Accept-Language", embedHeaders["Accept-Language"]!!)
                     .set("Referer", url)
-                    .set("DNT", "1")
-                    .set("Accept-Encoding", "gzip, deflate, zstd")
-                    .set("Connection", "keep-alive")
-
-                // Add cookies from client's cookie jar
-                val cookies = client.cookieJar.loadForRequest(url.toHttpUrl())
-                if (cookies.isNotEmpty()) {
-                    val cookieStr = cookies.joinToString("; ") { "${it.name}=${it.value}" }
-                    videoHeadersBuilder.set("Cookie", cookieStr)
-                    Log.d(tag, "Added cookies: $cookieStr")
-                }
-
-                val videoHeaders = videoHeadersBuilder.build()
-                Log.d(tag, "Video headers: $videoHeaders")
+                    .set("Accept", "*/*")
+                    .build()
 
                 val quality = extractQuality(html) ?: "MP4"
                 val videoName = if (prefix.isNotEmpty()) "$prefix MyVidPlay" else "MyVidPlay"
