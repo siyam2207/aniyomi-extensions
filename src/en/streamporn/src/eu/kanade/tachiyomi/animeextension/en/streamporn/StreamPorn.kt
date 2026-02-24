@@ -120,7 +120,7 @@ class StreamPorn : AnimeHttpSource() {
             }
 
             val url = link.attr("abs:href")
-            val title = link.text().trim()  // gets full text including the count, but that's fine
+            val title = link.text().trim() // gets full text including the count, but that's fine
             Log.d("StreamPorn", "Item $index: title='$title', url='$url'")
 
             if (title.isBlank() || url.isBlank()) {
