@@ -38,6 +38,54 @@ class StreamPorn : AnimeHttpSource() {
 
     override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
+        return parseMovies(document)
+    }
+
+    // ========== LATEST UPDATES ==========
+    override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/movies/page/$page/", headers)
+    override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+
+    // ========== SEARCH & SECTION BROWSING ==========
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        val section = filters.find { it is SectionFilter } as? SectionFilter
+        val path = section?.getPath() ?: ""
+
+        // 🔥 STUDIOS BROWSING
+        if (path == "studios") {
+            val url = if (page > 1) {
+                "$baseUrl/studios/page/$page/"
+            } else {
+                "$baseUrl/studios/"
+            }
+            return GET(url, headers)
+        }
+
+        // 🔎 NORMAL SEARCH (with query)
+        if (query.isNotBlank()) {
+            return GET("$baseUrl/?s=$query&page=$page", headers)
+        }
+
+        // REGULAR SECTION (Movies, Most Viewed, Most Rating)
+        val url = when {
+            path.isBlank() -> "$baseUrl/page/$page/"
+            else -> "$baseUrl/$path/page/$page/"
+        }
+        return GET(url, headers)
+    }
+
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        val url = response.request.url.toString()
+        val document = response.asJsoup()
+
+        return if (url.contains("/studios")) {
+            parseStudios(document)
+        } else {
+            parseMovies(document)
+        }
+    }
+
+    // ========== PARSERS ==========
+    private fun parseMovies(document: Document): AnimesPage {
         val animes = document.select("div.ml-item").mapNotNull { element ->
             SAnime.create().apply {
                 val a = element.selectFirst("a") ?: return@mapNotNull null
@@ -50,14 +98,23 @@ class StreamPorn : AnimeHttpSource() {
         return AnimesPage(animes, hasNextPage)
     }
 
-    // ========== LATEST UPDATES ==========
-    override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/movies/page/$page/", headers)
-    override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+    private fun parseStudios(document: Document): AnimesPage {
+        // Each studio is an <a> inside a <span class="item">
+        val studios = document.select("span.item a[href]").mapNotNull { element ->
+            val title = element.attr("title").ifBlank { element.text() }
+            val url = element.attr("href")
+            if (title.isBlank() || url.isBlank()) return@mapNotNull null
 
-    // ========== SEARCH ==========
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
-        GET("$baseUrl/?s=$query&page=$page", headers)
-    override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
+            SAnime.create().apply {
+                this.title = title
+                setUrlWithoutDomain(url)
+                // Some studios have a favicon; use it as thumbnail if available
+                thumbnail_url = element.selectFirst("img")?.attr("src")
+            }
+        }
+        val hasNextPage = document.select("a.next").isNotEmpty()
+        return AnimesPage(studios, hasNextPage)
+    }
 
     // ========== ANIME DETAILS ==========
     override fun animeDetailsParse(response: Response): SAnime {
