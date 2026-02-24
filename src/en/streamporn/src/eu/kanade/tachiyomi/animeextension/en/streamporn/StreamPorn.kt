@@ -80,7 +80,7 @@ class StreamPorn : AnimeHttpSource() {
                 episode_number = 1f
                 // Store the anime page URL as the episode URL so videoListParse can re-fetch it
                 setUrlWithoutDomain(document.location())
-            }
+            },
         )
     }
 
