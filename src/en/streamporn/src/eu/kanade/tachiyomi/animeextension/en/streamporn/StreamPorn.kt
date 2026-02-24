@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.animeextension.en.streamporn
 
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -31,9 +33,10 @@ class StreamPorn : AnimeHttpSource() {
 
     // ========== POPULAR (Homepage) ==========
     override fun popularAnimeRequest(page: Int) = GET("$baseUrl/page/$page/", headers)
-    override fun popularAnimeParse(response: Response): List<SAnime> {
+
+    override fun popularAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
-        return document.select("div.ml-item").mapNotNull { element ->
+        val animes = document.select("div.ml-item").mapNotNull { element ->
             SAnime.create().apply {
                 val a = element.selectFirst("a") ?: return@mapNotNull null
                 setUrlWithoutDomain(a.attr("href"))
@@ -41,16 +44,27 @@ class StreamPorn : AnimeHttpSource() {
                 thumbnail_url = element.selectFirst("img")?.attr("src")
             }
         }
+        // Check for next page link; adjust selector as needed
+        val hasNextPage = document.select("a.next, a:contains(Next)").isNotEmpty()
+        return AnimesPage(animes, hasNextPage)
     }
 
     // ========== LATEST UPDATES (Movies archive) ==========
     override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/movies/page/$page/", headers)
-    override fun latestUpdatesParse(response: Response) = popularAnimeParse(response)
+
+    override fun latestUpdatesParse(response: Response): AnimesPage {
+        // Reuse the same parsing as popular (the list structure is identical)
+        return popularAnimeParse(response)
+    }
 
     // ========== SEARCH ==========
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList) =
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
         GET("$baseUrl/?s=$query&page=$page", headers)
-    override fun searchAnimeParse(response: Response) = popularAnimeParse(response)
+
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        // Search results use the same list structure as popular
+        return popularAnimeParse(response)
+    }
 
     // ========== ANIME DETAILS ==========
     override fun animeDetailsParse(document: Document): SAnime {
@@ -79,7 +93,6 @@ class StreamPorn : AnimeHttpSource() {
         val url = response.request.url.toString()
         val host = url.substringAfter("://").substringBefore("/")
 
-        // Headers with Referer set to the page we came from
         val videoHeaders = headers.newBuilder()
             .set("Referer", url)
             .build()
@@ -96,14 +109,12 @@ class StreamPorn : AnimeHttpSource() {
 
     // Fallback generic extractor
     private fun extractGeneric(document: Document, url: String, headers: Headers): List<Video> {
-        // Try direct video tag
         val videoTag = document.selectFirst("video source") ?: document.selectFirst("video")
         if (videoTag != null) {
             val videoUrl = videoTag.attr("src")
             return listOf(Video(videoUrl, "Direct", videoUrl, headers = headers))
         }
 
-        // Try to find JSON sources in script
         val script = document.select("script:containsData(sources)").firstOrNull()?.data()
         if (script != null) {
             val regex = Regex("""file:\s*['"]([^'"]+)['"]""")
