@@ -3,6 +3,10 @@ package eu.kanade.tachiyomi.animeextension.en.streamporn
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 
+/**
+ * Section filter – allows browsing different parts of the site.
+ * "Studios" is a separate section that lists all studios.
+ */
 open class SectionFilter : AnimeFilter.Select<String>(
     "Section",
     arrayOf(
@@ -24,6 +28,9 @@ open class SectionFilter : AnimeFilter.Select<String>(
     }
 }
 
+/**
+ * Returns the complete filter list.
+ */
 fun getFilterList(): AnimeFilterList {
     return AnimeFilterList(
         SectionFilter()
