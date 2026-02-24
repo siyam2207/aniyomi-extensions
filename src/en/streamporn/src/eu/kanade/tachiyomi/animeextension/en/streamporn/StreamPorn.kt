@@ -1,9 +1,9 @@
 package eu.kanade.tachiyomi.animeextension.en.streamporn
 
-import eu.kanade.tachiyomi.anime.source.model.SAnime
-import eu.kanade.tachiyomi.anime.source.model.SEpisode
-import eu.kanade.tachiyomi.anime.source.model.Video
-import eu.kanade.tachiyomi.anime.source.online.AnimeHttpSource
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.lib.doodextractor.DoodExtractor
 import eu.kanade.tachiyomi.lib.luluextractor.LuluExtractor
 import eu.kanade.tachiyomi.lib.mixdropextractor.MixDropExtractor
