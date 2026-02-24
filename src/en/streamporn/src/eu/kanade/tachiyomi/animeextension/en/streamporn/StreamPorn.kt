@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.en.streamporn
 
+import android.util.Log
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -71,14 +72,12 @@ class StreamPorn : AnimeHttpSource() {
 
     // ========== EPISODE LIST ==========
     override fun episodeListParse(response: Response): List<SEpisode> {
-        // Return a single episode representing the movie
         val document = response.asJsoup()
         val title = document.selectFirst("h3[itemprop=name]")?.text() ?: "Movie"
         return listOf(
             SEpisode.create().apply {
                 name = title
                 episode_number = 1f
-                // Store the anime page URL as the episode URL so videoListParse can re-fetch it
                 setUrlWithoutDomain(document.location())
             },
         )
@@ -88,30 +87,64 @@ class StreamPorn : AnimeHttpSource() {
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val serverLinks = document.select("div#pettabs div.Rtable1-cell a")
+        if (serverLinks.isEmpty()) {
+            Log.w("StreamPorn", "No server links found on page")
+        }
+
         val videos = mutableListOf<Video>()
 
         serverLinks.forEach { link ->
             val serverUrl = link.attr("abs:href")
             val serverName = link.text().ifEmpty { "Server" }
             val host = serverUrl.substringAfter("://").substringBefore("/")
+            Log.d("StreamPorn", "Processing server: $serverName ($host) at $serverUrl")
 
-            val extractorVideos = when {
-                "dood" in host || "doply" in host -> doodExtractor.videosFromUrl(serverUrl)
-                "lulu" in host -> luluExtractor.videosFromUrl(serverUrl, serverName)
-                "mixdrop" in host -> mixDropExtractor.videosFromUrl(serverUrl, serverName)
-                "streamtape" in host -> streamTapeExtractor.videosFromUrl(serverUrl, serverName)
-                "voe.sx" in host -> voeExtractor.videosFromUrl(serverUrl, serverName)
-                else -> {
-                    // Fallback: fetch the embed page and try generic extraction
-                    runCatching {
-                        val embedDoc = client.newCall(GET(serverUrl)).execute().asJsoup()
-                        extractGeneric(embedDoc, serverUrl, headers)
-                    }.getOrDefault(emptyList())
+            val extractorVideos = try {
+                when {
+                    "dood" in host || "doply" in host -> {
+                        Log.d("StreamPorn", "Using DoodExtractor for $serverName")
+                        doodExtractor.videosFromUrl(serverUrl)
+                    }
+                    "lulu" in host -> {
+                        Log.d("StreamPorn", "Using LuluExtractor for $serverName")
+                        luluExtractor.videosFromUrl(serverUrl, serverName)
+                    }
+                    "mixdrop" in host -> {
+                        Log.d("StreamPorn", "Using MixDropExtractor for $serverName")
+                        mixDropExtractor.videosFromUrl(serverUrl, serverName)
+                    }
+                    "streamtape" in host -> {
+                        Log.d("StreamPorn", "Using StreamTapeExtractor for $serverName")
+                        streamTapeExtractor.videosFromUrl(serverUrl, serverName)
+                    }
+                    "voe.sx" in host -> {
+                        Log.d("StreamPorn", "Using VoeExtractor for $serverName")
+                        voeExtractor.videosFromUrl(serverUrl, serverName)
+                    }
+                    else -> {
+                        Log.d("StreamPorn", "No dedicated extractor, falling back to generic")
+                        runCatching {
+                            val embedDoc = client.newCall(GET(serverUrl)).execute().asJsoup()
+                            extractGeneric(embedDoc, serverUrl, headers)
+                        }.getOrDefault(emptyList())
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("StreamPorn", "Exception while extracting from $serverName", e)
+                emptyList()
+            }
+
+            if (extractorVideos.isEmpty()) {
+                Log.w("StreamPorn", "No videos extracted from $serverName")
+            } else {
+                Log.i("StreamPorn", "Extracted ${extractorVideos.size} videos from $serverName")
             }
             videos.addAll(extractorVideos)
         }
 
+        if (videos.isEmpty()) {
+            Log.e("StreamPorn", "No videos found at all")
+        }
         return videos
     }
 
@@ -120,6 +153,7 @@ class StreamPorn : AnimeHttpSource() {
         val videoTag = document.selectFirst("video source") ?: document.selectFirst("video")
         if (videoTag != null) {
             val videoUrl = videoTag.attr("src")
+            Log.d("StreamPorn", "Generic: found direct video tag: $videoUrl")
             return listOf(Video(videoUrl, "Direct", videoUrl, headers = headers))
         }
 
@@ -132,9 +166,13 @@ class StreamPorn : AnimeHttpSource() {
                 val videoUrl = match.groupValues[1]
                 videos.add(Video(videoUrl, "Source", videoUrl, headers = headers))
             }
-            if (videos.isNotEmpty()) return videos
+            if (videos.isNotEmpty()) {
+                Log.d("StreamPorn", "Generic: extracted ${videos.size} videos from script")
+                return videos
+            }
         }
 
+        Log.d("StreamPorn", "Generic: no video found")
         return emptyList()
     }
 
