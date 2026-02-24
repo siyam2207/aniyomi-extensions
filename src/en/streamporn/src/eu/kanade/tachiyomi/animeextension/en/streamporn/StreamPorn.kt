@@ -19,6 +19,9 @@ import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 
+// 🔥 Import the filter function from Filter.kt
+import eu.kanade.tachiyomi.animeextension.en.streamporn.getFilterList
+
 class StreamPorn : AnimeHttpSource() {
 
     override val name = "StreamPorn"
@@ -239,6 +242,6 @@ class StreamPorn : AnimeHttpSource() {
         .add("Accept-Language", "en-US,en;q=0.5")
         .add("Referer", baseUrl)
 
-    // 🔥 Add this line to make the filter appear
-    override fun getFilterList() = getFilterList()
+    // 🔥 Fixed: explicitly specify the return type to avoid recursion
+    override fun getFilterList(): AnimeFilterList = getFilterList()
 }
