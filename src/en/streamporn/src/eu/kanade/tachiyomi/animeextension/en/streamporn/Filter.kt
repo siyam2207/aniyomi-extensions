@@ -36,4 +36,3 @@ fun getFilterList(): AnimeFilterList {
         SectionFilter(),
     )
 }
-
