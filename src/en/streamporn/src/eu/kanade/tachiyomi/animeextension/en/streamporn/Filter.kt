@@ -14,8 +14,8 @@ open class SectionFilter : AnimeFilter.Select<String>(
         "Movies",
         "Most Viewed",
         "Most Rating",
-        "Studios"
-    )
+        "Studios",
+    ),
 ) {
     fun getPath(): String {
         return when (state) {
@@ -33,6 +33,7 @@ open class SectionFilter : AnimeFilter.Select<String>(
  */
 fun getFilterList(): AnimeFilterList {
     return AnimeFilterList(
-        SectionFilter()
+        SectionFilter(),
     )
 }
+
