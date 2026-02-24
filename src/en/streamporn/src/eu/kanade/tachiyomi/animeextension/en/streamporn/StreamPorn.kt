@@ -50,7 +50,7 @@ class StreamPorn : AnimeHttpSource() {
         val section = filters.find { it is SectionFilter } as? SectionFilter
         val path = section?.getPath() ?: ""
 
-        // 🔥 STUDIOS BROWSING
+        // STUDIOS BROWSING
         if (path == "studios") {
             val url = if (page > 1) {
                 "$baseUrl/studios/page/$page/"
@@ -60,7 +60,7 @@ class StreamPorn : AnimeHttpSource() {
             return GET(url, headers)
         }
 
-        // 🔎 NORMAL SEARCH (with query)
+        // NORMAL SEARCH (with query)
         if (query.isNotBlank()) {
             return GET("$baseUrl/?s=$query&page=$page", headers)
         }
@@ -239,6 +239,6 @@ class StreamPorn : AnimeHttpSource() {
         .add("Accept-Language", "en-US,en;q=0.5")
         .add("Referer", baseUrl)
 
-    // 🔥 Fixed: explicitly specify the return type to avoid recursion
-    override fun getFilterList(): AnimeFilterList = getFilterList()
+    // Fixed: call the top‑level function with its fully qualified name
+    override fun getFilterList(): AnimeFilterList = eu.kanade.tachiyomi.animeextension.en.streamporn.getFilterList()
 }
