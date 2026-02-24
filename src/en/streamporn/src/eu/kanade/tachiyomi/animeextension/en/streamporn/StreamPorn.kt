@@ -100,28 +100,44 @@ class StreamPorn : AnimeHttpSource() {
         }
         Log.d("StreamPorn", "Found ${animes.size} movies")
 
-        // Pagination: look for any link that contains "Next" or has class "next"
-        val hasNextPage = document.select("a.next, a:contains(Next)").isNotEmpty()
+        // Pagination detection
+        val hasNextPage = document.select("a:contains(Next)").isNotEmpty()
+        Log.d("StreamPorn", "hasNextPage = $hasNextPage")
         return AnimesPage(animes, hasNextPage)
     }
 
     private fun parseStudios(document: Document): AnimesPage {
-        // Each studio is an <a> inside a <span class="item">
-        val studios = document.select("span.item a[href]").mapNotNull { element ->
-            val title = element.attr("title").ifBlank { element.text() }
-            val url = element.attr("href")
-            if (title.isBlank() || url.isBlank()) return@mapNotNull null
+        val items = document.select("span.item")
+        Log.d("StreamPorn", "Found ${items.size} span.item elements")
+
+        val studios = mutableListOf<SAnime>()
+
+        items.forEachIndexed { index, item ->
+            val link = item.selectFirst("a[href]")
+            if (link == null) {
+                Log.d("StreamPorn", "Item $index has no link, skipping")
+                return@forEachIndexed
+            }
+
+            val url = link.attr("abs:href")
+            val title = link.text().trim()  // gets full text including the count, but that's fine
+            Log.d("StreamPorn", "Item $index: title='$title', url='$url'")
+
+            if (title.isBlank() || url.isBlank()) {
+                Log.d("StreamPorn", "Skipping item $index due to blank title or url")
+                return@forEachIndexed
+            }
 
             SAnime.create().apply {
                 this.title = title
                 setUrlWithoutDomain(url)
-                // Some studios have a favicon; use it as thumbnail if available
-                thumbnail_url = element.selectFirst("img")?.attr("src")
-            }
+                // Use a placeholder if no image; empty string is allowed
+                thumbnail_url = link.selectFirst("img")?.attr("src") ?: ""
+            }.let { studios.add(it) }
         }
-        Log.d("StreamPorn", "Found ${studios.size} studios")
 
-        // Pagination on studios page: look for "Next" link
+        Log.d("StreamPorn", "Final studio count: ${studios.size}")
+
         val hasNextPage = document.select("a:contains(Next)").isNotEmpty()
         return AnimesPage(studios, hasNextPage)
     }
@@ -249,6 +265,5 @@ class StreamPorn : AnimeHttpSource() {
         .add("Accept-Language", "en-US,en;q=0.5")
         .add("Referer", baseUrl)
 
-    // Call the top-level function from the same package
     override fun getFilterList(): AnimeFilterList = eu.kanade.tachiyomi.animeextension.en.streamporn.getFilterList()
 }
