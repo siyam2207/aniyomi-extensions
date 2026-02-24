@@ -14,6 +14,7 @@ import eu.kanade.tachiyomi.lib.voeextractor.VoeExtractor
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.Headers
+import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 
@@ -52,22 +53,19 @@ class StreamPorn : AnimeHttpSource() {
     // ========== LATEST UPDATES (Movies archive) ==========
     override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/movies/page/$page/", headers)
 
-    override fun latestUpdatesParse(response: Response): AnimesPage {
-        // Reuse the same parsing as popular (the list structure is identical)
-        return popularAnimeParse(response)
-    }
+    override fun latestUpdatesParse(response: Response): AnimesPage =
+        popularAnimeParse(response)
 
     // ========== SEARCH ==========
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request =
         GET("$baseUrl/?s=$query&page=$page", headers)
 
-    override fun searchAnimeParse(response: Response): AnimesPage {
-        // Search results use the same list structure as popular
-        return popularAnimeParse(response)
-    }
+    override fun searchAnimeParse(response: Response): AnimesPage =
+        popularAnimeParse(response)
 
     // ========== ANIME DETAILS ==========
-    override fun animeDetailsParse(document: Document): SAnime {
+    override fun animeDetailsParse(response: Response): SAnime {
+        val document = response.asJsoup()
         return SAnime.create().apply {
             title = document.selectFirst("h3[itemprop=name]")?.text() ?: ""
             description = document.selectFirst("div[itemprop=description].desc")?.text()
@@ -77,7 +75,8 @@ class StreamPorn : AnimeHttpSource() {
     }
 
     // ========== EPISODE LIST ==========
-    override fun episodeListParse(document: Document): List<SEpisode> {
+    override fun episodeListParse(response: Response): List<SEpisode> {
+        val document = response.asJsoup()
         return document.select("div#pettabs div.Rtable1-cell a").mapIndexed { index, link ->
             SEpisode.create().apply {
                 name = link.text().ifEmpty { "Server ${index + 1}" }
