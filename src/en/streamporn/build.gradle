@@ -1,0 +1,16 @@
+ext {
+    extName = 'StreamPorn'
+    extClass = '.StreamPorn'
+    extVersionCode = 1
+    isNsfw = true
+}
+
+apply from: "$rootDir/common.gradle"
+
+dependencies {
+    implementation(project(':lib:dood-extractor'))
+    implementation(project(':lib:lulu-extractor'))
+    implementation(project(':lib:mixdrop-extractor'))
+    implementation(project(':lib:streamtape-extractor'))
+    implementation(project(':lib:voe-extractor'))
+}
