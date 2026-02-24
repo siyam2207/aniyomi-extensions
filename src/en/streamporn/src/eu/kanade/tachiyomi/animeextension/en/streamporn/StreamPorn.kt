@@ -57,12 +57,15 @@ class StreamPorn : AnimeHttpSource() {
             } else {
                 "$baseUrl/studios/"
             }
+            Log.d("StreamPorn", "Studios URL: $url")
             return GET(url, headers)
         }
 
         // NORMAL SEARCH (with query)
         if (query.isNotBlank()) {
-            return GET("$baseUrl/?s=$query&page=$page", headers)
+            val url = "$baseUrl/?s=$query&page=$page"
+            Log.d("StreamPorn", "Search URL: $url")
+            return GET(url, headers)
         }
 
         // REGULAR SECTION (Movies, Most Viewed, Most Rating)
@@ -70,6 +73,7 @@ class StreamPorn : AnimeHttpSource() {
             path.isBlank() -> "$baseUrl/page/$page/"
             else -> "$baseUrl/$path/page/$page/"
         }
+        Log.d("StreamPorn", "Section URL: $url")
         return GET(url, headers)
     }
 
@@ -87,13 +91,16 @@ class StreamPorn : AnimeHttpSource() {
     // ========== PARSERS ==========
     private fun parseMovies(document: Document): AnimesPage {
         val animes = document.select("div.ml-item").mapNotNull { element ->
+            val a = element.selectFirst("a") ?: return@mapNotNull null
             SAnime.create().apply {
-                val a = element.selectFirst("a") ?: return@mapNotNull null
                 setUrlWithoutDomain(a.attr("href"))
                 title = element.selectFirst("span.mli-info h2")?.text() ?: ""
                 thumbnail_url = element.selectFirst("img")?.attr("src")
             }
         }
+        Log.d("StreamPorn", "Found ${animes.size} movies")
+
+        // Pagination: look for any link that contains "Next" or has class "next"
         val hasNextPage = document.select("a.next, a:contains(Next)").isNotEmpty()
         return AnimesPage(animes, hasNextPage)
     }
@@ -112,7 +119,10 @@ class StreamPorn : AnimeHttpSource() {
                 thumbnail_url = element.selectFirst("img")?.attr("src")
             }
         }
-        val hasNextPage = document.select("a.next").isNotEmpty()
+        Log.d("StreamPorn", "Found ${studios.size} studios")
+
+        // Pagination on studios page: look for "Next" link
+        val hasNextPage = document.select("a:contains(Next)").isNotEmpty()
         return AnimesPage(studios, hasNextPage)
     }
 
@@ -239,6 +249,6 @@ class StreamPorn : AnimeHttpSource() {
         .add("Accept-Language", "en-US,en;q=0.5")
         .add("Referer", baseUrl)
 
-    // Fixed: call the top‑level function with its fully qualified name
+    // Call the top-level function from the same package
     override fun getFilterList(): AnimeFilterList = eu.kanade.tachiyomi.animeextension.en.streamporn.getFilterList()
 }
