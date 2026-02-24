@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.animeextension.en.streamporn
 
 import android.util.Log
+import eu.kanade.tachiyomi.animeextension.en.streamporn.getFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -18,9 +19,6 @@ import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
-
-// 🔥 Import the filter function from Filter.kt
-import eu.kanade.tachiyomi.animeextension.en.streamporn.getFilterList
 
 class StreamPorn : AnimeHttpSource() {
 
