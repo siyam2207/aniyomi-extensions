@@ -112,13 +112,23 @@ class StreamPorn : AnimeHttpSource() {
         }
         Log.d("StreamPorn", "Found ${animes.size} movies")
 
-        // Simple single-line selector – avoids lint issues
-        val selector = "a:contains(Next), a:contains(›), a:contains(»), a.next, ul.pagination a[href]"
-        val hasNextPage = document.select(selector).any { link ->
-            val text = link.text().lowercase()
-            text.contains("next") || text.contains("›") || text.contains("»") ||
-                link.hasClass("next") ||
-                (link.parent()?.parent()?.select("li.active")?.isEmpty() != false && link.attr("href").contains("page/"))
+        // Robust pagination detection
+        val hasNextPage = run {
+            // Check for explicit "Next" link
+            val nextLink = document.select("a:contains(Next), a:contains(›), a:contains(»), a.next, a[rel=next]")
+            if (nextLink.isNotEmpty()) return@run true
+
+            // Check numbered pagination
+            val pagination = document.select("ul.pagination")
+            if (pagination.isEmpty()) return@run false
+
+            // Get the active page number
+            val activePage = pagination.select("li.active a, li.active span").text().toIntOrNull()
+            if (activePage == null) return@run false
+
+            // Look for a link to the next page number
+            val nextPageLink = pagination.select("a[href*=/page/${activePage + 1}/]")
+            nextPageLink.isNotEmpty()
         }
 
         Log.d("StreamPorn", "hasNextPage = $hasNextPage")
