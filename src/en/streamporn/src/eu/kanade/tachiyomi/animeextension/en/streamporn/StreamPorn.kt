@@ -48,15 +48,27 @@ class StreamPorn : AnimeHttpSource() {
     // ========== SEARCH & SECTION BROWSING ==========
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val section = filters.find { it is SectionFilter } as? SectionFilter
+        val popularStudio = filters.find { it is PopularStudioFilter } as? PopularStudioFilter
+        val studioText = filters.find { it is StudioTextFilter } as? StudioTextFilter
+
+        val baseUrl = baseUrl.trimEnd('/')
+
+        // Studio slug: text field overrides popular selection
+        val studioSlug = studioText?.state?.takeIf { it.isNotBlank() }
+            ?: popularStudio?.getSlug()?.takeIf { it != null }
+
+        if (studioSlug != null) {
+            val studioUrl = "$baseUrl/director/$studioSlug/"
+            val pageUrl = if (page > 1) "$studioUrl/page/$page/" else studioUrl
+            Log.d("StreamPorn", "Studio URL: $pageUrl")
+            return GET(pageUrl, headers)
+        }
+
         val path = section?.getPath() ?: ""
 
-        // STUDIOS BROWSING
+        // STUDIOS BROWSING (section)
         if (path == "studios") {
-            val url = if (page > 1) {
-                "$baseUrl/studios/page/$page/"
-            } else {
-                "$baseUrl/studios/"
-            }
+            val url = "$baseUrl/studios/"
             Log.d("StreamPorn", "Studios URL: $url")
             return GET(url, headers)
         }
@@ -81,7 +93,7 @@ class StreamPorn : AnimeHttpSource() {
         val url = response.request.url.toString()
         val document = response.asJsoup()
 
-        return if (url.contains("/studios")) {
+        return if (url.contains("/studios") && !url.contains("/director/")) {
             parseStudios(document)
         } else {
             parseMovies(document)
@@ -100,8 +112,8 @@ class StreamPorn : AnimeHttpSource() {
         }
         Log.d("StreamPorn", "Found ${animes.size} movies")
 
-        // Pagination detection
-        val hasNextPage = document.select("a:contains(Next)").isNotEmpty()
+        // Robust pagination detection
+        val hasNextPage = document.select("a:contains(Next), a:contains(›), a.next").isNotEmpty()
         Log.d("StreamPorn", "hasNextPage = $hasNextPage")
         return AnimesPage(animes, hasNextPage)
     }
@@ -110,9 +122,12 @@ class StreamPorn : AnimeHttpSource() {
         val items = document.select("span.item")
         Log.d("StreamPorn", "Found ${items.size} span.item elements")
 
+        // Limit to first 100 (top 100 alphabetical)
+        val limitedItems = items.take(100)
+
         val studios = mutableListOf<SAnime>()
 
-        items.forEachIndexed { index, item ->
+        limitedItems.forEachIndexed { index, item ->
             val link = item.selectFirst("a[href]")
             if (link == null) {
                 Log.d("StreamPorn", "Item $index has no link, skipping")
@@ -120,7 +135,7 @@ class StreamPorn : AnimeHttpSource() {
             }
 
             val url = link.attr("abs:href")
-            val title = link.text().trim() // gets full text including the count, but that's fine
+            val title = link.text().trim()
             Log.d("StreamPorn", "Item $index: title='$title', url='$url'")
 
             if (title.isBlank() || url.isBlank()) {
@@ -131,15 +146,14 @@ class StreamPorn : AnimeHttpSource() {
             SAnime.create().apply {
                 this.title = title
                 setUrlWithoutDomain(url)
-                // Use a placeholder if no image; empty string is allowed
                 thumbnail_url = link.selectFirst("img")?.attr("src") ?: ""
             }.let { studios.add(it) }
         }
 
         Log.d("StreamPorn", "Final studio count: ${studios.size}")
 
-        val hasNextPage = document.select("a:contains(Next)").isNotEmpty()
-        return AnimesPage(studios, hasNextPage)
+        // Studios page has no pagination
+        return AnimesPage(studios, false)
     }
 
     // ========== ANIME DETAILS ==========
