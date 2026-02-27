@@ -142,9 +142,10 @@ open class PopularStudioFilter : AnimeFilter.Select<String>(
 }
 
 /**
- * Studio text filter – for any studio not in the popular list.
+ * Studio text filter – enter the studio name (e.g., "Purple Bitch").
+ * The extension will convert it to the URL slug automatically.
  */
-open class StudioTextFilter : AnimeFilter.Text("Studio (slug)")
+open class StudioTextFilter : AnimeFilter.Text("Studio name (e.g., Purple Bitch)")
 
 /**
  * Returns the complete filter list.
