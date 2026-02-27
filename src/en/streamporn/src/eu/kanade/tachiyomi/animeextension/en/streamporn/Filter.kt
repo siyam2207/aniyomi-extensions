@@ -9,7 +9,13 @@ import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
  */
 open class SectionFilter : AnimeFilter.Select<String>(
     "Section",
-    arrayOf("All", "Movies", "Most Viewed", "Most Rating", "Studios")
+    arrayOf(
+        "All",
+        "Movies",
+        "Most Viewed",
+        "Most Rating",
+        "Studios", // trailing comma added
+    ),
 ) {
     fun getPath(): String = when (state) {
         1 -> "movies"
@@ -77,8 +83,8 @@ open class PopularStudioFilter : AnimeFilter.Select<String>(
             "be.me.fi",
             "MAX-A",
             "DDF Network",
-            "Deutschland Porno"
-        ).toTypedArray()
+            "Deutschland Porno", // trailing comma added
+        ).toTypedArray(),
 ) {
     private val slugMap = mapOf(
         "None" to null,
@@ -131,7 +137,7 @@ open class PopularStudioFilter : AnimeFilter.Select<String>(
         "be.me.fi" to "be-me-fi",
         "MAX-A" to "max-a",
         "DDF Network" to "ddf-network",
-        "Deutschland Porno" to "deutschland-porno"
+        "Deutschland Porno" to "deutschland-porno", // trailing comma added
     )
 
     fun getSlug(): String? = slugMap[values[state]]
@@ -150,6 +156,6 @@ fun getFilterList(): AnimeFilterList {
     return AnimeFilterList(
         SectionFilter(),
         PopularStudioFilter(),
-        StudioTextFilter()
+        StudioTextFilter(), // trailing comma added
     )
 }
