@@ -5,7 +5,6 @@ import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 
 /**
  * Section filter – allows browsing different parts of the site.
- * "Studios" is a separate section that lists all studios.
  */
 open class SectionFilter : AnimeFilter.Select<String>(
     "Section",
@@ -28,7 +27,6 @@ open class SectionFilter : AnimeFilter.Select<String>(
 
 /**
  * Popular Studio dropdown – top 50 studios by number of movies.
- * The value is the studio slug as used in the URL (e.g., "letsdoeit").
  */
 open class PopularStudioFilter : AnimeFilter.Select<String>(
     "Popular Studio",
@@ -145,7 +143,6 @@ open class PopularStudioFilter : AnimeFilter.Select<String>(
 
 /**
  * Studio text filter – for any studio not in the popular list.
- * Enter the exact slug used in the director URL (e.g., "letsdoeit", "elegant-angel").
  */
 open class StudioTextFilter : AnimeFilter.Text("Studio (slug)")
 
