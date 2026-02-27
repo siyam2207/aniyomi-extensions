@@ -53,8 +53,16 @@ class StreamPorn : AnimeHttpSource() {
 
         val baseUrl = baseUrl.trimEnd('/')
 
-        // Studio slug: text field overrides popular selection
-        val studioSlug = studioText?.state?.takeIf { it.isNotBlank() }
+        // Helper to convert a readable name to a URL slug
+        fun slugify(text: String): String {
+            return text.trim()
+                .lowercase()
+                .replace(Regex("[^a-z0-9]+"), "-")
+                .removeSuffix("-")
+        }
+
+        // Studio slug: text field (converted to slug) overrides popular selection
+        val studioSlug = studioText?.state?.takeIf { it.isNotBlank() }?.let { slugify(it) }
             ?: popularStudio?.getSlug()?.takeIf { it != null }
 
         if (studioSlug != null) {
