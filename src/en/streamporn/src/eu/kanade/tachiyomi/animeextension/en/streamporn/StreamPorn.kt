@@ -112,19 +112,13 @@ class StreamPorn : AnimeHttpSource() {
         }
         Log.d("StreamPorn", "Found ${animes.size} movies")
 
-        // Robust pagination detection
-        val hasNextPage = document.select("""
-            a:contains(Next),
-            a:contains(›),
-            a:contains(»),
-            a.next,
-            ul.pagination a[href]
-        """.trimIndent().replace("\n", "")).any { link ->
+        // Simple single-line selector – avoids lint issues
+        val selector = "a:contains(Next), a:contains(›), a:contains(»), a.next, ul.pagination a[href]"
+        val hasNextPage = document.select(selector).any { link ->
             val text = link.text().lowercase()
             text.contains("next") || text.contains("›") || text.contains("»") ||
-            link.hasClass("next") ||
-            // For numbered pagination, assume there is a next page if the last link is not the current page
-            (link.parent()?.parent()?.select("li.active")?.isEmpty() != false && link.attr("href").contains("page/"))
+                link.hasClass("next") ||
+                (link.parent()?.parent()?.select("li.active")?.isEmpty() != false && link.attr("href").contains("page/"))
         }
 
         Log.d("StreamPorn", "hasNextPage = $hasNextPage")
