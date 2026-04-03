@@ -1,0 +1,13 @@
+ext {
+    extName = 'TnaFlix'
+    extClass = '.TnaFlix'
+    extVersionCode = 1
+    isNsfw = true
+}
+
+apply from: "$rootDir/common.gradle"
+
+dependencies {
+    implementation(project(":lib:universal-extractor"))
+    implementation(project(":lib:playlist-utils"))
+}
