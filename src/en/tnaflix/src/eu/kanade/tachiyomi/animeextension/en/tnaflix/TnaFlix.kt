@@ -26,11 +26,12 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
 
     private val preferences by getPreferencesLazy()
 
-    // Required headers to avoid being blocked
-    override val headers = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .add("Accept-Language", "en-US,en;q=0.9")
-        .build()
+    // Use headersBuilder() instead of overriding a final val
+    override fun headersBuilder(): Headers.Builder {
+        return Headers.Builder()
+            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .add("Accept-Language", "en-US,en;q=0.9")
+    }
 
     // ============================== Popular ===============================
 
@@ -114,7 +115,7 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
                 val absoluteUrl = response.request.url.toString()
                 val relativeUrl = absoluteUrl.replace(baseUrl, "")
                 setUrlWithoutDomain(relativeUrl)
-            }, // ✅ trailing comma added
+            },
         )
     }
 
@@ -177,6 +178,7 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
                 val index = findIndexOfValue(selected)
                 val entry = entryValues[index] as String
                 preferences.edit().putString(key, entry).apply()
+                true
             }
         }.also(screen::addPreference)
     }
@@ -184,12 +186,12 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
     // ============================= Utilities ==============================
 
     override fun List<Video>.sort(): List<Video> {
-        val quality = preferences.getString("preferred_quality", "720") ?: "720"
+        val preferredQuality = preferences.getString("preferred_quality", "720") ?: "720"
         return sortedWith(
-            compareByDescending { it.quality.contains(quality) }
-                .thenByDescending { it.quality.filter { it.isDigit() }.toIntOrNull() ?: 0 }, // ✅ trailing comma added
+            compareByDescending<Video> { it.quality.contains(preferredQuality) }
+                .thenByDescending { it.quality.filter { it.isDigit() }.toIntOrNull() ?: 0 },
         )
     }
 
-    private fun String.toHttpUrlOrNull() = runCatching { okhttp3.HttpUrl.Companion.get(this) }.getOrNull()
+    private fun String.toHttpUrlOrNull() = runCatching { toHttpUrl() }.getOrNull()
 }
