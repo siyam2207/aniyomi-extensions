@@ -1,11 +1,9 @@
 package eu.kanade.tachiyomi.animeextension.en.tnaflix
 
-import android.util.Log
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -13,6 +11,7 @@ import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import extensions.utils.getPreferencesLazy
+import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -27,6 +26,12 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
 
     private val preferences by getPreferencesLazy()
 
+    // Required headers to avoid being blocked
+    override val headers = Headers.Builder()
+        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .add("Accept-Language", "en-US,en;q=0.9")
+        .build()
+
     // ============================== Popular ===============================
 
     override fun popularAnimeRequest(page: Int): Request {
@@ -40,9 +45,8 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
         val anchor = element.selectFirst("a.thumb, a.video-thumb") ?: element.selectFirst("a")
         val href = anchor?.attr("href") ?: ""
         val title = element.selectFirst(".video-title")?.text() ?: ""
-        val thumbnail = anchor?.selectFirst("img")?.attr("abs:data-src")?.ifEmpty {
-            anchor.selectFirst("img")?.attr("abs:src")
-        } ?: ""
+        val img = anchor?.selectFirst("img")
+        val thumbnail = img?.absUrl("data-src")?.ifEmpty { img.absUrl("src") } ?: ""
 
         return SAnime.create().apply {
             setUrlWithoutDomain(href)
@@ -70,7 +74,7 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
         val url = "$baseUrl/search".toHttpUrlOrNull()?.newBuilder()?.apply {
             addQueryParameter("what", query)
             if (page > 1) addQueryParameter("page", page.toString())
-        }?.build().toString() ?: "$baseUrl/search?what=$query"
+        }?.build().toString() ?: "$baseUrl/search?what=$query${if (page > 1) "&page=$page" else ""}"
         return GET(url, headers)
     }
 
@@ -87,7 +91,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
             ?: document.selectFirst("meta[property='og:image']")?.attr("content")
             ?: ""
 
-        // Extract tags/categories
         val tags = document.select(".video-detail-badges a.badge-video").eachText().joinToString()
         val artist = document.select(".video-detail-badges a.badge-video-info").firstOrNull()?.text()
 
@@ -108,8 +111,10 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
             SEpisode.create().apply {
                 name = "Video"
                 episode_number = 1F
-                setUrlWithoutDomain(response.request.url.toString())
-            }
+                val absoluteUrl = response.request.url.toString()
+                val relativeUrl = absoluteUrl.replace(baseUrl, "")
+                setUrlWithoutDomain(relativeUrl)
+            }, // ✅ trailing comma added
         )
     }
 
@@ -130,14 +135,12 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
             val url = source.attr("src")
             if (url.isBlank()) continue
             val quality = source.attr("size").ifEmpty {
-                // Try to extract quality from src filename
                 val match = Regex("-(\\d+)p\\.").find(url)
                 match?.groupValues?.get(1) ?: "unknown"
             } + "p"
             videos.add(Video(url, quality, url, headers))
         }
 
-        // Fallback: if no sources, try to find m3u8 or other
         if (videos.isEmpty()) {
             val script = document.selectFirst("script:containsData(var hlsUrl)")?.data()
             if (script != null) {
@@ -173,7 +176,7 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
                 val selected = newValue as String
                 val index = findIndexOfValue(selected)
                 val entry = entryValues[index] as String
-                preferences.edit().putString(key, entry).commit()
+                preferences.edit().putString(key, entry).apply()
             }
         }.also(screen::addPreference)
     }
@@ -184,7 +187,7 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
         val quality = preferences.getString("preferred_quality", "720") ?: "720"
         return sortedWith(
             compareByDescending { it.quality.contains(quality) }
-                .thenByDescending { it.quality.toIntOrNull() ?: 0 }
+                .thenByDescending { it.quality.filter { it.isDigit() }.toIntOrNull() ?: 0 }, // ✅ trailing comma added
         )
     }
 
