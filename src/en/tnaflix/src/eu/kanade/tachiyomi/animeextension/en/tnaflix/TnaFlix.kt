@@ -26,14 +26,11 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
 
     private val preferences by getPreferencesLazy()
 
-    // ✅ Use headersBuilder() – do NOT override 'headers' (it's final)
     override fun headersBuilder(): Headers.Builder {
         return Headers.Builder()
             .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .add("Accept-Language", "en-US,en;q=0.9")
     }
-
-    // ============================== Popular ===============================
 
     override fun popularAnimeRequest(page: Int): Request {
         val url = if (page == 1) "$baseUrl/featured" else "$baseUrl/featured/$page"
@@ -48,7 +45,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
         val title = element.selectFirst(".video-title")?.text() ?: ""
         val img = anchor?.selectFirst("img")
         val thumbnail = img?.absUrl("data-src")?.ifEmpty { img.absUrl("src") } ?: ""
-
         return SAnime.create().apply {
             setUrlWithoutDomain(href)
             this.title = title
@@ -58,8 +54,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
 
     override fun popularAnimeNextPageSelector(): String? = "ul.pagination li.pagination-next a"
 
-    // =============================== Latest ===============================
-
     override fun latestUpdatesRequest(page: Int): Request {
         val url = if (page == 1) "$baseUrl/new" else "$baseUrl/new?page=$page"
         return GET(url, headers)
@@ -68,8 +62,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
     override fun latestUpdatesSelector() = popularAnimeSelector()
     override fun latestUpdatesFromElement(element: Element) = popularAnimeFromElement(element)
     override fun latestUpdatesNextPageSelector() = popularAnimeNextPageSelector()
-
-    // =============================== Search ===============================
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val url = buildString {
@@ -83,18 +75,14 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
     override fun searchAnimeFromElement(element: Element) = popularAnimeFromElement(element)
     override fun searchAnimeNextPageSelector() = popularAnimeNextPageSelector()
 
-    // =========================== Anime Details ============================
-
     override fun animeDetailsParse(document: Document): SAnime {
         val title = document.selectFirst("h1")?.text() ?: ""
         val description = document.selectFirst("p.video-detail-description")?.text() ?: ""
         val thumbnail = document.selectFirst("video.player")?.attr("poster")
             ?: document.selectFirst("meta[property='og:image']")?.attr("content")
             ?: ""
-
         val tags = document.select(".video-detail-badges a.badge-video").eachText().joinToString()
         val artist = document.select(".video-detail-badges a.badge-video-info").firstOrNull()?.text()
-
         return SAnime.create().apply {
             this.title = title
             this.description = description
@@ -104,8 +92,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
             status = SAnime.COMPLETED
         }
     }
-
-    // ============================== Episodes ==============================
 
     override fun episodeListParse(response: Response): List<SEpisode> {
         return listOf(
@@ -122,16 +108,11 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
     override fun episodeListSelector() = throw UnsupportedOperationException()
     override fun episodeFromElement(element: Element) = throw UnsupportedOperationException()
 
-    // ============================ Video Links =============================
-
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
-        val videoElement = document.selectFirst("video#video-player")
-            ?: return emptyList()
-
+        val videoElement = document.selectFirst("video#video-player") ?: return emptyList()
         val sources = videoElement.select("source")
         val videos = mutableListOf<Video>()
-
         for (source in sources) {
             val url = source.attr("src")
             if (url.isBlank()) continue
@@ -141,7 +122,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
             } + "p"
             videos.add(Video(url, quality, url, headers))
         }
-
         if (videos.isEmpty()) {
             val script = document.selectFirst("script:containsData(var hlsUrl)")?.data()
             if (script != null) {
@@ -151,7 +131,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
                 }
             }
         }
-
         return videos
     }
 
@@ -159,11 +138,7 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
     override fun videoFromElement(element: Element) = throw UnsupportedOperationException()
     override fun videoUrlParse(document: Document) = throw UnsupportedOperationException()
 
-    // ============================== Filters ===============================
-
     override fun getFilterList() = AnimeFilterList()
-
-    // ============================== Settings ==============================
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
@@ -182,8 +157,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
             }
         }.also(screen::addPreference)
     }
-
-    // ============================= Utilities ==============================
 
     override fun List<Video>.sort(): List<Video> {
         val preferredQuality = preferences.getString("preferred_quality", "720") ?: "720"
