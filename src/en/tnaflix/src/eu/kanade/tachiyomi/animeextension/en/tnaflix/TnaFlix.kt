@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import extensions.utils.getPreferencesLazy
 import okhttp3.Headers
+import okhttp3.HttpUrl
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -72,10 +73,11 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
     // =============================== Search ===============================
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val url = "$baseUrl/search".toHttpUrlOrNull()?.newBuilder()?.apply {
-            addQueryParameter("what", query)
-            if (page > 1) addQueryParameter("page", page.toString())
-        }?.build().toString() ?: "$baseUrl/search?what=$query${if (page > 1) "&page=$page" else ""}"
+        // Build URL manually to avoid complex chaining issues
+        val url = buildString {
+            append("$baseUrl/search?what=$query")
+            if (page > 1) append("&page=$page")
+        }
         return GET(url, headers)
     }
 
@@ -193,5 +195,5 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
         )
     }
 
-    private fun String.toHttpUrlOrNull() = runCatching { toHttpUrl() }.getOrNull()
+    // Removed custom toHttpUrlOrNull() – no longer needed
 }
