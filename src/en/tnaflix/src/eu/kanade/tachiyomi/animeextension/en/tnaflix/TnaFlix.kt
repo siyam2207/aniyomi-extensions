@@ -26,7 +26,7 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
 
     private val preferences by getPreferencesLazy()
 
-    // Use headersBuilder() instead of overriding a final val
+    // ✅ Use headersBuilder() – do NOT override 'headers' (it's final)
     override fun headersBuilder(): Headers.Builder {
         return Headers.Builder()
             .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
@@ -72,7 +72,6 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
     // =============================== Search ===============================
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        // Build URL manually to avoid complex chaining issues
         val url = buildString {
             append("$baseUrl/search?what=$query")
             if (page > 1) append("&page=$page")
@@ -193,6 +192,4 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
                 .thenByDescending { it.quality.filter { it.isDigit() }.toIntOrNull() ?: 0 },
         )
     }
-
-    // Removed custom toHttpUrlOrNull() – no longer needed
 }
