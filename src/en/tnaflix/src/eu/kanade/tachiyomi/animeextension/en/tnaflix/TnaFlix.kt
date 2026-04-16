@@ -1,23 +1,25 @@
 package eu.kanade.tachiyomi.animeextension.en.tnaflix
 
+import android.util.Log
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
+import eu.kanade.tachiyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import extensions.utils.getPreferencesLazy
-import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
-class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
+class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "TnaFlix"
     override val baseUrl = "https://www.tnaflix.com"
@@ -25,144 +27,168 @@ class TnaFlix : ConfigurableAnimeSource, ParsedAnimeHttpSource() {
     override val supportsLatest = true
 
     private val preferences by getPreferencesLazy()
+    private val playlistUtils by lazy { PlaylistUtils(client, headers) }
 
-    override fun headersBuilder(): Headers.Builder {
-        return Headers.Builder()
-            .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .add("Accept-Language", "en-US,en;q=0.9")
-    }
-
+    // ============================== Popular ===============================
     override fun popularAnimeRequest(page: Int): Request {
-        val url = if (page == 1) "$baseUrl/featured" else "$baseUrl/featured/$page"
+        val url = if (page == 1) {
+            "$baseUrl/most-popular/"
+        } else {
+            "$baseUrl/most-popular/page/$page/"
+        }
         return GET(url, headers)
     }
 
-    override fun popularAnimeSelector() = "div.video-list > div.col-xs-6"
+    override fun popularAnimeSelector(): String = "div.videoWrapper"
+    override fun popularAnimeNextPageSelector(): String = "a.pagNext"
+    override fun popularAnimeFromElement(element: Element): SAnime = animeFromElement(element)
 
-    override fun popularAnimeFromElement(element: Element): SAnime {
-        val anchor = element.selectFirst("a.thumb, a.video-thumb") ?: element.selectFirst("a")
-        val href = anchor?.attr("href") ?: ""
-        val title = element.selectFirst(".video-title")?.text() ?: ""
-        val img = anchor?.selectFirst("img")
-        val thumbnail = img?.absUrl("data-src")?.ifEmpty { img.absUrl("src") } ?: ""
-        return SAnime.create().apply {
-            setUrlWithoutDomain(href)
-            this.title = title
-            thumbnail_url = thumbnail
-        }
-    }
-
-    override fun popularAnimeNextPageSelector(): String? = "ul.pagination li.pagination-next a"
-
+    // =============================== Latest ===============================
     override fun latestUpdatesRequest(page: Int): Request {
-        val url = if (page == 1) "$baseUrl/new" else "$baseUrl/new?page=$page"
-        return GET(url, headers)
-    }
-
-    override fun latestUpdatesSelector() = popularAnimeSelector()
-    override fun latestUpdatesFromElement(element: Element) = popularAnimeFromElement(element)
-    override fun latestUpdatesNextPageSelector() = popularAnimeNextPageSelector()
-
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val url = buildString {
-            append("$baseUrl/search?what=$query")
-            if (page > 1) append("&page=$page")
+        val url = if (page == 1) {
+            "$baseUrl/newest/"
+        } else {
+            "$baseUrl/newest/page/$page/"
         }
         return GET(url, headers)
     }
 
-    override fun searchAnimeSelector() = popularAnimeSelector()
-    override fun searchAnimeFromElement(element: Element) = popularAnimeFromElement(element)
-    override fun searchAnimeNextPageSelector() = popularAnimeNextPageSelector()
+    override fun latestUpdatesSelector(): String = popularAnimeSelector()
+    override fun latestUpdatesNextPageSelector(): String = popularAnimeNextPageSelector()
+    override fun latestUpdatesFromElement(element: Element): SAnime = animeFromElement(element)
 
+    // =============================== Search ===============================
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        val encodedQuery = query.replace(" ", "+")
+        return GET("$baseUrl/search?what=$encodedQuery&page=$page", headers)
+    }
+
+    override fun searchAnimeSelector(): String = popularAnimeSelector()
+    override fun searchAnimeNextPageSelector(): String = popularAnimeNextPageSelector()
+    override fun searchAnimeFromElement(element: Element): SAnime = animeFromElement(element)
+
+    // =========================== Anime Details ============================
     override fun animeDetailsParse(document: Document): SAnime {
-        val title = document.selectFirst("h1")?.text() ?: ""
-        val description = document.selectFirst("p.video-detail-description")?.text() ?: ""
-        val thumbnail = document.selectFirst("video.player")?.attr("poster")
-            ?: document.selectFirst("meta[property='og:image']")?.attr("content")
-            ?: ""
-        val tags = document.select(".video-detail-badges a.badge-video").eachText().joinToString()
-        val artist = document.select(".video-detail-badges a.badge-video-info").firstOrNull()?.text()
+        val title = document.selectFirst("h1.video-title")?.text()
+            ?: document.selectFirst("title")?.text()?.substringBefore(" | TnaFlix") ?: "Unknown"
+        val thumbnail = document.selectFirst("meta[property=og:image]")?.attr("content")
+        val description = document.selectFirst("div.description p")?.text()
+        val genres = document.select("a[href*=category]").joinToString { it.text() }
+
         return SAnime.create().apply {
             this.title = title
-            this.description = description
             thumbnail_url = thumbnail
-            genre = tags
-            artist = artist
+            this.description = description
+            genre = genres
             status = SAnime.COMPLETED
         }
     }
 
-    override fun episodeListParse(response: Response): List<SEpisode> {
+    // ============================== Episodes ==============================
+    override fun episodeListSelector(): String = throw UnsupportedOperationException()
+    override fun episodeFromElement(element: Element): SEpisode = throw UnsupportedOperationException()
+
+    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
         return listOf(
             SEpisode.create().apply {
                 name = "Video"
-                episode_number = 1F
-                val absoluteUrl = response.request.url.toString()
-                val relativeUrl = absoluteUrl.replace(baseUrl, "")
-                setUrlWithoutDomain(relativeUrl)
-            },
+                episode_number = 1f
+                url = anime.url
+            }
         )
     }
 
-    override fun episodeListSelector() = throw UnsupportedOperationException()
-    override fun episodeFromElement(element: Element) = throw UnsupportedOperationException()
-
+    // ============================ Video Links =============================
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
-        val videoElement = document.selectFirst("video#video-player") ?: return emptyList()
-        val sources = videoElement.select("source")
-        val videos = mutableListOf<Video>()
-        for (source in sources) {
-            val url = source.attr("src")
-            if (url.isBlank()) continue
-            val quality = source.attr("size").ifEmpty {
-                val match = Regex("-(\\d+)p\\.").find(url)
-                match?.groupValues?.get(1) ?: "unknown"
-            } + "p"
-            videos.add(Video(url, quality, url, headers))
+        val videoUrl = extractVideoUrl(document)
+            ?: throw Exception("No video URL found")
+
+        val headers = headersBuilder()
+            .add("Referer", baseUrl)
+            .build()
+
+        return if (videoUrl.contains(".m3u8")) {
+            playlistUtils.extractFromHls(videoUrl, headers, videoNameGen = { quality -> "TnaFlix - $quality" })
+        } else {
+            listOf(Video(videoUrl, "TnaFlix", videoUrl, headers))
         }
-        if (videos.isEmpty()) {
-            val script = document.selectFirst("script:containsData(var hlsUrl)")?.data()
-            if (script != null) {
-                val hlsUrl = script.substringAfter("var hlsUrl = '").substringBefore("'")
-                if (hlsUrl.isNotBlank()) {
-                    return listOf(Video(hlsUrl, "HLS", hlsUrl, headers))
+    }
+
+    private fun extractVideoUrl(document: Document): String? {
+        // Try to find video source in video tag
+        val videoSource = document.selectFirst("video source")
+        videoSource?.attr("src")?.takeIf { it.isNotBlank() }?.let { return it }
+
+        // Try to find in script containing "file" or "video_url"
+        val scripts = document.select("script")
+        for (script in scripts) {
+            val data = script.data()
+            val patterns = listOf(
+                Regex("""file:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
+                Regex("""video_url:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
+                Regex("""source:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
+                Regex(""""file":"([^"]+\.m3u8[^"]*)"""")
+            )
+            for (pattern in patterns) {
+                val match = pattern.find(data)
+                if (match != null) {
+                    return match.groupValues[1]
                 }
             }
         }
-        return videos
+
+        // Try to find iframe src (might contain the actual player)
+        val iframe = document.selectFirst("iframe[src*=player]")
+        iframe?.attr("abs:src")?.takeIf { it.isNotBlank() }?.let {
+            return extractVideoUrlFromIframe(it)
+        }
+
+        return null
     }
 
-    override fun videoListSelector() = throw UnsupportedOperationException()
-    override fun videoFromElement(element: Element) = throw UnsupportedOperationException()
-    override fun videoUrlParse(document: Document) = throw UnsupportedOperationException()
+    private fun extractVideoUrlFromIframe(iframeUrl: String): String? {
+        return runCatching {
+            val iframeDoc = client.newCall(GET(iframeUrl, headers)).execute().asJsoup()
+            extractVideoUrl(iframeDoc)
+        }.getOrNull()
+    }
 
-    override fun getFilterList() = AnimeFilterList()
+    override fun videoListSelector(): String = throw UnsupportedOperationException()
+    override fun videoFromElement(element: Element): Video = throw UnsupportedOperationException()
+    override fun videoUrlParse(document: Document): String = throw UnsupportedOperationException()
 
-    override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        ListPreference(screen.context).apply {
-            key = "preferred_quality"
-            title = "Preferred quality"
-            entries = arrayOf("1080p", "720p", "480p", "360p", "240p", "144p")
-            entryValues = arrayOf("1080", "720", "480", "360", "240", "144")
-            setDefaultValue("720")
-            summary = "%s"
-            setOnPreferenceChangeListener { _, newValue ->
-                val selected = newValue as String
-                val index = findIndexOfValue(selected)
-                val entry = entryValues[index] as String
-                preferences.edit().putString(key, entry).apply()
-                true
-            }
-        }.also(screen::addPreference)
+    // ============================= Utilities ==============================
+    private fun animeFromElement(element: Element): SAnime {
+        val a = element.selectFirst("a")
+        val img = element.selectFirst("img")
+        return SAnime.create().apply {
+            setUrlWithoutDomain(a?.attr("href") ?: "")
+            title = img?.attr("alt") ?: a?.attr("title") ?: "Unknown"
+            thumbnail_url = img?.attr("src") ?: img?.attr("data-src")
+        }
     }
 
     override fun List<Video>.sort(): List<Video> {
-        val preferredQuality = preferences.getString("preferred_quality", "720") ?: "720"
-        return sortedWith(
-            compareByDescending<Video> { it.quality.contains(preferredQuality) }
-                .thenByDescending { it.quality.filter { it.isDigit() }.toIntOrNull() ?: 0 },
-        )
+        val quality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
+        return sortedWith(compareBy { it.quality.contains(quality) }).reversed()
+    }
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY_KEY
+            title = "Preferred quality"
+            entries = PREF_QUALITY_ENTRIES
+            entryValues = PREF_QUALITY_VALUES
+            setDefaultValue(PREF_QUALITY_DEFAULT)
+            summary = "%s"
+        }.also(screen::addPreference)
+    }
+
+    companion object {
+        private const val PREF_QUALITY_KEY = "preferred_quality"
+        private const val PREF_QUALITY_DEFAULT = "720"
+        private val PREF_QUALITY_ENTRIES = arrayOf("1080p", "720p", "480p", "360p")
+        private val PREF_QUALITY_VALUES = arrayOf("1080", "720", "480", "360")
     }
 }
