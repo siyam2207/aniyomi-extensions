@@ -67,8 +67,12 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // =========================== Anime Details ============================
     override fun animeDetailsParse(document: Document): SAnime {
-        val title = document.selectFirst("h1.video-title")?.text()
-            ?: document.selectFirst("title")?.text()?.substringBefore(" | TnaFlix") ?: "Unknown"
+        // Get raw title, then remove any trailing " - TnaFlix.com" or " | TnaFlix"
+        var title = document.selectFirst("h1.video-title")?.text()
+            ?: document.selectFirst("title")?.text() ?: "Unknown"
+        // Clean up suffix if present
+        title = title.replace(Regex("\\s*[-|]\\s*TnaFlix\\.?com.*$"), "").trim()
+        
         val thumbnail = document.selectFirst("meta[property=og:image]")?.attr("content")
         val description = document.selectFirst("div.description p")?.text()
         val genres = document.select("a[href*=category]").joinToString { it.text() }
@@ -159,10 +163,19 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val thumbLink = element.selectFirst("a.thumb")
         val url = thumbLink?.attr("href") ?: ""
         val titleElem = element.selectFirst("a.video-title")
-        val title = titleElem?.text()?.trim() ?: "Unknown"
+        var title = titleElem?.text()?.trim() ?: "Unknown"
+        // Remove any "- TnaFlix.com" suffix from listing titles as well
+        title = title.replace(Regex("\\s*-\\s*TnaFlix\\.?com$"), "").trim()
+
         val img = thumbLink?.selectFirst("img")
-        val thumbnail = img?.attr("abs:src")?.takeIf { it.isNotBlank() }
-            ?: img?.attr("data-src")?.takeIf { it.isNotBlank() }
+        // Prefer data-src (lazy-loaded) and resolve absolute URL
+        var thumbnail = img?.attr("abs:data-src")?.takeIf { it.isNotBlank() }
+        if (thumbnail.isNullOrBlank()) {
+            thumbnail = img?.attr("abs:src")?.takeIf { it.isNotBlank() }
+        }
+        if (thumbnail.isNullOrBlank()) {
+            thumbnail = img?.attr("src")?.takeIf { it.isNotBlank() }
+        }
 
         return SAnime.create().apply {
             setUrlWithoutDomain(url)
