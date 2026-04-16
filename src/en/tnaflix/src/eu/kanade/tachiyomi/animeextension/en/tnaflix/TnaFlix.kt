@@ -30,9 +30,9 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     // ============================== Popular ===============================
     override fun popularAnimeRequest(page: Int): Request {
         val url = if (page == 1) {
-            "$baseUrl/most-popular/"
+            "$baseUrl/featured/"
         } else {
-            "$baseUrl/most-popular/page/$page/"
+            "$baseUrl/featured/$page/"
         }
         return GET(url, headers)
     }
@@ -44,9 +44,9 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     // =============================== Latest ===============================
     override fun latestUpdatesRequest(page: Int): Request {
         val url = if (page == 1) {
-            "$baseUrl/newest/"
+            "$baseUrl/new/"
         } else {
-            "$baseUrl/newest/page/$page/"
+            "$baseUrl/new/page/$page/"
         }
         return GET(url, headers)
     }
@@ -69,7 +69,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override fun animeDetailsParse(document: Document): SAnime {
         var title = document.selectFirst("h1.video-title")?.text()
             ?: document.selectFirst("title")?.text() ?: "Unknown"
-        // Remove any site suffix
+        // Remove any "- TnaFlix.com" or "| TnaFlix" suffix
         title = title.replace(Regex("\\s*[-|]\\s*TnaFlix\\.?com.*$"), "").trim()
 
         val thumbnail = document.selectFirst("meta[property=og:image]")?.attr("content")
@@ -168,23 +168,19 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         var title = titleElem?.text()?.trim() ?: "Unknown"
         title = title.replace(Regex("\\s*-\\s*TnaFlix\\.?com$"), "").trim()
 
-        // Extract thumbnail URL - handle both lazy and direct images
+        // Extract thumbnail URL - handle lazy loading
         val img = thumbLink?.selectFirst("img")
         var thumbnail: String? = null
 
         if (img != null) {
-            // First try data-src (lazy loading)
             var src = img.attr("data-src")
             if (src.isNullOrBlank()) {
                 src = img.attr("src")
             }
             if (src.isNotBlank() && !src.contains("placeholder")) {
-                // Convert to absolute URL
                 thumbnail = if (src.startsWith("http")) src else "$baseUrl$src"
             }
         }
-
-        // Fallback: look for meta property="og:image" - but that's not available in listing
 
         return SAnime.create().apply {
             setUrlWithoutDomain(url)
