@@ -72,7 +72,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
             ?: document.selectFirst("title")?.text() ?: "Unknown"
         // Clean up suffix if present
         title = title.replace(Regex("\\s*[-|]\\s*TnaFlix\\.?com.*$"), "").trim()
-        
+
         val thumbnail = document.selectFirst("meta[property=og:image]")?.attr("content")
         val description = document.selectFirst("div.description p")?.text()
         val genres = document.select("a[href*=category]").joinToString { it.text() }
