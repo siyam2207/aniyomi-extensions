@@ -102,13 +102,15 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val videoUrl = extractVideoUrl(document)
             ?: throw Exception("No video URL found")
 
-        val headers = headersBuilder()
-            .add("Referer", baseUrl)
-            .build()
+        // Use a simple header string for HLS extraction
+        val refererHeader = "Referer: $baseUrl"
 
         return if (videoUrl.contains(".m3u8")) {
-            playlistUtils.extractFromHls(videoUrl, headers, videoNameGen = { quality -> "TnaFlix - $quality" })
+            playlistUtils.extractFromHls(videoUrl, refererHeader, videoNameGen = { quality -> "TnaFlix - $quality" })
         } else {
+            val headers = headersBuilder()
+                .add("Referer", baseUrl)
+                .build()
             listOf(Video(videoUrl, "TnaFlix", videoUrl, headers))
         }
     }
