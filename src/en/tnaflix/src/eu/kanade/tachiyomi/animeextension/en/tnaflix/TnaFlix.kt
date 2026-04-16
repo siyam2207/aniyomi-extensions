@@ -69,8 +69,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override fun animeDetailsParse(document: Document): SAnime {
         var title = document.selectFirst("h1.video-title")?.text()
             ?: document.selectFirst("title")?.text() ?: "Unknown"
-        // Remove any "- TnaFlix.com" or "| TnaFlix" suffix
-        title = title.replace(Regex("\\s*[-|]\\s*TnaFlix\\.?com.*$"), "").trim()
+        title = cleanTitle(title)
 
         val thumbnail = document.selectFirst("meta[property=og:image]")?.attr("content")
         val description = document.selectFirst("div.description p")?.text()
@@ -158,20 +157,25 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override fun videoUrlParse(document: Document): String = throw UnsupportedOperationException()
 
     // ============================= Utilities ==============================
+    private fun cleanTitle(raw: String): String {
+        // Remove common suffixes
+        return raw
+            .replace(Regex("\\s*[-|]\\s*TnaFlix\\.?com\\s*$"), "")
+            .replace(Regex("\\s*[-|]\\s*TnaFlix\\s*$"), "")
+            .replace(Regex("\\s*\\|\\s*TnaFlix.*$"), "")
+            .trim()
+    }
+
     private fun animeFromElement(element: Element): SAnime {
-        // Find the thumbnail link (any <a> containing an image)
         val thumbLink = element.selectFirst("a:has(img)")
         val url = thumbLink?.attr("href") ?: ""
 
-        // Get title from .video-title
         val titleElem = element.selectFirst("a.video-title")
         var title = titleElem?.text()?.trim() ?: "Unknown"
-        title = title.replace(Regex("\\s*-\\s*TnaFlix\\.?com$"), "").trim()
+        title = cleanTitle(title)
 
-        // Extract thumbnail URL - handle lazy loading
         val img = thumbLink?.selectFirst("img")
         var thumbnail: String? = null
-
         if (img != null) {
             var src = img.attr("data-src")
             if (src.isNullOrBlank()) {
