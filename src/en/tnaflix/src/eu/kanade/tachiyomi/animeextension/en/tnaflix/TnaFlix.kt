@@ -30,15 +30,15 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     // ============================== Popular ===============================
     override fun popularAnimeRequest(page: Int): Request {
         val url = if (page == 1) {
-            "$baseUrl/most-popular/"
+            "$baseUrl/featured/"
         } else {
-            "$baseUrl/most-popular/page/$page/"
+            "$baseUrl/featured/$page/"
         }
         return GET(url, headers)
     }
 
-    override fun popularAnimeSelector(): String = "div.videoWrapper"
-    override fun popularAnimeNextPageSelector(): String = "a.pagNext"
+    override fun popularAnimeSelector() = "div.row.video-list > div.mb-3"
+    override fun popularAnimeNextPageSelector() = "li.pagination-next a.page-link"
     override fun popularAnimeFromElement(element: Element): SAnime = animeFromElement(element)
 
     // =============================== Latest ===============================
@@ -51,8 +51,8 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         return GET(url, headers)
     }
 
-    override fun latestUpdatesSelector(): String = popularAnimeSelector()
-    override fun latestUpdatesNextPageSelector(): String = popularAnimeNextPageSelector()
+    override fun latestUpdatesSelector() = popularAnimeSelector()
+    override fun latestUpdatesNextPageSelector() = popularAnimeNextPageSelector()
     override fun latestUpdatesFromElement(element: Element): SAnime = animeFromElement(element)
 
     // =============================== Search ===============================
@@ -61,8 +61,8 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         return GET("$baseUrl/search?what=$encodedQuery&page=$page", headers)
     }
 
-    override fun searchAnimeSelector(): String = popularAnimeSelector()
-    override fun searchAnimeNextPageSelector(): String = popularAnimeNextPageSelector()
+    override fun searchAnimeSelector() = popularAnimeSelector()
+    override fun searchAnimeNextPageSelector() = popularAnimeNextPageSelector()
     override fun searchAnimeFromElement(element: Element): SAnime = animeFromElement(element)
 
     // =========================== Anime Details ============================
@@ -102,7 +102,6 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val videoUrl = extractVideoUrl(document)
             ?: throw Exception("No video URL found")
 
-        // Use a simple header string for HLS extraction
         val refererHeader = "Referer: $baseUrl"
 
         return if (videoUrl.contains(".m3u8")) {
@@ -116,11 +115,9 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     private fun extractVideoUrl(document: Document): String? {
-        // Try to find video source in video tag
         val videoSource = document.selectFirst("video source")
         videoSource?.attr("src")?.takeIf { it.isNotBlank() }?.let { return it }
 
-        // Try to find in script containing "file" or "video_url"
         val scripts = document.select("script")
         for (script in scripts) {
             val data = script.data()
@@ -138,7 +135,6 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
             }
         }
 
-        // Try to find iframe src (might contain the actual player)
         val iframe = document.selectFirst("iframe[src*=player]")
         iframe?.attr("abs:src")?.takeIf { it.isNotBlank() }?.let {
             return extractVideoUrlFromIframe(it)
@@ -160,12 +156,18 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // ============================= Utilities ==============================
     private fun animeFromElement(element: Element): SAnime {
-        val a = element.selectFirst("a")
-        val img = element.selectFirst("img")
+        val thumbLink = element.selectFirst("a.thumb")
+        val url = thumbLink?.attr("href") ?: ""
+        val titleElem = element.selectFirst("a.video-title")
+        val title = titleElem?.text()?.trim() ?: "Unknown"
+        val img = thumbLink?.selectFirst("img")
+        val thumbnail = img?.attr("abs:src")?.takeIf { it.isNotBlank() }
+            ?: img?.attr("data-src")?.takeIf { it.isNotBlank() }
+
         return SAnime.create().apply {
-            setUrlWithoutDomain(a?.attr("href") ?: "")
-            title = img?.attr("alt") ?: a?.attr("title") ?: "Unknown"
-            thumbnail_url = img?.attr("src") ?: img?.attr("data-src")
+            setUrlWithoutDomain(url)
+            this.title = title
+            thumbnail_url = thumbnail
         }
     }
 
