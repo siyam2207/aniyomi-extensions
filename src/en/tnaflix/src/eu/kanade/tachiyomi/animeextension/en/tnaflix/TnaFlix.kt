@@ -1,11 +1,9 @@
 package eu.kanade.tachiyomi.animeextension.en.tnaflix
 
-import android.util.Log
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -94,7 +92,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
                 name = "Video"
                 episode_number = 1f
                 url = anime.url
-            }
+            },
         )
     }
 
@@ -128,7 +126,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
                 Regex("""file:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
                 Regex("""video_url:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
                 Regex("""source:\s*['"]([^'"]+\.m3u8[^'"]*)['"]"""),
-                Regex(""""file":"([^"]+\.m3u8[^"]*)"""")
+                Regex(""""file":"([^"]+\.m3u8[^"]*)""""),
             )
             for (pattern in patterns) {
                 val match = pattern.find(data)
