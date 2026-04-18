@@ -135,7 +135,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val patterns = listOf(
             Regex("-(\\d{3,4})p-"),
             Regex("-(\\d{3,4})p\\?"),
-            Regex("-(4k)-", RegexOption.IGNORE_CASE)
+            Regex("-(4k)-", RegexOption.IGNORE_CASE),
         )
         for (pattern in patterns) {
             val match = pattern.find(url)
