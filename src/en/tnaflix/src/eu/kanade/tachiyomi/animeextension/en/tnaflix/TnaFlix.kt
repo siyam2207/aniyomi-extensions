@@ -101,25 +101,76 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     // ============================ Video Links =============================
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
-        val videoUrl = extractVideoUrl(document)
-            ?: throw Exception("No video URL found")
+        val videos = mutableListOf<Video>()
 
-        val refererHeader = "Referer: $baseUrl"
+        val videoSources = document.select("video source")
+        if (videoSources.isNotEmpty()) {
+            for (source in videoSources) {
+                val videoUrl = source.attr("src")
+                if (videoUrl.isNotBlank()) {
+                    var quality = source.attr("size").takeIf { it.isNotBlank() } ?: ""
+                    if (quality.isBlank()) {
+                        quality = extractQualityFromUrl(videoUrl)
+                    }
+                    val label = if (quality == "2160") "2160p (4K)" else "${quality}p"
+                    val headers = headersBuilder()
+                        .add("Referer", baseUrl)
+                        .build()
+                    videos.add(Video(videoUrl, label, videoUrl, headers))
+                }
+            }
+            return videos.sortedWith(videoQualityComparator())
+        }
 
-        return if (videoUrl.contains(".m3u8")) {
-            playlistUtils.extractFromHls(videoUrl, refererHeader, videoNameGen = { quality -> "TnaFlix - $quality" })
-        } else {
-            val headers = headersBuilder()
-                .add("Referer", baseUrl)
-                .build()
-            listOf(Video(videoUrl, "TnaFlix", videoUrl, headers))
+        val hlsUrl = extractHlsUrl(document)
+        if (hlsUrl != null) {
+            val refererHeader = "Referer: $baseUrl"
+            return playlistUtils.extractFromHls(hlsUrl, refererHeader, videoNameGen = { quality -> "TnaFlix - $quality" })
+        }
+
+        throw Exception("No video sources found")
+    }
+
+    private fun extractQualityFromUrl(url: String): String {
+        val patterns = listOf(
+            Regex("-(\\d{3,4})p-"),
+            Regex("-(\\d{3,4})p\\?"),
+            Regex("-(4k)-", RegexOption.IGNORE_CASE)
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(url)
+            if (match != null) {
+                val value = match.groupValues[1].lowercase()
+                return if (value == "4k") "2160" else value
+            }
+        }
+        return "Unknown"
+    }
+
+    private fun extractNumericQuality(qualityLabel: String): Int {
+        return when {
+            qualityLabel.contains("2160p") || qualityLabel.contains("4K") -> 2160
+            qualityLabel.contains("1080p") -> 1080
+            qualityLabel.contains("720p") -> 720
+            qualityLabel.contains("480p") -> 480
+            qualityLabel.contains("360p") -> 360
+            qualityLabel.contains("240p") -> 240
+            qualityLabel.contains("144p") -> 144
+            else -> qualityLabel.filter { it.isDigit() }.toIntOrNull() ?: 0
         }
     }
 
-    private fun extractVideoUrl(document: Document): String? {
-        val videoSource = document.selectFirst("video source")
-        videoSource?.attr("src")?.takeIf { it.isNotBlank() }?.let { return it }
+    private fun videoQualityComparator(): Comparator<Video> {
+        val preferredQuality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)?.toIntOrNull() ?: 1080
+        return compareByDescending<Video> { video ->
+            // First, prioritize the preferred quality exactly
+            if (extractNumericQuality(video.quality) == preferredQuality) 1 else 0
+        }.thenByDescending {
+            extractNumericQuality(it.quality)
+        }
+    }
 
+    private fun extractHlsUrl(document: Document): String? {
         val scripts = document.select("script")
         for (script in scripts) {
             val data = script.data()
@@ -136,20 +187,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
                 }
             }
         }
-
-        val iframe = document.selectFirst("iframe[src*=player]")
-        iframe?.attr("abs:src")?.takeIf { it.isNotBlank() }?.let {
-            return extractVideoUrlFromIframe(it)
-        }
-
         return null
-    }
-
-    private fun extractVideoUrlFromIframe(iframeUrl: String): String? {
-        return runCatching {
-            val iframeDoc = client.newCall(GET(iframeUrl, headers)).execute().asJsoup()
-            extractVideoUrl(iframeDoc)
-        }.getOrNull()
     }
 
     override fun videoListSelector(): String = throw UnsupportedOperationException()
@@ -158,7 +196,6 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // ============================= Utilities ==============================
     private fun cleanTitle(raw: String): String {
-        // Remove common suffixes
         return raw
             .replace(Regex("\\s*[-|]\\s*TnaFlix\\.?com\\s*$"), "")
             .replace(Regex("\\s*[-|]\\s*TnaFlix\\s*$"), "")
@@ -194,8 +231,8 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     override fun List<Video>.sort(): List<Video> {
-        val quality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)!!
-        return sortedWith(compareBy { it.quality.contains(quality) }).reversed()
+        // This method is called by the app to sort videos; use our comparator
+        return sortedWith(videoQualityComparator())
     }
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
@@ -211,8 +248,8 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     companion object {
         private const val PREF_QUALITY_KEY = "preferred_quality"
-        private const val PREF_QUALITY_DEFAULT = "720"
-        private val PREF_QUALITY_ENTRIES = arrayOf("1080p", "720p", "480p", "360p")
-        private val PREF_QUALITY_VALUES = arrayOf("1080", "720", "480", "360")
+        private const val PREF_QUALITY_DEFAULT = "1080"
+        private val PREF_QUALITY_ENTRIES = arrayOf("2160p (4K)", "1080p", "720p", "480p", "360p", "240p", "144p")
+        private val PREF_QUALITY_VALUES = arrayOf("2160", "1080", "720", "480", "360", "240", "144")
     }
 }
