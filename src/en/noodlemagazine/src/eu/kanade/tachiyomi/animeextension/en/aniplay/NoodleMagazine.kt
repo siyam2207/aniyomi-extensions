@@ -14,8 +14,6 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -91,7 +89,7 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
                 name = "Video"
                 episode_number = 1f
                 url = anime.url
-            }
+            },
         )
     }
 
@@ -140,13 +138,13 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     @Serializable
     data class Playlist(
-        val sources: List<Source>
+        val sources: List<Source>,
     )
 
     @Serializable
     data class Source(
         val file: String,
-        val label: String? = null
+        val label: String? = null,
     )
 
     private fun videoQualityComparator(): Comparator<Video> {
