@@ -1,6 +1,6 @@
 ext {
     extName = 'noodlemagazine'
-    extClass = 'noodlemagazine'
+    extClass = '.noodlemagazine'
     extVersionCode = 1
 }
 
