@@ -67,6 +67,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // =========================== Anime Details ============================
     override fun animeDetailsParse(document: Document): SAnime {
+        // Try to get title from h1.video-title first, fallback to <title>
         var title = document.selectFirst("h1.video-title")?.text()
             ?: document.selectFirst("title")?.text() ?: "Unknown"
         title = cleanTitle(title)
@@ -135,7 +136,7 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val patterns = listOf(
             Regex("-(\\d{3,4})p-"),
             Regex("-(\\d{3,4})p\\?"),
-            Regex("-(4k)-", RegexOption.IGNORE_CASE),
+            Regex("-(4k)-", RegexOption.IGNORE_CASE)
         )
         for (pattern in patterns) {
             val match = pattern.find(url)
@@ -163,7 +164,6 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     private fun videoQualityComparator(): Comparator<Video> {
         val preferredQuality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)?.toIntOrNull() ?: 1080
         return compareByDescending<Video> { video ->
-            // First, prioritize the preferred quality exactly
             if (extractNumericQuality(video.quality) == preferredQuality) 1 else 0
         }.thenByDescending {
             extractNumericQuality(it.quality)
@@ -196,11 +196,14 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // ============================= Utilities ==============================
     private fun cleanTitle(raw: String): String {
-        return raw
-            .replace(Regex("\\s*[-|]\\s*TnaFlix\\.?com\\s*$"), "")
-            .replace(Regex("\\s*[-|]\\s*TnaFlix\\s*$"), "")
-            .replace(Regex("\\s*\\|\\s*TnaFlix.*$"), "")
+        // Remove any occurrence of " - TnaFlix.com", " | TnaFlix.com", " - TnaFlix", " | TnaFlix" (case-insensitive)
+        var cleaned = raw
+            .replace(Regex("\\s*[-|]\\s*TnaFlix\\.?com", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s*[-|]\\s*TnaFlix", RegexOption.IGNORE_CASE), "")
             .trim()
+        // Also remove trailing spaces or punctuation that might remain
+        cleaned = cleaned.replace(Regex("\\s*[-|]\\s*$"), "").trim()
+        return cleaned
     }
 
     private fun animeFromElement(element: Element): SAnime {
@@ -231,7 +234,6 @@ class TnaFlix : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     override fun List<Video>.sort(): List<Video> {
-        // This method is called by the app to sort videos; use our comparator
         return sortedWith(videoQualityComparator())
     }
 
