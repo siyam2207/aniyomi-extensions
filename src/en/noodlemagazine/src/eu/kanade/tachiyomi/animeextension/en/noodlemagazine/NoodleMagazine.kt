@@ -94,6 +94,10 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     // ============================ Video Links =============================
+    override fun videoListSelector(): String = throw UnsupportedOperationException()
+    override fun videoFromElement(element: Element): Video = throw UnsupportedOperationException()
+    override fun videoUrlParse(document: Document): String = throw UnsupportedOperationException()
+
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
@@ -130,7 +134,6 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     private fun extractQualityFromUrl(url: String): String {
-        // Example: "https://.../video-480p.mp4" -> "480p"
         val pattern = Pattern.compile("-(\\d+)p\\.")
         val matcher = pattern.matcher(url)
         return if (matcher.find()) "${matcher.group(1)}p" else "Unknown"
