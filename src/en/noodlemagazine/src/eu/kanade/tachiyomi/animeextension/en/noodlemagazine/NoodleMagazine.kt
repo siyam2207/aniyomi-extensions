@@ -35,33 +35,54 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // ============================== Popular ===============================
     override fun popularAnimeRequest(page: Int): Request {
-        val url = "$baseUrl/popular/month?sort_by=views&sort_order=desc&p=${page - 1}"
-        return GET(url, headers)
-    }
-
-    override fun popularAnimeSelector(): String = "div.item"
-    override fun popularAnimeNextPageSelector(): String = "div.more"
-    override fun popularAnimeFromElement(element: Element): SAnime = animeFromElement(element)
-
-    // =============================== Latest ===============================
-    override fun latestUpdatesRequest(page: Int): Request {
         val url = "$baseUrl/new-video?p=${page - 1}"
         return GET(url, headers)
     }
 
+    override fun popularAnimeSelector(): String = "div.item"
+    override fun popularAnimeNextPageSelector(): String = "" // Not used; we override nextPageUrl
+    override fun popularAnimeFromElement(element: Element): SAnime = animeFromElement(element)
+
+    override fun popularAnimeNextPage(page: Int, document: Document): String? {
+        // Check if there is a "Show more" button with data-page attribute
+        val moreButton = document.selectFirst("div.more")
+        if (moreButton != null && moreButton.hasAttr("data-page")) {
+            val currentPage = moreButton.attr("data-page").toIntOrNull() ?: page
+            // Next page would be currentPage + 1 (but the site uses 0-index? Let's use page+1)
+            return "$baseUrl/new-video?p=$page"
+        }
+        return null
+    }
+
+    // =============================== Latest ===============================
+    override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
     override fun latestUpdatesSelector(): String = popularAnimeSelector()
     override fun latestUpdatesNextPageSelector(): String = popularAnimeNextPageSelector()
     override fun latestUpdatesFromElement(element: Element): SAnime = animeFromElement(element)
 
+    override fun latestUpdatesNextPage(page: Int, document: Document): String? {
+        return popularAnimeNextPage(page, document)
+    }
+
     // =============================== Search ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val url = "$baseUrl/search?q=$query&p=${page - 1}"
+        val url = "$baseUrl/search?story=$query&p=${page - 1}"
         return GET(url, headers)
     }
 
     override fun searchAnimeSelector(): String = popularAnimeSelector()
     override fun searchAnimeNextPageSelector(): String = popularAnimeNextPageSelector()
     override fun searchAnimeFromElement(element: Element): SAnime = animeFromElement(element)
+
+    override fun searchAnimeNextPage(page: Int, document: Document): String? {
+        val moreButton = document.selectFirst("div.more")
+        if (moreButton != null && moreButton.hasAttr("data-page")) {
+            // For search, we need to preserve the query
+            val query = document.selectFirst("input[name=story]")?.attr("value") ?: return null
+            return "$baseUrl/search?story=$query&p=$page"
+        }
+        return null
+    }
 
     // =========================== Anime Details ============================
     override fun animeDetailsParse(document: Document): SAnime {
@@ -102,26 +123,42 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
 
-        // Extract the window.playlist JSON from the script tag
+        // Try to extract window.playlist JSON (same as before)
         val scriptData = document.select("script")
             .map { it.data() }
             .find { it.contains("window.playlist") }
-            ?: throw Exception("No playlist data found")
-
-        val playlistJson = extractPlaylistJson(scriptData)
-        val playlist = Json.decodeFromString<Playlist>(playlistJson)
-
-        // Parse each source from the playlist
-        playlist.sources.forEach { source ->
-            val videoUrl = source.file
-            val quality = source.label ?: extractQualityFromUrl(videoUrl)
-            val headers = headersBuilder()
-                .add("Referer", baseUrl)
-                .build()
-            videos.add(Video(videoUrl, quality, videoUrl, headers))
+        if (scriptData != null) {
+            val playlistJson = extractPlaylistJson(scriptData)
+            val playlist = Json.decodeFromString<Playlist>(playlistJson)
+            playlist.sources.forEach { source ->
+                val videoUrl = source.file
+                val quality = source.label ?: extractQualityFromUrl(videoUrl)
+                val headers = headersBuilder()
+                    .add("Referer", baseUrl)
+                    .build()
+                videos.add(Video(videoUrl, quality, videoUrl, headers))
+            }
+            return videos.sortedWith(videoQualityComparator())
         }
 
-        return videos.sortedWith(videoQualityComparator())
+        // Fallback: look for <video> sources (if any)
+        val videoSources = document.select("video source")
+        if (videoSources.isNotEmpty()) {
+            for (source in videoSources) {
+                val videoUrl = source.attr("src")
+                if (videoUrl.isNotBlank()) {
+                    val quality = source.attr("size").takeIf { it.isNotBlank() } ?: "Unknown"
+                    val label = "${quality}p"
+                    val headers = headersBuilder()
+                        .add("Referer", baseUrl)
+                        .build()
+                    videos.add(Video(videoUrl, label, videoUrl, headers))
+                }
+            }
+            return videos.sortedByDescending { extractNumericQuality(it.quality) }
+        }
+
+        throw Exception("No video sources found")
     }
 
     private fun extractPlaylistJson(scriptData: String): String {
@@ -177,7 +214,7 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val thumbLink = element.selectFirst("a.item_link")
         val url = thumbLink?.attr("href") ?: ""
 
-        val titleElem = element.selectFirst("div.title")
+        val titleElem = element.selectFirst("div.i_info div.title")
         val title = titleElem?.text()?.trim() ?: "Unknown"
 
         val img = element.selectFirst("div.i_img img")
