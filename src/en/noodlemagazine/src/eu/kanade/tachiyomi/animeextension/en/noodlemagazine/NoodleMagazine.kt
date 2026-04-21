@@ -33,26 +33,18 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
     }
 
+    private var currentPage = 0
+
     // ============================== Popular ===============================
     override fun popularAnimeRequest(page: Int): Request {
+        currentPage = page
         val url = "$baseUrl/new-video?p=${page - 1}"
         return GET(url, headers)
     }
 
     override fun popularAnimeSelector(): String = "div.item"
-    override fun popularAnimeNextPageSelector(): String = "" // Not used; we override nextPageUrl
+    override fun popularAnimeNextPageSelector(): String = "" // Handled by nextPageUrl
     override fun popularAnimeFromElement(element: Element): SAnime = animeFromElement(element)
-
-    override fun popularAnimeNextPage(page: Int, document: Document): String? {
-        // Check if there is a "Show more" button with data-page attribute
-        val moreButton = document.selectFirst("div.more")
-        if (moreButton != null && moreButton.hasAttr("data-page")) {
-            val currentPage = moreButton.attr("data-page").toIntOrNull() ?: page
-            // Next page would be currentPage + 1 (but the site uses 0-index? Let's use page+1)
-            return "$baseUrl/new-video?p=$page"
-        }
-        return null
-    }
 
     // =============================== Latest ===============================
     override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
@@ -60,12 +52,9 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override fun latestUpdatesNextPageSelector(): String = popularAnimeNextPageSelector()
     override fun latestUpdatesFromElement(element: Element): SAnime = animeFromElement(element)
 
-    override fun latestUpdatesNextPage(page: Int, document: Document): String? {
-        return popularAnimeNextPage(page, document)
-    }
-
     // =============================== Search ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+        currentPage = page
         val url = "$baseUrl/search?story=$query&p=${page - 1}"
         return GET(url, headers)
     }
@@ -73,16 +62,6 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override fun searchAnimeSelector(): String = popularAnimeSelector()
     override fun searchAnimeNextPageSelector(): String = popularAnimeNextPageSelector()
     override fun searchAnimeFromElement(element: Element): SAnime = animeFromElement(element)
-
-    override fun searchAnimeNextPage(page: Int, document: Document): String? {
-        val moreButton = document.selectFirst("div.more")
-        if (moreButton != null && moreButton.hasAttr("data-page")) {
-            // For search, we need to preserve the query
-            val query = document.selectFirst("input[name=story]")?.attr("value") ?: return null
-            return "$baseUrl/search?story=$query&p=$page"
-        }
-        return null
-    }
 
     // =========================== Anime Details ============================
     override fun animeDetailsParse(document: Document): SAnime {
@@ -123,7 +102,6 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
 
-        // Try to extract window.playlist JSON (same as before)
         val scriptData = document.select("script")
             .map { it.data() }
             .find { it.contains("window.playlist") }
@@ -141,7 +119,6 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
             return videos.sortedWith(videoQualityComparator())
         }
 
-        // Fallback: look for <video> sources (if any)
         val videoSources = document.select("video source")
         if (videoSources.isNotEmpty()) {
             for (source in videoSources) {
@@ -206,6 +183,24 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
             qualityLabel.contains("240p") -> 240
             qualityLabel.contains("144p") -> 144
             else -> qualityLabel.filter { it.isDigit() }.toIntOrNull() ?: 0
+        }
+    }
+
+    // Custom pagination
+    override fun nextPageUrl(document: Document): String? {
+        val moreButton = document.selectFirst("div.more")
+        if (moreButton == null) return null
+
+        val nextPage = currentPage + 1
+        val isSearch = document.selectFirst("input[name=story]") != null
+        val query = if (isSearch) {
+            document.selectFirst("input[name=story]")?.attr("value") ?: return null
+        } else null
+
+        return if (isSearch && query != null) {
+            "$baseUrl/search?story=$query&p=$nextPage"
+        } else {
+            "$baseUrl/new-video?p=$nextPage"
         }
     }
 
