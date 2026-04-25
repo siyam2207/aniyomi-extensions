@@ -33,29 +33,29 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
     }
 
-    private var currentPage = 0
-
     // ============================== Popular ===============================
     override fun popularAnimeRequest(page: Int): Request {
-        currentPage = page
-        val url = "$baseUrl/new-video?p=${page - 1}"
+        val url = "$baseUrl/popular/month?sort_by=views&sort_order=desc&p=${page - 1}"
         return GET(url, headers)
     }
 
     override fun popularAnimeSelector(): String = "div.item"
-    override fun popularAnimeNextPageSelector(): String = "" // Handled by nextPageUrl
+    override fun popularAnimeNextPageSelector(): String = "div.more"
     override fun popularAnimeFromElement(element: Element): SAnime = animeFromElement(element)
 
     // =============================== Latest ===============================
-    override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
+    override fun latestUpdatesRequest(page: Int): Request {
+        val url = "$baseUrl/new-video?p=${page - 1}"
+        return GET(url, headers)
+    }
+
     override fun latestUpdatesSelector(): String = popularAnimeSelector()
     override fun latestUpdatesNextPageSelector(): String = popularAnimeNextPageSelector()
     override fun latestUpdatesFromElement(element: Element): SAnime = animeFromElement(element)
 
     // =============================== Search ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        currentPage = page
-        val url = "$baseUrl/search?story=$query&p=${page - 1}"
+        val url = "$baseUrl/search?q=$query&p=${page - 1}"
         return GET(url, headers)
     }
 
@@ -105,37 +105,21 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val scriptData = document.select("script")
             .map { it.data() }
             .find { it.contains("window.playlist") }
-        if (scriptData != null) {
-            val playlistJson = extractPlaylistJson(scriptData)
-            val playlist = Json.decodeFromString<Playlist>(playlistJson)
-            playlist.sources.forEach { source ->
-                val videoUrl = source.file
-                val quality = source.label ?: extractQualityFromUrl(videoUrl)
-                val headers = headersBuilder()
-                    .add("Referer", baseUrl)
-                    .build()
-                videos.add(Video(videoUrl, quality, videoUrl, headers))
-            }
-            return videos.sortedWith(videoQualityComparator())
+            ?: throw Exception("No playlist data found")
+
+        val playlistJson = extractPlaylistJson(scriptData)
+        val playlist = Json.decodeFromString<Playlist>(playlistJson)
+
+        playlist.sources.forEach { source ->
+            val videoUrl = source.file
+            val quality = source.label ?: extractQualityFromUrl(videoUrl)
+            val headers = headersBuilder()
+                .add("Referer", baseUrl)
+                .build()
+            videos.add(Video(videoUrl, quality, videoUrl, headers))
         }
 
-        val videoSources = document.select("video source")
-        if (videoSources.isNotEmpty()) {
-            for (source in videoSources) {
-                val videoUrl = source.attr("src")
-                if (videoUrl.isNotBlank()) {
-                    val quality = source.attr("size").takeIf { it.isNotBlank() } ?: "Unknown"
-                    val label = "${quality}p"
-                    val headers = headersBuilder()
-                        .add("Referer", baseUrl)
-                        .build()
-                    videos.add(Video(videoUrl, label, videoUrl, headers))
-                }
-            }
-            return videos.sortedByDescending { extractNumericQuality(it.quality) }
-        }
-
-        throw Exception("No video sources found")
+        return videos.sortedWith(videoQualityComparator())
     }
 
     private fun extractPlaylistJson(scriptData: String): String {
@@ -150,7 +134,11 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     private fun extractQualityFromUrl(url: String): String {
         val pattern = Pattern.compile("-(\\d+)p\\.")
         val matcher = pattern.matcher(url)
-        return if (matcher.find()) "${matcher.group(1)}p" else "Unknown"
+        return if (matcher.find()) {
+            "${matcher.group(1)}p"
+        } else {
+            "Unknown"
+        }
     }
 
     @Serializable
@@ -167,7 +155,11 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     private fun videoQualityComparator(): Comparator<Video> {
         val preferredQuality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)?.toIntOrNull() ?: 1080
         return compareByDescending<Video> { video ->
-            if (extractNumericQuality(video.quality) == preferredQuality) 1 else 0
+            if (extractNumericQuality(video.quality) == preferredQuality) {
+                1
+            } else {
+                0
+            }
         }.thenByDescending {
             extractNumericQuality(it.quality)
         }
@@ -186,39 +178,27 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         }
     }
 
-    // Custom pagination
-    override fun nextPageUrl(document: Document): String? {
-        val moreButton = document.selectFirst("div.more")
-        if (moreButton == null) return null
-
-        val nextPage = currentPage + 1
-        val isSearch = document.selectFirst("input[name=story]") != null
-        val query = if (isSearch) {
-            document.selectFirst("input[name=story]")?.attr("value") ?: return null
-        } else null
-
-        return if (isSearch && query != null) {
-            "$baseUrl/search?story=$query&p=$nextPage"
-        } else {
-            "$baseUrl/new-video?p=$nextPage"
-        }
-    }
-
     // ============================= Utilities ==============================
     private fun animeFromElement(element: Element): SAnime {
         val thumbLink = element.selectFirst("a.item_link")
         val url = thumbLink?.attr("href") ?: ""
 
-        val titleElem = element.selectFirst("div.i_info div.title")
+        val titleElem = element.selectFirst("div.title")
         val title = titleElem?.text()?.trim() ?: "Unknown"
 
         val img = element.selectFirst("div.i_img img")
         var thumbnail: String? = null
         if (img != null) {
             var src = img.attr("data-src")
-            if (src.isBlank()) src = img.attr("src")
+            if (src.isBlank()) {
+                src = img.attr("src")
+            }
             if (src.isNotBlank() && !src.contains("placeholder")) {
-                thumbnail = if (src.startsWith("http")) src else "$baseUrl$src"
+                thumbnail = if (src.startsWith("http")) {
+                    src
+                } else {
+                    "$baseUrl$src"
+                }
             }
         }
 
