@@ -57,7 +57,7 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // =============================== Latest ===============================
     override fun latestUpdatesRequest(page: Int): Request {
-        val url = "$baseUrl/new-video?p=${page - 1}"
+        val url = "$baseUrl/popular/recent?sort_by=views&sort_order=desc&p=${page - 1}"
         return GET(url, headers)
     }
 
