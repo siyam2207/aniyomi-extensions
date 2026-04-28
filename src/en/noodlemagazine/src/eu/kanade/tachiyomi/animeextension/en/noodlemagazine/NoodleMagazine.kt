@@ -30,7 +30,7 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override val lang = "en"
     override val supportsLatest = true
 
-    // Custom client with a realistic User‑Agent (DO NOT override 'headers')
+    // Custom client with a realistic User‑Agent
     override val client: OkHttpClient = super.client.newBuilder()
         .addInterceptor { chain ->
             val original = chain.request()
@@ -67,7 +67,6 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // =============================== Search ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        // Correct search endpoint: /video/{query}?q={query}
         val encodedQuery = query.replace(" ", "+")
         val url = "$baseUrl/video/$encodedQuery?q=$encodedQuery&page=$page"
         return GET(url, headers)
@@ -116,43 +115,89 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
 
+        // Method 1: Extract from window.playlist JSON (most reliable)
         val scriptData = document.select("script")
             .map { it.data() }
-            .find { it.contains("window.playlist") }
-            ?: throw Exception("No playlist data found")
+            .firstOrNull { it.contains("window.playlist") }
 
-        val playlistJson = extractPlaylistJson(scriptData)
-        val playlist = Json.decodeFromString<Playlist>(playlistJson)
-
-        playlist.sources.forEach { source ->
-            val videoUrl = source.file
-            val quality = source.label ?: extractQualityFromUrl(videoUrl)
-            val videoHeaders = headersBuilder()
-                .add("Referer", baseUrl)
-                .build()
-            videos.add(Video(videoUrl, quality, videoUrl, videoHeaders))
+        if (scriptData != null) {
+            try {
+                val playlistJson = extractPlaylistJson(scriptData)
+                val playlist = Json.decodeFromString<Playlist>(playlistJson)
+                playlist.sources.forEach { source ->
+                    val videoUrl = source.file
+                    val quality = source.label ?: extractQualityFromUrl(videoUrl)
+                    val videoHeaders = headersBuilder()
+                        .add("Referer", baseUrl)
+                        .build()
+                    videos.add(Video(videoUrl, "${quality}p", videoUrl, videoHeaders))
+                }
+                if (videos.isNotEmpty()) {
+                    return videos.sortedWith(videoQualityComparator())
+                }
+            } catch (e: Exception) {
+                // Fall through to method 2
+            }
         }
 
-        return videos.sortedWith(videoQualityComparator())
+        // Method 2: Look for <video> <source> tags (fallback)
+        val videoSources = document.select("video source")
+        if (videoSources.isNotEmpty()) {
+            for (source in videoSources) {
+                val videoUrl = source.attr("src")
+                if (videoUrl.isNotBlank()) {
+                    var quality = source.attr("size").takeIf { it.isNotBlank() } ?: ""
+                    if (quality.isBlank()) {
+                        quality = extractQualityFromUrl(videoUrl)
+                    }
+                    val label = if (quality == "2160") "2160p (4K)" else "${quality}p"
+                    val videoHeaders = headersBuilder()
+                        .add("Referer", baseUrl)
+                        .build()
+                    videos.add(Video(videoUrl, label, videoUrl, videoHeaders))
+                }
+            }
+            if (videos.isNotEmpty()) {
+                return videos.sortedWith(videoQualityComparator())
+            }
+        }
+
+        throw Exception("No video sources found")
     }
 
     private fun extractPlaylistJson(scriptData: String): String {
-        val pattern = Pattern.compile("window\\.playlist\\s*=\\s*(\\{.*?\\});", Pattern.DOTALL)
-        val matcher = pattern.matcher(scriptData)
-        if (matcher.find()) {
-            return matcher.group(1)
+        val startMarker = "window.playlist ="
+        val startIndex = scriptData.indexOf(startMarker)
+        if (startIndex == -1) throw Exception("window.playlist not found")
+        var braceCount = 0
+        var jsonStart = -1
+        var jsonEnd = -1
+        var i = startIndex + startMarker.length
+        while (i < scriptData.length) {
+            when (scriptData[i]) {
+                '{' -> {
+                    if (braceCount == 0) jsonStart = i
+                    braceCount++
+                }
+                '}' -> {
+                    braceCount--
+                    if (braceCount == 0) {
+                        jsonEnd = i + 1
+                        break
+                    }
+                }
+            }
+            i++
         }
-        throw Exception("Could not extract playlist JSON")
+        if (jsonStart == -1 || jsonEnd == -1) throw Exception("Could not extract playlist JSON")
+        return scriptData.substring(jsonStart, jsonEnd)
     }
 
     private fun extractQualityFromUrl(url: String): String {
-        val pattern = Pattern.compile("-(\\d+)p\\.")
+        // Matches patterns like "_1080p." or "-1080p."
+        val pattern = Pattern.compile("[_-](\\d+)p\\.")
         val matcher = pattern.matcher(url)
-        return if (matcher.find()) {
-            "${matcher.group(1)}p"
-        } else {
-            "Unknown"
-        }
+        return if (matcher.find()) matcher.group(1) else "Unknown"
     }
 
     @Serializable
