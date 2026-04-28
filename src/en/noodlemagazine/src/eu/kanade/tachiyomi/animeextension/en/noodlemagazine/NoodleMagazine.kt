@@ -14,7 +14,7 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.Headers
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -30,9 +30,15 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override val lang = "en"
     override val supportsLatest = true
 
-    // Realistic User‑Agent to avoid blocks
-    override val headers: Headers = Headers.Builder()
-        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    // Custom client with a realistic User‑Agent (DO NOT override 'headers')
+    override val client: OkHttpClient = super.client.newBuilder()
+        .addInterceptor { chain ->
+            val original = chain.request()
+            val request = original.newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .build()
+            chain.proceed(request)
+        }
         .build()
 
     private val preferences: SharedPreferences by lazy {
