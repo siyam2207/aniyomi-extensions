@@ -55,7 +55,9 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // =============================== Search ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val url = "$baseUrl/search?q=$query&p=${page - 1}"
+        // Use 'story' parameter (from site's search input name) and zero-indexed page
+        val encodedQuery = query.replace(" ", "+")
+        val url = "$baseUrl/search?story=$encodedQuery&p=${page - 1}"
         return GET(url, headers)
     }
 
