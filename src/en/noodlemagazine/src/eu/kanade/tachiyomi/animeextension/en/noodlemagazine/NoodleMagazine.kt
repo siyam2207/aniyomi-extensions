@@ -30,7 +30,7 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override val lang = "en"
     override val supportsLatest = true
 
-    // Custom client with a realistic User‑Agent
+    // Custom client with realistic User‑Agent – DO NOT override 'headers'
     override val client: OkHttpClient = super.client.newBuilder()
         .addInterceptor { chain ->
             val original = chain.request()
@@ -115,51 +115,70 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
 
-        // Method 1: Extract from window.playlist JSON (most reliable)
-        val scriptData = document.select("script")
+        // 1) Extract all qualities from window.playlist JSON
+        val playlistScript = document.select("script")
             .map { it.data() }
             .firstOrNull { it.contains("window.playlist") }
 
-        if (scriptData != null) {
+        if (playlistScript != null) {
             try {
-                val playlistJson = extractPlaylistJson(scriptData)
-                val playlist = Json.decodeFromString<Playlist>(playlistJson)
-                playlist.sources.forEach { source ->
+                val playlistJson = extractPlaylistJson(playlistScript)
+                val playlist = Json {
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                }.decodeFromString<Playlist>(playlistJson)
+
+                for (source in playlist.sources) {
                     val videoUrl = source.file
-                    val quality = source.label ?: extractQualityFromUrl(videoUrl)
-                    val videoHeaders = headersBuilder()
-                        .add("Referer", baseUrl)
-                        .build()
-                    videos.add(Video(videoUrl, "${quality}p", videoUrl, videoHeaders))
+                    if (videoUrl.isNotBlank()) {
+                        val quality = source.label?.let { "${it}p" } ?: extractQualityFromUrl(videoUrl)
+                        val headers = headersBuilder()
+                            .add("Referer", baseUrl)
+                            .build()
+                        videos.add(Video(videoUrl, quality, videoUrl, headers))
+                    }
                 }
                 if (videos.isNotEmpty()) {
                     return videos.sortedWith(videoQualityComparator())
                 }
             } catch (e: Exception) {
-                // Fall through to method 2
+                // Fall through to next method
             }
         }
 
-        // Method 2: Look for <video> <source> tags (fallback)
+        // 2) Fallback: direct <video> tag (single quality)
+        val directVideo = document.select("video").firstOrNull()
+        if (directVideo != null) {
+            var videoUrl = directVideo.attr("src")
+            if (videoUrl.isBlank()) videoUrl = directVideo.attr("data-src")
+            if (videoUrl.isNotBlank()) {
+                val quality = extractQualityFromUrl(videoUrl)
+                val label = if (quality == "2160") "2160p (4K)" else "${quality}p"
+                val headers = headersBuilder()
+                    .add("Referer", baseUrl)
+                    .build()
+                videos.add(Video(videoUrl, label, videoUrl, headers))
+                return videos
+            }
+        }
+
+        // 3) Fallback: <video><source> tags
         val videoSources = document.select("video source")
-        if (videoSources.isNotEmpty()) {
-            for (source in videoSources) {
-                val videoUrl = source.attr("src")
-                if (videoUrl.isNotBlank()) {
-                    var quality = source.attr("size").takeIf { it.isNotBlank() } ?: ""
-                    if (quality.isBlank()) {
-                        quality = extractQualityFromUrl(videoUrl)
-                    }
-                    val label = if (quality == "2160") "2160p (4K)" else "${quality}p"
-                    val videoHeaders = headersBuilder()
-                        .add("Referer", baseUrl)
-                        .build()
-                    videos.add(Video(videoUrl, label, videoUrl, videoHeaders))
-                }
+        for (source in videoSources) {
+            val videoUrl = source.attr("src")
+            if (videoUrl.isNotBlank()) {
+                var quality = source.attr("size").takeIf { it.isNotBlank() } ?: ""
+                if (quality.isBlank()) quality = extractQualityFromUrl(videoUrl)
+                val label = if (quality == "2160") "2160p (4K)" else "${quality}p"
+                val headers = headersBuilder()
+                    .add("Referer", baseUrl)
+                    .build()
+                videos.add(Video(videoUrl, label, videoUrl, headers))
             }
-            if (videos.isNotEmpty()) {
-                return videos.sortedWith(videoQualityComparator())
-            }
+        }
+
+        if (videos.isNotEmpty()) {
+            return videos.sortedWith(videoQualityComparator())
         }
 
         throw Exception("No video sources found")
@@ -169,10 +188,12 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val startMarker = "window.playlist ="
         val startIndex = scriptData.indexOf(startMarker)
         if (startIndex == -1) throw Exception("window.playlist not found")
+
         var braceCount = 0
         var jsonStart = -1
         var jsonEnd = -1
         var i = startIndex + startMarker.length
+
         while (i < scriptData.length) {
             when (scriptData[i]) {
                 '{' -> {
@@ -189,12 +210,15 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
             }
             i++
         }
-        if (jsonStart == -1 || jsonEnd == -1) throw Exception("Could not extract playlist JSON")
+
+        if (jsonStart == -1 || jsonEnd == -1) {
+            throw Exception("Could not extract playlist JSON")
+        }
+
         return scriptData.substring(jsonStart, jsonEnd)
     }
 
     private fun extractQualityFromUrl(url: String): String {
-        // Matches patterns like "_1080p." or "-1080p."
         val pattern = Pattern.compile("[_-](\\d+)p\\.")
         val matcher = pattern.matcher(url)
         return if (matcher.find()) matcher.group(1) else "Unknown"
@@ -214,11 +238,7 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     private fun videoQualityComparator(): Comparator<Video> {
         val preferredQuality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)?.toIntOrNull() ?: 1080
         return compareByDescending<Video> { video ->
-            if (extractNumericQuality(video.quality) == preferredQuality) {
-                1
-            } else {
-                0
-            }
+            if (extractNumericQuality(video.quality) == preferredQuality) 1 else 0
         }.thenByDescending {
             extractNumericQuality(it.quality)
         }
@@ -249,15 +269,9 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         var thumbnail: String? = null
         if (img != null) {
             var src = img.attr("data-src")
-            if (src.isBlank()) {
-                src = img.attr("src")
-            }
+            if (src.isBlank()) src = img.attr("src")
             if (src.isNotBlank() && !src.contains("placeholder")) {
-                thumbnail = if (src.startsWith("http")) {
-                    src
-                } else {
-                    "$baseUrl$src"
-                }
+                thumbnail = if (src.startsWith("http")) src else "$baseUrl$src"
             }
         }
 
