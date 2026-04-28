@@ -14,6 +14,7 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
@@ -28,6 +29,11 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override val baseUrl = "https://noodlemagazine.com"
     override val lang = "en"
     override val supportsLatest = true
+
+    // Realistic User‑Agent to avoid blocks
+    override val headers: Headers = Headers.Builder()
+        .add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
 
     private val preferences: SharedPreferences by lazy {
         Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
@@ -55,9 +61,9 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // =============================== Search ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        // Use 'story' parameter (from site's search input name) and zero-indexed page
+        // Correct search endpoint: /video/{query}?q={query}
         val encodedQuery = query.replace(" ", "+")
-        val url = "$baseUrl/search?story=$encodedQuery&p=${page - 1}"
+        val url = "$baseUrl/video/$encodedQuery?q=$encodedQuery&page=$page"
         return GET(url, headers)
     }
 
@@ -115,10 +121,10 @@ class NoodleMagazine : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         playlist.sources.forEach { source ->
             val videoUrl = source.file
             val quality = source.label ?: extractQualityFromUrl(videoUrl)
-            val headers = headersBuilder()
+            val videoHeaders = headersBuilder()
                 .add("Referer", baseUrl)
                 .build()
-            videos.add(Video(videoUrl, quality, videoUrl, headers))
+            videos.add(Video(videoUrl, quality, videoUrl, videoHeaders))
         }
 
         return videos.sortedWith(videoQualityComparator())
