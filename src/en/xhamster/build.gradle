@@ -1,0 +1,7 @@
+ext {
+    extName = 'Xhamster'
+    extClass = '.Xhamster'
+    extVersionCode = 1
+}
+
+apply from: "$rootDir/common.gradle"
