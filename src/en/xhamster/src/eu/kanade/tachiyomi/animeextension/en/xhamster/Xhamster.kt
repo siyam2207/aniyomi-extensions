@@ -1,24 +1,29 @@
-package eu.kanade.tachiyomi.animeextension.en.hamster
+package eu.kanade.tachiyomi.animeextension.en.xhamster
 
 import android.app.Application
 import android.content.SharedPreferences
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.*
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.util.regex.Pattern
 
-class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
+class Xhamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "Xhamster"
     override val baseUrl = "https://xhamster.com"
@@ -60,20 +65,32 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         return GET(url, headers)
     }
 
-    override fun latestUpdatesSelector(): String = popularAnimeSelector()
-    override fun latestUpdatesNextPageSelector(): String = popularAnimeNextPageSelector()
+    override fun latestUpdatesSelector(): String =
+        popularAnimeSelector()
+
+    override fun latestUpdatesNextPageSelector(): String =
+        popularAnimeNextPageSelector()
+
     override fun latestUpdatesFromElement(element: Element): SAnime =
         animeFromElement(element)
 
     // ================= SEARCH =================
-    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
+    override fun searchAnimeRequest(
+        page: Int,
+        query: String,
+        filters: AnimeFilterList,
+    ): Request {
         val q = query.replace(" ", "+")
         val url = "$baseUrl/search?q=$q&page=$page"
         return GET(url, headers)
     }
 
-    override fun searchAnimeSelector(): String = popularAnimeSelector()
-    override fun searchAnimeNextPageSelector(): String = popularAnimeNextPageSelector()
+    override fun searchAnimeSelector(): String =
+        popularAnimeSelector()
+
+    override fun searchAnimeNextPageSelector(): String =
+        popularAnimeNextPageSelector()
+
     override fun searchAnimeFromElement(element: Element): SAnime =
         animeFromElement(element)
 
@@ -90,7 +107,9 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     // ================= EPISODES =================
     override fun episodeListSelector(): String = throw UnsupportedOperationException()
-    override fun episodeFromElement(element: Element): SEpisode = throw UnsupportedOperationException()
+
+    override fun episodeFromElement(element: Element): SEpisode =
+        throw UnsupportedOperationException()
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
         return listOf(
@@ -98,20 +117,23 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
                 name = "Video"
                 episode_number = 1f
                 url = anime.url
-            }
+            },
         )
     }
 
     // ================= VIDEOS =================
     override fun videoListSelector(): String = throw UnsupportedOperationException()
-    override fun videoFromElement(element: Element): Video = throw UnsupportedOperationException()
-    override fun videoUrlParse(document: Document): String = throw UnsupportedOperationException()
+
+    override fun videoFromElement(element: Element): Video =
+        throw UnsupportedOperationException()
+
+    override fun videoUrlParse(document: Document): String =
+        throw UnsupportedOperationException()
 
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
 
-        // Try script playlist
         val script = document.select("script")
             .map { it.data() }
             .firstOrNull { it.contains("playlist") }
@@ -128,10 +150,10 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
                         videos.add(Video(it.file, quality, it.file))
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
 
-        // Fallback <video><source>
         document.select("video source").forEach {
             val url = it.attr("src")
             if (url.isNotBlank()) {
@@ -180,8 +202,8 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     private fun extractQuality(url: String): String {
-        val m = Pattern.compile("(\\d{3,4})p").matcher(url)
-        return if (m.find()) m.group(1) + "p" else "Unknown"
+        val matcher = Pattern.compile("(\\d{3,4})p").matcher(url)
+        return if (matcher.find()) matcher.group(1) + "p" else "Unknown"
     }
 
     private fun extractQualityNum(q: String): Int {
@@ -189,10 +211,15 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     @Serializable
-    data class Playlist(val sources: List<Source>)
+    data class Playlist(
+        val sources: List<Source>,
+    )
 
     @Serializable
-    data class Source(val file: String, val label: String? = null)
+    data class Source(
+        val file: String,
+        val label: String? = null,
+    )
 
     // ================= SETTINGS =================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
