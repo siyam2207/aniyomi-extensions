@@ -12,8 +12,6 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -21,7 +19,6 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import java.util.regex.Pattern
 
 class Xhamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
@@ -33,20 +30,27 @@ class Xhamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override val client: OkHttpClient = super.client.newBuilder()
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0")
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36",
+                )
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
                 .header("Referer", baseUrl)
                 .build()
+
             chain.proceed(request)
         }
         .build()
 
     private val preferences: SharedPreferences by lazy {
-        Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
+        Injekt.get<Application>().getSharedPreferences("source_$id", 0)
     }
 
-    // ================= POPULAR =================
+    // ================= FRONT PAGE (FIXED) =================
+
     override fun popularAnimeRequest(page: Int): Request {
-        val url = if (page == 1) "$baseUrl/popular" else "$baseUrl/popular?page=$page"
+        val url = if (page == 1) baseUrl else "$baseUrl/?page=$page"
         return GET(url, headers)
     }
 
@@ -59,11 +63,9 @@ class Xhamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
     override fun popularAnimeFromElement(element: Element): SAnime =
         animeFromElement(element)
 
-    // ================= LATEST =================
-    override fun latestUpdatesRequest(page: Int): Request {
-        val url = if (page == 1) "$baseUrl/new" else "$baseUrl/new?page=$page"
-        return GET(url, headers)
-    }
+    // Latest = same as front page fallback
+    override fun latestUpdatesRequest(page: Int): Request =
+        popularAnimeRequest(page)
 
     override fun latestUpdatesSelector(): String =
         popularAnimeSelector()
@@ -75,14 +77,10 @@ class Xhamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         animeFromElement(element)
 
     // ================= SEARCH =================
-    override fun searchAnimeRequest(
-        page: Int,
-        query: String,
-        filters: AnimeFilterList,
-    ): Request {
+
+    override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val q = query.replace(" ", "+")
-        val url = "$baseUrl/search?q=$q&page=$page"
-        return GET(url, headers)
+        return GET("$baseUrl/search?q=$q&page=$page", headers)
     }
 
     override fun searchAnimeSelector(): String =
@@ -95,21 +93,17 @@ class Xhamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         animeFromElement(element)
 
     // ================= DETAILS =================
+
     override fun animeDetailsParse(document: Document): SAnime {
         return SAnime.create().apply {
-            title = document.selectFirst("meta[property=og:title]")?.attr("content") ?: "Unknown"
+            title = document.selectFirst("meta[property=og:title]")?.attr("content") ?: ""
             thumbnail_url = document.selectFirst("meta[property=og:image]")?.attr("content")
             description = document.selectFirst("meta[name=description]")?.attr("content")
-            genre = document.select("a[href*='/tags/']").joinToString(", ") { it.text() }
             status = SAnime.COMPLETED
         }
     }
 
-    // ================= EPISODES =================
-    override fun episodeListSelector(): String = throw UnsupportedOperationException()
-
-    override fun episodeFromElement(element: Element): SEpisode =
-        throw UnsupportedOperationException()
+    // ================= EPISODE =================
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
         return listOf(
@@ -121,107 +115,50 @@ class Xhamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         )
     }
 
-    // ================= VIDEOS =================
-    override fun videoListSelector(): String = throw UnsupportedOperationException()
-
-    override fun videoFromElement(element: Element): Video =
-        throw UnsupportedOperationException()
-
-    override fun videoUrlParse(document: Document): String =
-        throw UnsupportedOperationException()
+    // ================= VIDEO (basic safe fallback) =================
 
     override fun videoListParse(response: Response): List<Video> {
-        val document = response.asJsoup()
+        val doc = response.asJsoup()
         val videos = mutableListOf<Video>()
 
-        val script = document.select("script")
-            .map { it.data() }
-            .firstOrNull { it.contains("playlist") }
-
-        if (script != null) {
-            try {
-                val json = extractJson(script)
-                val playlist = Json { ignoreUnknownKeys = true }
-                    .decodeFromString<Playlist>(json)
-
-                playlist.sources.forEach {
-                    if (it.file.isNotBlank()) {
-                        val quality = it.label ?: extractQuality(it.file)
-                        videos.add(Video(it.file, quality, it.file))
-                    }
-                }
-            } catch (_: Exception) {
-            }
-        }
-
-        document.select("video source").forEach {
+        doc.select("video source").forEach {
             val url = it.attr("src")
             if (url.isNotBlank()) {
-                val quality = extractQuality(url)
-                videos.add(Video(url, quality, url))
+                videos.add(Video(url, "Unknown", url))
             }
         }
 
-        if (videos.isEmpty()) throw Exception("No video sources found")
+        if (videos.isEmpty()) {
+            throw Exception("No video sources found")
+        }
 
-        return videos.sortedByDescending { extractQualityNum(it.quality) }
+        return videos
     }
 
     // ================= PARSER =================
+
     private fun animeFromElement(element: Element): SAnime {
         val link = element.selectFirst("a")
         val img = element.selectFirst("img")
 
         val url = link?.attr("href") ?: ""
 
-        val title = link?.attr("title")?.trim()
-            ?: img?.attr("alt")?.trim()
+        val title = link?.attr("title")
+            ?: img?.attr("alt")
             ?: "Unknown"
 
-        var thumbnail: String? = null
-        if (img != null) {
-            var src = img.attr("data-src")
-            if (src.isBlank()) src = img.attr("src")
-
-            if (src.isNotBlank()) {
-                thumbnail = if (src.startsWith("http")) src else "$baseUrl$src"
-            }
-        }
+        val thumb = img?.attr("data-src")
+            ?.ifBlank { img.attr("src") }
 
         return SAnime.create().apply {
             setUrlWithoutDomain(url)
             this.title = title
-            thumbnail_url = thumbnail
+            thumbnail_url = thumb
         }
     }
 
-    private fun extractJson(script: String): String {
-        val start = script.indexOf("{")
-        val end = script.lastIndexOf("}") + 1
-        return script.substring(start, end)
-    }
-
-    private fun extractQuality(url: String): String {
-        val matcher = Pattern.compile("(\\d{3,4})p").matcher(url)
-        return if (matcher.find()) matcher.group(1) + "p" else "Unknown"
-    }
-
-    private fun extractQualityNum(q: String): Int {
-        return q.filter { it.isDigit() }.toIntOrNull() ?: 0
-    }
-
-    @Serializable
-    data class Playlist(
-        val sources: List<Source>,
-    )
-
-    @Serializable
-    data class Source(
-        val file: String,
-        val label: String? = null,
-    )
-
     // ================= SETTINGS =================
+
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
             key = "quality"
