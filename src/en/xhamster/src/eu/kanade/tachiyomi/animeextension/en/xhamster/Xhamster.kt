@@ -5,18 +5,13 @@ import android.content.SharedPreferences
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.model.*
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
+import okhttp3.*
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import uy.kohesive.injekt.Injekt
@@ -26,16 +21,15 @@ import java.util.regex.Pattern
 class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "Xhamster"
-    override val baseUrl = "https://xhamster.com"  // TODO: replace with actual site URL
+    override val baseUrl = "https://xhamster.com"
     override val lang = "en"
     override val supportsLatest = true
 
-    // Custom client with a realistic User‑Agent
     override val client: OkHttpClient = super.client.newBuilder()
         .addInterceptor { chain ->
-            val original = chain.request()
-            val request = original.newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "Mozilla/5.0")
+                .header("Referer", baseUrl)
                 .build()
             chain.proceed(request)
         }
@@ -45,58 +39,56 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
     }
 
-    // ============================== Popular ===============================
+    // ================= POPULAR =================
     override fun popularAnimeRequest(page: Int): Request {
-        // TODO: build the correct URL for popular videos
         val url = if (page == 1) "$baseUrl/popular" else "$baseUrl/popular?page=$page"
         return GET(url, headers)
     }
 
-    override fun popularAnimeSelector(): String = "div.video-item" // TODO: adjust selector
-    override fun popularAnimeNextPageSelector(): String = "a.next-page" // TODO: adjust
-    override fun popularAnimeFromElement(element: Element): SAnime = animeFromElement(element)
+    override fun popularAnimeSelector(): String =
+        "div.subsection.mono.index-videos.mixed-section > div > div"
 
-    // =============================== Latest ===============================
+    override fun popularAnimeNextPageSelector(): String =
+        "a.next, a[rel=next]"
+
+    override fun popularAnimeFromElement(element: Element): SAnime =
+        animeFromElement(element)
+
+    // ================= LATEST =================
     override fun latestUpdatesRequest(page: Int): Request {
-        // TODO: build URL for latest videos
         val url = if (page == 1) "$baseUrl/new" else "$baseUrl/new?page=$page"
         return GET(url, headers)
     }
 
     override fun latestUpdatesSelector(): String = popularAnimeSelector()
     override fun latestUpdatesNextPageSelector(): String = popularAnimeNextPageSelector()
-    override fun latestUpdatesFromElement(element: Element): SAnime = animeFromElement(element)
+    override fun latestUpdatesFromElement(element: Element): SAnime =
+        animeFromElement(element)
 
-    // =============================== Search ===============================
+    // ================= SEARCH =================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        // TODO: build search URL
-        val encodedQuery = query.replace(" ", "+")
-        val url = "$baseUrl/search?q=$encodedQuery&page=$page"
+        val q = query.replace(" ", "+")
+        val url = "$baseUrl/search?q=$q&page=$page"
         return GET(url, headers)
     }
 
     override fun searchAnimeSelector(): String = popularAnimeSelector()
     override fun searchAnimeNextPageSelector(): String = popularAnimeNextPageSelector()
-    override fun searchAnimeFromElement(element: Element): SAnime = animeFromElement(element)
+    override fun searchAnimeFromElement(element: Element): SAnime =
+        animeFromElement(element)
 
-    // =========================== Anime Details ============================
+    // ================= DETAILS =================
     override fun animeDetailsParse(document: Document): SAnime {
-        // TODO: extract title, thumbnail, description, genres
-        val title = document.selectFirst("meta[property=og:title]")?.attr("content") ?: "Unknown"
-        val thumbnail = document.selectFirst("meta[property=og:image]")?.attr("content")
-        val description = document.selectFirst("meta[name=description]")?.attr("content")
-        val genres = "" // TODO: extract categories
-
         return SAnime.create().apply {
-            this.title = title
-            thumbnail_url = thumbnail
-            this.description = description
-            genre = genres
+            title = document.selectFirst("meta[property=og:title]")?.attr("content") ?: "Unknown"
+            thumbnail_url = document.selectFirst("meta[property=og:image]")?.attr("content")
+            description = document.selectFirst("meta[name=description]")?.attr("content")
+            genre = document.select("a[href*='/tags/']").joinToString(", ") { it.text() }
             status = SAnime.COMPLETED
         }
     }
 
-    // ============================== Episodes ==============================
+    // ================= EPISODES =================
     override fun episodeListSelector(): String = throw UnsupportedOperationException()
     override fun episodeFromElement(element: Element): SEpisode = throw UnsupportedOperationException()
 
@@ -106,11 +98,11 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
                 name = "Video"
                 episode_number = 1f
                 url = anime.url
-            },
+            }
         )
     }
 
-    // ============================ Video Links =============================
+    // ================= VIDEOS =================
     override fun videoListSelector(): String = throw UnsupportedOperationException()
     override fun videoFromElement(element: Element): Video = throw UnsupportedOperationException()
     override fun videoUrlParse(document: Document): String = throw UnsupportedOperationException()
@@ -119,150 +111,61 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         val document = response.asJsoup()
         val videos = mutableListOf<Video>()
 
-        // 1) Try to extract from window.playlist (if site uses it)
-        val playlistScript = document.select("script")
+        // Try script playlist
+        val script = document.select("script")
             .map { it.data() }
-            .firstOrNull { it.contains("window.playlist") }
+            .firstOrNull { it.contains("playlist") }
 
-        if (playlistScript != null) {
+        if (script != null) {
             try {
-                val playlistJson = extractPlaylistJson(playlistScript)
-                val playlist = Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                }.decodeFromString<Playlist>(playlistJson)
+                val json = extractJson(script)
+                val playlist = Json { ignoreUnknownKeys = true }
+                    .decodeFromString<Playlist>(json)
 
-                for (source in playlist.sources) {
-                    val videoUrl = source.file
-                    if (videoUrl.isNotBlank()) {
-                        val quality = source.label?.let { "${it}p" } ?: extractQualityFromUrl(videoUrl)
-                        val headers = headersBuilder().add("Referer", baseUrl).build()
-                        videos.add(Video(videoUrl, quality, videoUrl, headers))
+                playlist.sources.forEach {
+                    if (it.file.isNotBlank()) {
+                        val quality = it.label ?: extractQuality(it.file)
+                        videos.add(Video(it.file, quality, it.file))
                     }
                 }
-                if (videos.isNotEmpty()) return videos.sortedWith(videoQualityComparator())
-            } catch (e: Exception) {
-                // fall through
+            } catch (_: Exception) {}
+        }
+
+        // Fallback <video><source>
+        document.select("video source").forEach {
+            val url = it.attr("src")
+            if (url.isNotBlank()) {
+                val quality = extractQuality(url)
+                videos.add(Video(url, quality, url))
             }
         }
 
-        // 2) Fallback: direct <video> tag
-        val directVideo = document.select("video").firstOrNull()
-        if (directVideo != null) {
-            var videoUrl = directVideo.attr("src")
-            if (videoUrl.isBlank()) videoUrl = directVideo.attr("data-src")
-            if (videoUrl.isNotBlank()) {
-                val quality = extractQualityFromUrl(videoUrl)
-                val label = if (quality == "2160") "2160p (4K)" else "${quality}p"
-                val headers = headersBuilder().add("Referer", baseUrl).build()
-                videos.add(Video(videoUrl, label, videoUrl, headers))
-                return videos
-            }
-        }
+        if (videos.isEmpty()) throw Exception("No video sources found")
 
-        // 3) Fallback: <video><source> tags
-        val videoSources = document.select("video source")
-        for (source in videoSources) {
-            val videoUrl = source.attr("src")
-            if (videoUrl.isNotBlank()) {
-                var quality = source.attr("size").takeIf { it.isNotBlank() } ?: ""
-                if (quality.isBlank()) quality = extractQualityFromUrl(videoUrl)
-                val label = if (quality == "2160") "2160p (4K)" else "${quality}p"
-                val headers = headersBuilder().add("Referer", baseUrl).build()
-                videos.add(Video(videoUrl, label, videoUrl, headers))
-            }
-        }
-
-        if (videos.isNotEmpty()) return videos.sortedWith(videoQualityComparator())
-
-        throw Exception("No video sources found")
+        return videos.sortedByDescending { extractQualityNum(it.quality) }
     }
 
-    private fun extractPlaylistJson(scriptData: String): String {
-        val startMarker = "window.playlist ="
-        val startIndex = scriptData.indexOf(startMarker)
-        if (startIndex == -1) throw Exception("window.playlist not found")
-
-        var braceCount = 0
-        var jsonStart = -1
-        var jsonEnd = -1
-        var i = startIndex + startMarker.length
-
-        while (i < scriptData.length) {
-            when (scriptData[i]) {
-                '{' -> {
-                    if (braceCount == 0) jsonStart = i
-                    braceCount++
-                }
-                '}' -> {
-                    braceCount--
-                    if (braceCount == 0) {
-                        jsonEnd = i + 1
-                        break
-                    }
-                }
-            }
-            i++
-        }
-        if (jsonStart == -1 || jsonEnd == -1) throw Exception("Could not extract playlist JSON")
-        return scriptData.substring(jsonStart, jsonEnd)
-    }
-
-    private fun extractQualityFromUrl(url: String): String {
-        val pattern = Pattern.compile("[_-](\\d+)p\\.")
-        val matcher = pattern.matcher(url)
-        return if (matcher.find()) matcher.group(1) else "Unknown"
-    }
-
-    @Serializable
-    data class Playlist(
-        val sources: List<Source>,
-    )
-
-    @Serializable
-    data class Source(
-        val file: String,
-        val label: String? = null,
-    )
-
-    private fun videoQualityComparator(): Comparator<Video> {
-        val preferredQuality = preferences.getString(PREF_QUALITY_KEY, PREF_QUALITY_DEFAULT)?.toIntOrNull() ?: 1080
-        return compareByDescending<Video> { video ->
-            if (extractNumericQuality(video.quality) == preferredQuality) 1 else 0
-        }.thenByDescending {
-            extractNumericQuality(it.quality)
-        }
-    }
-
-    private fun extractNumericQuality(qualityLabel: String): Int {
-        return when {
-            qualityLabel.contains("2160p") || qualityLabel.contains("4K") -> 2160
-            qualityLabel.contains("1080p") -> 1080
-            qualityLabel.contains("720p") -> 720
-            qualityLabel.contains("480p") -> 480
-            qualityLabel.contains("360p") -> 360
-            qualityLabel.contains("240p") -> 240
-            qualityLabel.contains("144p") -> 144
-            else -> qualityLabel.filter { it.isDigit() }.toIntOrNull() ?: 0
-        }
-    }
-
-    // ============================= Utilities ==============================
+    // ================= PARSER =================
     private fun animeFromElement(element: Element): SAnime {
-        // TODO: adjust selectors for thumbnail link, title, image
-        val thumbLink = element.selectFirst("a.thumbnail")
-        val url = thumbLink?.attr("href") ?: ""
-        val titleElem = element.selectFirst("a.title")
-        val title = titleElem?.text()?.trim() ?: "Unknown"
-        val img = thumbLink?.selectFirst("img")
+        val link = element.selectFirst("a")
+        val img = element.selectFirst("img")
+
+        val url = link?.attr("href") ?: ""
+
+        val title = link?.attr("title")?.trim()
+            ?: img?.attr("alt")?.trim()
+            ?: "Unknown"
+
         var thumbnail: String? = null
         if (img != null) {
             var src = img.attr("data-src")
             if (src.isBlank()) src = img.attr("src")
-            if (src.isNotBlank() && !src.contains("placeholder")) {
+
+            if (src.isNotBlank()) {
                 thumbnail = if (src.startsWith("http")) src else "$baseUrl$src"
             }
         }
+
         return SAnime.create().apply {
             setUrlWithoutDomain(url)
             this.title = title
@@ -270,25 +173,36 @@ class Hamster : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
         }
     }
 
-    override fun List<Video>.sort(): List<Video> {
-        return sortedWith(videoQualityComparator())
+    private fun extractJson(script: String): String {
+        val start = script.indexOf("{")
+        val end = script.lastIndexOf("}") + 1
+        return script.substring(start, end)
     }
 
+    private fun extractQuality(url: String): String {
+        val m = Pattern.compile("(\\d{3,4})p").matcher(url)
+        return if (m.find()) m.group(1) + "p" else "Unknown"
+    }
+
+    private fun extractQualityNum(q: String): Int {
+        return q.filter { it.isDigit() }.toIntOrNull() ?: 0
+    }
+
+    @Serializable
+    data class Playlist(val sources: List<Source>)
+
+    @Serializable
+    data class Source(val file: String, val label: String? = null)
+
+    // ================= SETTINGS =================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
-            key = PREF_QUALITY_KEY
+            key = "quality"
             title = "Preferred quality"
-            entries = PREF_QUALITY_ENTRIES
-            entryValues = PREF_QUALITY_VALUES
-            setDefaultValue(PREF_QUALITY_DEFAULT)
+            entries = arrayOf("1080p", "720p", "480p")
+            entryValues = arrayOf("1080", "720", "480")
+            setDefaultValue("1080")
             summary = "%s"
         }.also(screen::addPreference)
-    }
-
-    companion object {
-        private const val PREF_QUALITY_KEY = "preferred_quality"
-        private const val PREF_QUALITY_DEFAULT = "1080"
-        private val PREF_QUALITY_ENTRIES = arrayOf("2160p (4K)", "1080p", "720p", "480p", "360p", "240p", "144p")
-        private val PREF_QUALITY_VALUES = arrayOf("2160", "1080", "720", "480", "360", "240", "144")
     }
 }
