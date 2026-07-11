@@ -18,7 +18,7 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.awaitSuccess
-import keiyoushi.utils.getPreferencesLazy
+import extensions.utils.getPreferencesLazy
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -70,11 +70,6 @@ class MyGdindex :
     ConfigurableAnimeSource {
 
     override val name = "MyGdindex"
-
-    // Generated locally from "MyGdindex"/"all" using Tachiyomi's MD5-based
-    // source-id scheme — VERIFY this against your build (or regenerate) to
-    // make sure it doesn't collide with another installed source's id.
-    override val id = 3900226815696505660L
 
     override val baseUrl by lazy {
         preferences.domainList.split(",").first().removeName()
