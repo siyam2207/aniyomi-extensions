@@ -245,7 +245,7 @@ class MyGdindex :
                     }
                     if (stop != null && maxRecursionDepth == 1 && counter > stop) return
 
-                    val epUrl = item.link ?: joinUrl(folderUrl, item.name)
+                    val epUrl = joinUrl(folderUrl, item.name)
                     val paths = folderUrl.toHttpUrl().pathSegments
                     val extraInfo = if (paths.size > basePathCounter) {
                         "/" + paths.subList(basePathCounter - 1, paths.size).joinToString("/") { it.trimInfo() }
@@ -282,9 +282,9 @@ class MyGdindex :
     // ============================ Video Links ==================================
 
     override suspend fun getVideoList(episode: SEpisode): List<Video> {
-        // episode.url is already either a pre-signed "link" (from a listing/search
-        // response) or a plain path URL — both are directly playable, no further
-        // resolution needed.
+        // episode.url is always a complete, directly-playable URL at this point —
+        // either a plain name-based path (regular browsing) or an already-absolute
+        // pre-signed link (search results, fixed up in parseSearch).
         return listOf(Video(episode.url, "Video", episode.url))
     }
 
@@ -320,7 +320,7 @@ class MyGdindex :
                 } else {
                     LinkData(
                         "single",
-                        file.link ?: joinUrl(url, file.name),
+                        joinUrl(url, file.name),
                         file.size?.toLongOrNull()?.let { formatFileSize(it) },
                     ).toJsonString()
                 }
@@ -348,7 +348,11 @@ class MyGdindex :
                 } else {
                     LinkData(
                         "single",
-                        file.link ?: file.id,
+                        // Search gives us no folder path to build a plain URL from, so we
+                        // do need the server-provided link here — but it's a *relative*
+                        // path (e.g. "/download.aspx?..."), not a full URL, so it must be
+                        // combined with the scheme+host or the player can't resolve it.
+                        file.link?.let { absoluteUrl(host, it) } ?: file.id,
                         file.size?.toLongOrNull()?.let { formatFileSize(it) },
                     ).toJsonString()
                 }
@@ -380,6 +384,14 @@ class MyGdindex :
     }
 
     private fun joinUrl(path1: String, path2: String): String = path1.removeSuffix("/") + "/" + path2.removePrefix("/")
+
+    // GDI-JS's "link" field is a host-relative path (e.g. "/download.aspx?file=..."),
+    // not a complete URL — this combines it with the correct scheme+host.
+    private fun absoluteUrl(host: String, link: String): String = if (link.startsWith("http://") || link.startsWith("https://")) {
+        link
+    } else {
+        host.trimEnd('/') + "/" + link.trimStart('/')
+    }
 
     private fun String.addSuffix(suffix: String): String = if (this.endsWith(suffix)) this else this.plus(suffix)
 
