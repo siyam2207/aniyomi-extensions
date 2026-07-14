@@ -68,10 +68,53 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private var nextPageToken: String? = ""
 
-    // ============================== Popular ===============================
+    // Per-folder pagination state used when merging multiple drive paths
+    // together on the Popular tab (see getPopularAnime below).
+    private var multiNextPageTokens: MutableMap<String, String?> = mutableMapOf()
 
-    override suspend fun getPopularAnime(page: Int): AnimesPage =
-        parsePage(popularAnimeRequest(page), page)
+    // ============================== Popular ===============================
+    // Fans out to every configured folder and merges (interleaves) the
+    // results instead of only using the first path in the preference list.
+
+    override suspend fun getPopularAnime(page: Int): AnimesPage {
+        val paths = getAllFolderEntries()
+        require(paths.isNotEmpty()) { "Enter drive path(s) in extension settings." }
+
+        // Keep the "open in WebView" button pointed at a valid folder.
+        DRIVE_FOLDER_REGEX.matchEntire(paths.first())?.let {
+            baseUrl = "https://drive.google.com/drive/folders/${it.groups["id"]!!.value}"
+        }
+
+        // Reset per-folder pagination state at the start of a fresh browse.
+        if (page == 1) {
+            multiNextPageTokens = mutableMapOf<String, String?>().apply {
+                paths.forEach { put(it, "") }
+            }
+        }
+
+        val combined = mutableListOf<SAnime>()
+        var lastError: Exception? = null
+
+        for (path in paths) {
+            val token = multiNextPageTokens[path] ?: continue // folder already exhausted
+            try {
+                val (items, nextToken) = fetchFolderPage(path, token)
+                combined.addAll(items)
+                multiNextPageTokens[path] = nextToken
+            } catch (e: Exception) {
+                // Don't let one broken/unauthorized folder block the others.
+                multiNextPageTokens[path] = null
+                lastError = e
+            }
+        }
+
+        // Only surface an error if every folder failed and nothing loaded.
+        if (combined.isEmpty() && lastError != null) throw lastError!!
+
+        val hasNext = multiNextPageTokens.values.any { it != null }
+
+        return AnimesPage(combined.sortedBy { it.title.lowercase() }, hasNext)
+    }
 
     override fun popularAnimeRequest(page: Int): Request {
         require(!baseUrlInternal.isNullOrEmpty()) { "Enter drive path(s) in extension settings." }
@@ -356,6 +399,73 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
         GoogleDriveExtractor(client, headers).videosFromUrl(episode.url.substringAfter("?id="))
 
     // ============================= Utilities ==============================
+
+    private fun getAllFolderEntries(): List<String> {
+        if (preferences.domainList.isBlank()) return emptyList()
+        return preferences.domainList.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    private fun fetchFolderPage(folderPath: String, pageToken: String): Pair<List<SAnime>, String?> {
+        val match = DRIVE_FOLDER_REGEX.matchEntire(folderPath)
+            ?: throw Exception("Invalid drive url: $folderPath")
+        val folderId = match.groups["id"]!!.value
+        val recurDepth = match.groups["depth"]?.value ?: ""
+
+        val request = GET(
+            "https://drive.google.com/drive/folders/$folderId$recurDepth",
+            headers = getHeaders,
+        )
+
+        val driveDocument = try {
+            client.newCall(request).execute().asJsoup()
+        } catch (a: ProtocolException) {
+            throw Exception("Unable to get items, check webview")
+        }
+
+        if (driveDocument.selectFirst("title:contains(Error 404 \\(Not found\\))") != null) {
+            return Pair(emptyList(), null)
+        }
+
+        val post = createPost(driveDocument, folderId, pageToken)
+        val response = client.newCall(post).execute()
+
+        val parsed = response.parseAs<PostResponse> { JSON_REGEX.find(it)!!.groupValues[1] }
+        if (parsed.items == null) throw Exception("Failed to load items, please log in through webview")
+
+        val animeList = mutableListOf<SAnime>()
+        parsed.items.forEach {
+            if (it.mimeType.startsWith("video")) {
+                animeList.add(
+                    SAnime.create().apply {
+                        title = if (preferences.trimAnimeInfo) it.title.trimInfo() else it.title
+                        url = LinkData(
+                            "https://drive.google.com/uc?id=${it.id}",
+                            "single",
+                            LinkDataInfo(
+                                it.title,
+                                it.fileSize?.toLongOrNull()?.let { formatBytes(it) } ?: "",
+                            ),
+                        ).toJsonString()
+                        thumbnail_url = ""
+                    },
+                )
+            }
+            if (it.mimeType.endsWith(".folder")) {
+                animeList.add(
+                    SAnime.create().apply {
+                        title = if (preferences.trimAnimeInfo) it.title.trimInfo() else it.title
+                        url = LinkData(
+                            "https://drive.google.com/drive/folders/${it.id}$recurDepth",
+                            "multi",
+                        ).toJsonString()
+                        thumbnail_url = ""
+                    },
+                )
+            }
+        }
+
+        return Pair(animeList, parsed.nextPageToken)
+    }
 
     private fun addSinglePage(folderUrl: String): AnimesPage {
         val match =
