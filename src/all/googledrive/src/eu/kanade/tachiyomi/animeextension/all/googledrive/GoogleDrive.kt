@@ -7,6 +7,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.preference.EditTextPreference
+import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
@@ -24,6 +25,10 @@ import eu.kanade.tachiyomi.util.asJsoup
 import eu.kanade.tachiyomi.util.parseAs
 import extensions.utils.commonEmptyRequestBody
 import extensions.utils.getPreferencesLazy
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -52,7 +57,7 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
     override val lang = "all"
 
-    override val supportsLatest = false
+    override val supportsLatest = true
 
     private val json: Json by injectLazy()
 
@@ -71,6 +76,16 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
     // Per-folder pagination state used when merging multiple drive paths
     // together on the Popular tab (see getPopularAnime below).
     private var multiNextPageTokens: MutableMap<String, String?> = mutableMapOf()
+    private var multiFailureCounts: MutableMap<String, Int> = mutableMapOf()
+
+    // Same idea, but tracked separately for the Search tab so browsing
+    // Popular and searching don't stomp on each other's pagination state.
+    private var multiSearchTokens: MutableMap<String, String?> = mutableMapOf()
+    private var multiSearchFailures: MutableMap<String, Int> = mutableMapOf()
+
+    // Same idea, for the Latest tab.
+    private var multiLatestTokens: MutableMap<String, String?> = mutableMapOf()
+    private var multiLatestFailures: MutableMap<String, Int> = mutableMapOf()
 
     // ============================== Popular ===============================
     // Fans out to every configured folder and merges (interleaves) the
@@ -85,35 +100,9 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             baseUrl = "https://drive.google.com/drive/folders/${it.groups["id"]!!.value}"
         }
 
-        // Reset per-folder pagination state at the start of a fresh browse.
-        if (page == 1) {
-            multiNextPageTokens = mutableMapOf<String, String?>().apply {
-                paths.forEach { put(it, "") }
-            }
+        return mergeFolderResults(page, paths, multiNextPageTokens, multiFailureCounts) { path, token ->
+            fetchFolderPage(path, token)
         }
-
-        val combined = mutableListOf<SAnime>()
-        var lastError: Exception? = null
-
-        for (path in paths) {
-            val token = multiNextPageTokens[path] ?: continue // folder already exhausted
-            try {
-                val (items, nextToken) = fetchFolderPage(path, token)
-                combined.addAll(items)
-                multiNextPageTokens[path] = nextToken
-            } catch (e: Exception) {
-                // Don't let one broken/unauthorized folder block the others.
-                multiNextPageTokens[path] = null
-                lastError = e
-            }
-        }
-
-        // Only surface an error if every folder failed and nothing loaded.
-        if (combined.isEmpty() && lastError != null) throw lastError!!
-
-        val hasNext = multiNextPageTokens.values.any { it != null }
-
-        return AnimesPage(combined.sortedBy { it.title.lowercase() }, hasNext)
     }
 
     override fun popularAnimeRequest(page: Int): Request {
@@ -133,6 +122,30 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
     override fun popularAnimeParse(response: Response): AnimesPage = throw UnsupportedOperationException()
 
     // =============================== Latest ===============================
+    // Drive doesn't expose an upload/modified date we can see (no such field
+    // showed up anywhere in this file), so "Latest" means "most recently
+    // discovered by this extension" rather than a true upload timestamp —
+    // see recordDiscovery/loadDiscoveryTimes below. First run after enabling
+    // this will look unsorted until at least one browse has been recorded.
+
+    override suspend fun getLatestUpdates(page: Int): AnimesPage {
+        val paths = getAllFolderEntries()
+        require(paths.isNotEmpty()) { "Enter drive path(s) in extension settings." }
+
+        val result = mergeFolderResults(page, paths, multiLatestTokens, multiLatestFailures) { path, token ->
+            fetchFolderPage(path, token)
+        }
+
+        val discovery = loadDiscoveryTimes()
+        val withTimestamps = result.animes.map { anime ->
+            anime to (driveIdOf(anime)?.let { discovery[it] } ?: 0L)
+        }
+        val sorted = withTimestamps
+            .sortedWith(compareByDescending<Pair<SAnime, Long>> { it.second }.thenBy { it.first.title.lowercase() })
+            .map { (anime, discoveredAt) -> anime.markedIfNew(discoveredAt) }
+
+        return AnimesPage(sorted, result.hasNextPage)
+    }
 
     override fun latestUpdatesRequest(page: Int): Request = throw UnsupportedOperationException()
 
@@ -150,21 +163,24 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
         val filterList = if (filters.isEmpty()) getFilterList() else filters
         val urlFilter = filterList.find { it is URLFilter } as URLFilter
 
-        return if (urlFilter.state.isEmpty()) {
-            val req = searchAnimeRequest(page, query, filters)
+        if (urlFilter.state.isNotEmpty()) return addSinglePage(urlFilter.state)
 
-            if (query.isEmpty()) {
-                parsePage(req, page)
-            } else {
-                val parentId = req.url.pathSegments.last()
-                val cleanQuery = URLEncoder.encode(query, "UTF-8")
-                val genMultiFormReq = searchReq(parentId, cleanQuery)
+        val allPaths = getAllFolderEntries()
+        require(allPaths.isNotEmpty()) { "Enter drive path(s) in extension settings." }
 
-                parsePage(req, page, genMultiFormReq)
-            }
+        // "None checked" means "search everything," which is what makes this
+        // merged/interleaved by default; checking specific folders narrows it.
+        val folderGroup = filterList.find { it is FolderFilterGroup } as? FolderFilterGroup
+        val checkedPaths = folderGroup?.state?.filter { it.state }?.map { it.path }.orEmpty()
+        val paths = checkedPaths.ifEmpty { allPaths }
+
+        val fetch: suspend (String, String) -> Pair<List<SAnime>, String?> = if (query.isEmpty()) {
+            { path, token -> fetchFolderPage(path, token) }
         } else {
-            addSinglePage(urlFilter.state)
+            { path, token -> fetchFolderSearchPage(path, query, token) }
         }
+
+        return mergeFolderResults(page, paths, multiSearchTokens, multiSearchFailures, fetch)
     }
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
@@ -187,12 +203,17 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ============================== FILTERS ===============================
 
-    override fun getFilterList(): AnimeFilterList = AnimeFilterList(
-        ServerFilter(getDomains()),
-        AnimeFilter.Separator(),
-        AnimeFilter.Header("Add single folder"),
-        URLFilter(),
-    )
+    override fun getFilterList(): AnimeFilterList {
+        val domains = getDomains()
+        return AnimeFilterList(
+            ServerFilter(domains),
+            AnimeFilter.Separator(),
+            FolderFilterGroup(domains),
+            AnimeFilter.Separator(),
+            AnimeFilter.Header("Add single folder"),
+            URLFilter(),
+        )
+    }
 
     private class ServerFilter(domains: Array<Pair<String, String>>) : UriPartFilter(
         "Select drive path",
@@ -201,12 +222,7 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private fun getDomains(): Array<Pair<String, String>> {
         if (preferences.domainList.isBlank()) return emptyArray()
-        return preferences.domainList.split(";").map {
-            val name = DRIVE_FOLDER_REGEX.matchEntire(it)!!.groups["name"]?.let {
-                it.value.substringAfter("[").substringBeforeLast("]")
-            }
-            Pair(name ?: it.toHttpUrl().encodedPath, it)
-        }.toTypedArray()
+        return preferences.domainList.split(";").map { Pair(labelForPath(it), it) }.toTypedArray()
     }
 
     private open class UriPartFilter(displayName: String, val vals: Array<Pair<String, String>>) :
@@ -215,6 +231,17 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
     }
 
     private class URLFilter : AnimeFilter.Text("Url")
+
+    private class FolderCheckBox(name: String, val path: String) : AnimeFilter.CheckBox(name, false)
+
+    // Leaving every box unchecked (the default) searches every configured
+    // folder, which is what makes results "interleaved" instead of picking
+    // just one. Checking specific boxes narrows the merge down to those.
+    private class FolderFilterGroup(folders: Array<Pair<String, String>>) :
+        AnimeFilter.Group<FolderCheckBox>(
+            "Limit to folders (none checked = search all)",
+            folders.map { (label, path) -> FolderCheckBox(label, path) },
+        )
 
     // =========================== Anime Details ============================
 
@@ -443,7 +470,7 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
                             "single",
                             LinkDataInfo(
                                 it.title,
-                                it.fileSize?.toLongOrNull()?.let { formatBytes(it) } ?: "",
+                                it.fileSize?.toLongOrNull()?.let { s -> formatBytes(s) } ?: "",
                             ),
                         ).toJsonString()
                         thumbnail_url = ""
@@ -465,6 +492,254 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
         }
 
         return Pair(animeList, parsed.nextPageToken)
+    }
+
+    private fun fetchFolderSearchPage(folderPath: String, query: String, pageToken: String): Pair<List<SAnime>, String?> {
+        val match = DRIVE_FOLDER_REGEX.matchEntire(folderPath)
+            ?: throw Exception("Invalid drive url: $folderPath")
+        val folderId = match.groups["id"]!!.value
+        val recurDepth = match.groups["depth"]?.value ?: ""
+
+        val driveDocument = try {
+            client.newCall(
+                GET("https://drive.google.com/drive/folders/$folderId$recurDepth", headers = getHeaders),
+            ).execute().asJsoup()
+        } catch (a: ProtocolException) {
+            throw Exception("Unable to get items, check webview")
+        }
+
+        if (driveDocument.selectFirst("title:contains(Error 404 \\(Not found\\))") != null) {
+            return Pair(emptyList(), null)
+        }
+
+        val cleanQuery = URLEncoder.encode(query, "UTF-8")
+        val post = createPost(driveDocument, folderId, pageToken, searchReq(folderId, cleanQuery))
+        val response = client.newCall(post).execute()
+
+        val parsed = response.parseAs<PostResponse> { JSON_REGEX.find(it)!!.groupValues[1] }
+        if (parsed.items == null) throw Exception("Failed to load items, please log in through webview")
+
+        val animeList = mutableListOf<SAnime>()
+        parsed.items.forEach {
+            if (it.mimeType.startsWith("video")) {
+                animeList.add(
+                    SAnime.create().apply {
+                        title = if (preferences.trimAnimeInfo) it.title.trimInfo() else it.title
+                        url = LinkData(
+                            "https://drive.google.com/uc?id=${it.id}",
+                            "single",
+                            LinkDataInfo(
+                                it.title,
+                                it.fileSize?.toLongOrNull()?.let { s -> formatBytes(s) } ?: "",
+                            ),
+                        ).toJsonString()
+                        thumbnail_url = ""
+                    },
+                )
+            }
+            if (it.mimeType.endsWith(".folder")) {
+                animeList.add(
+                    SAnime.create().apply {
+                        title = if (preferences.trimAnimeInfo) it.title.trimInfo() else it.title
+                        url = LinkData(
+                            "https://drive.google.com/drive/folders/${it.id}$recurDepth",
+                            "multi",
+                        ).toJsonString()
+                        thumbnail_url = ""
+                    },
+                )
+            }
+        }
+
+        return Pair(animeList, parsed.nextPageToken)
+    }
+
+    // ===================== Multi-folder merge helpers =====================
+    // Shared by getPopularAnime and getSearchAnime so "browse everything" and
+    // "search everything" behave consistently and don't duplicate the
+    // fan-out / merge / retry logic.
+
+    private suspend fun mergeFolderResults(
+        page: Int,
+        paths: List<String>,
+        tokenMap: MutableMap<String, String?>,
+        failureMap: MutableMap<String, Int>,
+        fetch: suspend (path: String, token: String) -> Pair<List<SAnime>, String?>,
+    ): AnimesPage {
+        require(paths.isNotEmpty()) { "Enter drive path(s) in extension settings." }
+
+        // Reset per-folder pagination/failure state at the start of a fresh browse.
+        if (page == 1) {
+            tokenMap.clear()
+            failureMap.clear()
+            paths.forEach { tokenMap[it] = "" }
+        }
+
+        val active = paths.filter { tokenMap[it] != null }
+        var lastError: Exception? = null
+
+        // Fan out to every folder in parallel instead of one request at a time.
+        val results = coroutineScope {
+            active.map { path ->
+                async(Dispatchers.IO) {
+                    path to runCatching { fetch(path, tokenMap[path] ?: "") }
+                }
+            }.awaitAll()
+        }
+
+        val perFolder = LinkedHashMap<String, List<SAnime>>()
+        for ((path, result) in results) {
+            result.onSuccess { (items, nextToken) ->
+                recordDiscovery(items)
+                perFolder[path] = if (preferences.tagSourceFolder) {
+                    items.map { it.taggedWithFolder(path) }
+                } else {
+                    items
+                }
+                tokenMap[path] = nextToken
+                failureMap[path] = 0
+            }.onFailure { e ->
+                lastError = e as? Exception ?: Exception(e)
+                val failures = (failureMap[path] ?: 0) + 1
+                failureMap[path] = failures
+                // Only give up on a folder after repeated failures, so one
+                // dropped connection doesn't permanently drop it from the merge.
+                if (failures >= MAX_CONSECUTIVE_FAILURES) tokenMap[path] = null
+            }
+        }
+
+        // Only surface an error if every folder failed and nothing loaded.
+        if (perFolder.values.all { it.isEmpty() } && lastError != null) throw lastError!!
+
+        var merged = when (preferences.mergeOrder) {
+            MERGE_ORDER_ROUND_ROBIN -> interleave(paths.mapNotNull { perFolder[it] })
+            MERGE_ORDER_SEQUENTIAL -> paths.mapNotNull { perFolder[it] }.flatten()
+            else -> perFolder.values.flatten().sortedBy { it.title.lowercase() }
+        }
+
+        if (preferences.dedupeMerged) merged = merged.distinctByDriveId()
+        merged = withThumbnails(merged)
+
+        return AnimesPage(merged, tokenMap.values.any { it != null })
+    }
+
+    private fun interleave(lists: List<List<SAnime>>): List<SAnime> {
+        val result = mutableListOf<SAnime>()
+        var i = 0
+        while (lists.any { i < it.size }) {
+            for (list in lists) {
+                if (i < list.size) result.add(list[i])
+            }
+            i++
+        }
+        return result
+    }
+
+    private fun driveIdOf(anime: SAnime): String? {
+        val url = runCatching { json.decodeFromString<LinkData>(anime.url).url }.getOrNull() ?: return null
+        if ("uc?id=" in url) return url.substringAfter("id=").substringBefore("&")
+        return DRIVE_FOLDER_REGEX.matchEntire(url)?.groups?.get("id")?.value
+    }
+
+    private fun List<SAnime>.distinctByDriveId(): List<SAnime> {
+        val seen = mutableSetOf<String>()
+        return filter { anime ->
+            val id = driveIdOf(anime) ?: return@filter true // keep it if we can't identify it
+            seen.add(id) // false (already present) filters the duplicate out
+        }
+    }
+
+    private fun SAnime.taggedWithFolder(path: String): SAnime = apply {
+        title = "$title  •  ${labelForPath(path)}"
+    }
+
+    private fun labelForPath(path: String): String {
+        val name = DRIVE_FOLDER_REGEX.matchEntire(path)?.groups?.get("name")
+            ?.value?.substringAfter("[")?.substringBeforeLast("]")
+        return name ?: runCatching { path.toHttpUrl().encodedPath }.getOrDefault(path)
+    }
+
+    // ------------------------- Discovery-time cache ------------------------
+    // A small locally-stored history of "first time this extension saw this
+    // drive id", used to power the Latest tab and the 🆕 badge. This is NOT
+    // Drive's real upload/modified date (nothing in this file exposes one) —
+    // it's the extension's own memory of when it first noticed each item.
+
+    private fun loadDiscoveryTimes(): Map<String, Long> {
+        val raw = preferences.getString(DISCOVERY_TIMES_KEY, null) ?: return emptyMap()
+        return runCatching { json.decodeFromString<Map<String, Long>>(raw) }.getOrDefault(emptyMap())
+    }
+
+    private fun saveDiscoveryTimes(map: Map<String, Long>) {
+        runCatching {
+            preferences.edit().putString(DISCOVERY_TIMES_KEY, json.encodeToString(map)).apply()
+        }
+    }
+
+    private fun recordDiscovery(items: List<SAnime>) {
+        if (items.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val discovery = loadDiscoveryTimes().toMutableMap()
+        var changed = false
+        for (anime in items) {
+            val id = driveIdOf(anime) ?: continue
+            if (id !in discovery) {
+                discovery[id] = now
+                changed = true
+            }
+        }
+        if (!changed) return
+        // Cap the size so this doesn't grow forever; oldest entries fall off
+        // first, which is fine since Latest only cares about the newest ones.
+        val trimmed = if (discovery.size > MAX_DISCOVERY_ENTRIES) {
+            discovery.entries.sortedByDescending { it.value }
+                .take(MAX_DISCOVERY_ENTRIES)
+                .associate { it.key to it.value }
+        } else {
+            discovery
+        }
+        saveDiscoveryTimes(trimmed)
+    }
+
+    private fun SAnime.markedIfNew(discoveredAt: Long): SAnime = apply {
+        if (discoveredAt > 0L && System.currentTimeMillis() - discoveredAt < NEW_BADGE_WINDOW_MILLIS) {
+            title = "🆕 $title"
+        }
+    }
+
+    // ---------------------------- List thumbnails ---------------------------
+    // Off by default: fetching a cover for every visible folder costs one
+    // extra request per item per page on top of everything else here.
+
+    private suspend fun withThumbnails(animes: List<SAnime>): List<SAnime> {
+        if (!preferences.loadListThumbnails) return animes
+        return coroutineScope {
+            animes.map { anime ->
+                async(Dispatchers.IO) { fetchThumbnailIfFolder(anime) }
+            }.awaitAll()
+        }
+    }
+
+    private fun fetchThumbnailIfFolder(anime: SAnime): SAnime {
+        if (!anime.thumbnail_url.isNullOrEmpty()) return anime
+
+        val parsed = runCatching { json.decodeFromString<LinkData>(anime.url) }.getOrNull() ?: return anime
+        if (parsed.type != "multi") return anime // only folders have a cover to look up
+
+        val folderId = runCatching {
+            DRIVE_FOLDER_REGEX.matchEntire(parsed.url)!!.groups["id"]!!.value
+        }.getOrNull() ?: return anime
+
+        return runCatching {
+            val driveDocument = client.newCall(GET(parsed.url, headers = getHeaders)).execute().asJsoup()
+            val coverResponse = client.newCall(
+                createPost(driveDocument, folderId, "", searchReqWithType(folderId, "cover", IMAGE_MIMETYPE)),
+            ).execute().parseAs<PostResponse> { JSON_REGEX.find(it)!!.groupValues[1] }
+
+            coverResponse.items?.firstOrNull()?.let {
+                anime.apply { thumbnail_url = "https://drive.google.com/uc?id=${it.id}" }
+            } ?: anime
+        }.getOrDefault(anime) // skip a broken lookup rather than failing the whole page
     }
 
     private fun addSinglePage(folderUrl: String): AnimesPage {
@@ -583,7 +858,7 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
                             "single",
                             LinkDataInfo(
                                 it.title,
-                                it.fileSize?.toLongOrNull()?.let { formatBytes(it) } ?: "",
+                                it.fileSize?.toLongOrNull()?.let { s -> formatBytes(s) } ?: "",
                             ),
                         ).toJsonString()
                         thumbnail_url = ""
@@ -725,6 +1000,27 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
         private const val SCANLATOR_ORDER_KEY = "scanlator_order"
         private const val SCANLATOR_ORDER_DEFAULT = false
 
+        private const val MERGE_ORDER_KEY = "merge_order"
+        private const val MERGE_ORDER_ALPHABETICAL = "alphabetical"
+        private const val MERGE_ORDER_ROUND_ROBIN = "round_robin"
+        private const val MERGE_ORDER_SEQUENTIAL = "sequential"
+        private const val MERGE_ORDER_DEFAULT = MERGE_ORDER_ALPHABETICAL
+
+        private const val TAG_SOURCE_FOLDER_KEY = "tag_source_folder"
+        private const val TAG_SOURCE_FOLDER_DEFAULT = false
+
+        private const val DEDUPE_KEY = "dedupe_merged"
+        private const val DEDUPE_DEFAULT = true
+
+        private const val LOAD_THUMBNAILS_KEY = "load_list_thumbnails"
+        private const val LOAD_THUMBNAILS_DEFAULT = false
+
+        private const val DISCOVERY_TIMES_KEY = "discovery_times"
+        private const val MAX_DISCOVERY_ENTRIES = 1000
+        private const val NEW_BADGE_WINDOW_MILLIS = 24L * 60 * 60 * 1000
+
+        private const val MAX_CONSECUTIVE_FAILURES = 3
+
         private val DRIVE_FOLDER_REGEX = Regex(
             """(?<name>\[[^\[\];]+\])?https?:\/\/(?:docs|drive)\.google\.com\/drive(?:\/[^\/]+)*?\/folders\/(?<id>[\w-]{28,})(?:\?[^;#]+)?(?<depth>#\d+(?<range>,\d+,\d+)?)?${'$'}""",
         )
@@ -750,6 +1046,18 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private val SharedPreferences.scanlatorOrder
         get() = getBoolean(SCANLATOR_ORDER_KEY, SCANLATOR_ORDER_DEFAULT)
+
+    private val SharedPreferences.mergeOrder
+        get() = getString(MERGE_ORDER_KEY, MERGE_ORDER_DEFAULT)!!
+
+    private val SharedPreferences.tagSourceFolder
+        get() = getBoolean(TAG_SOURCE_FOLDER_KEY, TAG_SOURCE_FOLDER_DEFAULT)
+
+    private val SharedPreferences.dedupeMerged
+        get() = getBoolean(DEDUPE_KEY, DEDUPE_DEFAULT)
+
+    private val SharedPreferences.loadListThumbnails
+        get() = getBoolean(LOAD_THUMBNAILS_KEY, LOAD_THUMBNAILS_DEFAULT)
 
     // ============================== Settings ==============================
 
@@ -818,6 +1126,48 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             key = SCANLATOR_ORDER_KEY
             title = "Switch order of file path and size"
             setDefaultValue(SCANLATOR_ORDER_DEFAULT)
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putBoolean(key, newValue as Boolean).commit()
+            }
+        }.also(screen::addPreference)
+
+        ListPreference(screen.context).apply {
+            key = MERGE_ORDER_KEY
+            title = "Merge order for multiple folders"
+            summary = "How entries from different configured folders are combined"
+            entries = arrayOf("Alphabetical", "Round robin (interleaved)", "As configured (no sorting)")
+            entryValues = arrayOf(MERGE_ORDER_ALPHABETICAL, MERGE_ORDER_ROUND_ROBIN, MERGE_ORDER_SEQUENTIAL)
+            setDefaultValue(MERGE_ORDER_DEFAULT)
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putString(key, newValue as String).commit()
+            }
+        }.also(screen::addPreference)
+
+        SwitchPreferenceCompat(screen.context).apply {
+            key = TAG_SOURCE_FOLDER_KEY
+            title = "Show source folder in title"
+            summary = "Append the configured folder's name to each entry, e.g. \"Title  •  Season 1\""
+            setDefaultValue(TAG_SOURCE_FOLDER_DEFAULT)
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putBoolean(key, newValue as Boolean).commit()
+            }
+        }.also(screen::addPreference)
+
+        SwitchPreferenceCompat(screen.context).apply {
+            key = DEDUPE_KEY
+            title = "Remove duplicate entries"
+            summary = "Hide repeated files/folders that show up in more than one configured path"
+            setDefaultValue(DEDUPE_DEFAULT)
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putBoolean(key, newValue as Boolean).commit()
+            }
+        }.also(screen::addPreference)
+
+        SwitchPreferenceCompat(screen.context).apply {
+            key = LOAD_THUMBNAILS_KEY
+            title = "Load thumbnails in browse list"
+            summary = "Slower, more requests — fetches a cover for every folder shown, not just when opened"
+            setDefaultValue(LOAD_THUMBNAILS_DEFAULT)
             setOnPreferenceChangeListener { _, newValue ->
                 preferences.edit().putBoolean(key, newValue as Boolean).commit()
             }
