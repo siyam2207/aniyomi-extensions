@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -345,9 +346,17 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             it.value.substringAfter(",").split(",").map { it.toInt() }
         } ?: listOf(null, null)
 
-        fun traverseFolder(folderUrl: String, path: String, recursionDepth: Int = 0) {
-            if (recursionDepth == maxRecursionDepth) return
+        val qualityOrder = getQualityFolderOrder()
 
+        fun episodeNumberOf(title: String, fallbackIndex: Int): Float =
+            ITEM_NUMBER_REGEX.find(title.trimInfo())?.groupValues?.get(1)?.toFloatOrNull()
+                ?: (fallbackIndex + 1).toFloat()
+
+        // Drains every page of a single folder and splits its contents into
+        // video files vs subfolders, without recursing. The caller decides
+        // what to do with the subfolders (recurse normally, or - if their
+        // names match the quality list below - merge them as one episode).
+        fun listFolderOnce(folderUrl: String): Pair<List<DriveFile>, List<DriveFolderRef>> {
             val folderId = DRIVE_FOLDER_REGEX.matchEntire(folderUrl)!!.groups["id"]!!.value
 
             val driveDocument = try {
@@ -356,60 +365,130 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
                 throw Exception("Unable to get items, check webview")
             }
 
-            if (driveDocument.selectFirst("title:contains(Error 404 \\(Not found\\))") != null) return
+            if (driveDocument.selectFirst("title:contains(Error 404 \\(Not found\\))") != null) {
+                return Pair(emptyList(), emptyList())
+            }
 
+            val files = mutableListOf<DriveFile>()
+            val folders = mutableListOf<DriveFolderRef>()
             var pageToken: String? = ""
-            var counter = 1
 
             while (pageToken != null) {
-                val response = client.newCall(
-                    createPost(driveDocument, folderId, pageToken),
-                ).execute()
+                val response = client.newCall(createPost(driveDocument, folderId, pageToken)).execute()
+                val parsedPage = response.parseAs<PostResponse> { JSON_REGEX.find(it)!!.groupValues[1] }
+                if (parsedPage.items == null) throw Exception("Failed to load items, please log in through webview")
 
-                val parsed = response.parseAs<PostResponse> {
-                    JSON_REGEX.find(it)!!.groupValues[1]
-                }
-
-                if (parsed.items == null) throw Exception("Failed to load items, please log in through webview")
-                parsed.items.forEachIndexed { index, it ->
+                parsedPage.items.forEach {
                     if (it.mimeType.startsWith("video")) {
-                        val size = it.fileSize?.toLongOrNull()?.let { formatBytes(it) } ?: ""
-                        val pathName = if (preferences.trimEpisodeInfo) path.trimInfo() else path
-
-                        if (start != null && maxRecursionDepth == 1 && counter < start) {
-                            counter++
-                            return@forEachIndexed
-                        }
-                        if (stop != null && maxRecursionDepth == 1 && counter > stop) return
-
-                        episodeList.add(
-                            SEpisode.create().apply {
-                                name =
-                                    if (preferences.trimEpisodeName) it.title.trimInfo() else it.title
-                                url = "https://drive.google.com/uc?id=${it.id}"
-                                episode_number =
-                                    ITEM_NUMBER_REGEX.find(it.title.trimInfo())?.groupValues?.get(1)
-                                        ?.toFloatOrNull() ?: (index + 1).toFloat()
-                                date_upload = -1L
-                                scanlator = if (preferences.scanlatorOrder) {
-                                    "/$pathName • $size"
-                                } else {
-                                    "$size • /$pathName"
-                                }
-                            },
-                        )
-                        counter++
+                        files.add(DriveFile(it.title, it.id, it.fileSize?.toLongOrNull()?.let { s -> formatBytes(s) } ?: ""))
                     }
                     if (it.mimeType.endsWith(".folder")) {
-                        traverseFolder(
-                            "https://drive.google.com/drive/folders/${it.id}",
-                            if (path.isEmpty()) it.title else "$path/${it.title}",
-                            recursionDepth + 1,
-                        )
+                        folders.add(DriveFolderRef(it.title, it.id))
                     }
                 }
 
-                pageToken = parsed.nextPageToken
+                pageToken = parsedPage.nextPageToken
+            }
+
+            return Pair(files, folders)
+        }
+
+        fun addPlainEpisodes(files: List<DriveFile>, path: String) {
+            var counter = 1
+            val pathName = if (preferences.trimEpisodeInfo) path.trimInfo() else path
+
+            files.forEachIndexed { index, file ->
+                if (start != null && maxRecursionDepth == 1 && counter < start) {
+                    counter++
+                    return@forEachIndexed
+                }
+                if (stop != null && maxRecursionDepth == 1 && counter > stop) return
+
+                episodeList.add(
+                    SEpisode.create().apply {
+                        name = if (preferences.trimEpisodeName) file.title.trimInfo() else file.title
+                        url = "https://drive.google.com/uc?id=${file.id}"
+                        episode_number = episodeNumberOf(file.title, index)
+                        date_upload = -1L
+                        scanlator = if (preferences.scanlatorOrder) {
+                            "/$pathName • ${file.size}"
+                        } else {
+                            "${file.size} • /$pathName"
+                        }
+                    },
+                )
+                counter++
+            }
+        }
+
+        // Treats each matching subfolder (e.g. "480p", "240p") as containing
+        // the same episodes at a different quality, and merges them into one
+        // SEpisode per matching episode number instead of separate episodes.
+        // Assumes quality subfolders are flat (files directly inside, no
+        // further nesting) - matching happens by episode number extracted
+        // from the filename, falling back to listing position if a folder's
+        // filenames don't carry a parseable number.
+        fun mergeQualityFolders(qualityFolders: List<DriveFolderRef>, path: String) {
+            val byQuality = qualityFolders.associate { qf ->
+                val label = qualityOrder.first { it.equals(qf.title.trim(), ignoreCase = true) }
+                val (qFiles, _) = listFolderOnce("https://drive.google.com/drive/folders/${qf.id}")
+                label to qFiles
+            }
+
+            val linksByNumber = LinkedHashMap<Float, MutableList<QualityLink>>()
+            val titleByNumber = mutableMapOf<Float, String>()
+
+            qualityOrder.filter { it in byQuality }.forEach { label ->
+                byQuality.getValue(label).forEachIndexed { index, file ->
+                    val number = episodeNumberOf(file.title, index)
+                    linksByNumber.getOrPut(number) { mutableListOf() }
+                        .add(QualityLink(label, "https://drive.google.com/uc?id=${file.id}"))
+                    titleByNumber.putIfAbsent(number, file.title)
+                }
+            }
+
+            val pathName = if (preferences.trimEpisodeInfo) path.trimInfo() else path
+            linksByNumber.forEach { (number, links) ->
+                val title = titleByNumber.getValue(number)
+                val qualities = links.joinToString("/") { it.quality }
+                episodeList.add(
+                    SEpisode.create().apply {
+                        name = if (preferences.trimEpisodeName) title.trimInfo() else title
+                        url = json.encodeToString(links)
+                        episode_number = number
+                        date_upload = -1L
+                        scanlator = if (preferences.scanlatorOrder) {
+                            "/$pathName • $qualities"
+                        } else {
+                            "$qualities • /$pathName"
+                        }
+                    },
+                )
+            }
+        }
+
+        fun traverseFolder(folderUrl: String, path: String, recursionDepth: Int = 0) {
+            if (recursionDepth == maxRecursionDepth) return
+
+            val (files, folders) = listFolderOnce(folderUrl)
+            val qualityFolders = folders.filter { f -> qualityOrder.any { it.equals(f.title.trim(), ignoreCase = true) } }
+
+            if (qualityFolders.isNotEmpty()) {
+                mergeQualityFolders(qualityFolders, path)
+                // Any stray files sitting alongside the quality folders (not
+                // inside one of them) still get added normally, unmerged.
+                addPlainEpisodes(files, path)
+                return
+            }
+
+            addPlainEpisodes(files, path)
+
+            folders.forEach { f ->
+                traverseFolder(
+                    "https://drive.google.com/drive/folders/${f.id}",
+                    if (path.isEmpty()) f.title else "$path/${f.title}",
+                    recursionDepth + 1,
+                )
             }
         }
 
@@ -422,10 +501,37 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ============================ Video Links =============================
 
-    override suspend fun getVideoList(episode: SEpisode): List<Video> =
-        GoogleDriveExtractor(client, headers).videosFromUrl(episode.url.substringAfter("?id="))
+    override suspend fun getVideoList(episode: SEpisode): List<Video> {
+        // Multi-quality episodes (produced by mergeQualityFolders above) encode
+        // a JSON list of {quality, url} instead of a single drive uc?id= link.
+        val qualityLinks = runCatching { json.decodeFromString<List<QualityLink>>(episode.url) }.getOrNull()
+
+        if (qualityLinks != null) {
+            val order = getQualityFolderOrder()
+            val sorted = qualityLinks.sortedBy { link ->
+                order.indexOf(link.quality).let { if (it == -1) Int.MAX_VALUE else it }
+            }
+            return sorted.flatMap { link ->
+                GoogleDriveExtractor(client, headers).videosFromUrl(link.url.substringAfter("?id="))
+            }
+        }
+
+        return GoogleDriveExtractor(client, headers).videosFromUrl(episode.url.substringAfter("?id="))
+    }
 
     // ============================= Utilities ==============================
+
+    // Small working types for the quality-merge logic in getEpisodeList.
+    // DriveFile/DriveFolderRef never leave this file. QualityLink is the one
+    // that gets serialized into a multi-quality SEpisode's url.
+    private data class DriveFile(val title: String, val id: String, val size: String)
+    private data class DriveFolderRef(val title: String, val id: String)
+
+    @Serializable
+    private data class QualityLink(val quality: String, val url: String)
+
+    private fun getQualityFolderOrder(): List<String> =
+        preferences.qualityFolderNames.split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
     private fun getAllFolderEntries(): List<String> {
         if (preferences.domainList.isBlank()) return emptyList()
@@ -1000,6 +1106,9 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
         private const val SCANLATOR_ORDER_KEY = "scanlator_order"
         private const val SCANLATOR_ORDER_DEFAULT = false
 
+        private const val QUALITY_FOLDER_NAMES_KEY = "quality_folder_names"
+        private const val QUALITY_FOLDER_NAMES_DEFAULT = "2160p,1440p,1080p,720p,480p,360p,240p,144p"
+
         private const val MERGE_ORDER_KEY = "merge_order"
         private const val MERGE_ORDER_ALPHABETICAL = "alphabetical"
         private const val MERGE_ORDER_ROUND_ROBIN = "round_robin"
@@ -1046,6 +1155,9 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
     private val SharedPreferences.scanlatorOrder
         get() = getBoolean(SCANLATOR_ORDER_KEY, SCANLATOR_ORDER_DEFAULT)
+
+    private val SharedPreferences.qualityFolderNames
+        get() = getString(QUALITY_FOLDER_NAMES_KEY, QUALITY_FOLDER_NAMES_DEFAULT)!!
 
     private val SharedPreferences.mergeOrder
         get() = getString(MERGE_ORDER_KEY, MERGE_ORDER_DEFAULT)!!
@@ -1128,6 +1240,19 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             setDefaultValue(SCANLATOR_ORDER_DEFAULT)
             setOnPreferenceChangeListener { _, newValue ->
                 preferences.edit().putBoolean(key, newValue as Boolean).commit()
+            }
+        }.also(screen::addPreference)
+
+        EditTextPreference(screen.context).apply {
+            key = QUALITY_FOLDER_NAMES_KEY
+            title = "Quality subfolder names"
+            summary = "Comma-separated, best quality first. A subfolder with one of these exact " +
+                "names (case-insensitive) is treated as a quality variant of its sibling episodes " +
+                "instead of a separate folder, and merged into one episode with a quality picker."
+            setDefaultValue(QUALITY_FOLDER_NAMES_DEFAULT)
+            dialogTitle = "Quality folder names"
+            setOnPreferenceChangeListener { _, newValue ->
+                preferences.edit().putString(key, newValue as String).commit()
             }
         }.also(screen::addPreference)
 
