@@ -143,7 +143,7 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
         }
         val sorted = withTimestamps
             .sortedWith(compareByDescending<Pair<SAnime, Long>> { it.second }.thenBy { it.first.title.lowercase() })
-            .map { (anime, discoveredAt) -> anime.markedIfNew(discoveredAt) }
+            .map { (anime, _) -> anime }
 
         return AnimesPage(sorted, result.hasNextPage)
     }
@@ -467,21 +467,90 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             }
         }
 
+        // Finds one of the configured quality labels as its own "word" in a
+        // filename (so "480p" matches surrounded by spaces/dots/brackets/etc,
+        // but not as part of a longer run of digits+letters), and returns
+        // (matchedLabel, filenameWithTagRemoved). Returns null if none found.
+        fun findQualityTag(filename: String): Pair<String, String>? {
+            for (label in qualityOrder) {
+                val regex = Regex("""(?i)[\[(]?\b${Regex.escape(label)}\b[\])]?""")
+                val match = regex.find(filename) ?: continue
+                val stripped = filename.removeRange(match.range).replace(Regex("""\s{2,}"""), " ").trim()
+                return label to stripped
+            }
+            return null
+        }
+
+        // Groups files like "Title 480p.mp4" / "Title 240p.mp4" - identical
+        // once the quality tag is removed - into one multi-quality episode.
+        // The quality tag alone can't identify an episode, so this only works
+        // if whatever's left after stripping it (an episode number, "Episode
+        // 5", etc.) still matches between the quality copies of one episode.
+        // Returns whichever files had no recognizable quality tag, unchanged,
+        // so they still get added normally.
+        fun mergeQualityFilenames(files: List<DriveFile>, path: String): List<DriveFile> {
+            data class Tagged(val file: DriveFile, val quality: String, val strippedTitle: String)
+
+            val tagged = mutableListOf<Tagged>()
+            val untagged = mutableListOf<DriveFile>()
+
+            files.forEach { file ->
+                val hit = findQualityTag(file.title)
+                if (hit != null) tagged.add(Tagged(file, hit.first, hit.second)) else untagged.add(file)
+            }
+
+            if (tagged.isEmpty()) return files
+
+            val groups = LinkedHashMap<String, MutableList<Tagged>>()
+            tagged.forEach { t -> groups.getOrPut(t.strippedTitle.lowercase()) { mutableListOf() }.add(t) }
+
+            val pathName = if (preferences.trimEpisodeInfo) path.trimInfo() else path
+
+            groups.values.forEachIndexed { index, group ->
+                val ordered = group.sortedBy { g ->
+                    qualityOrder.indexOf(g.quality).let { if (it == -1) Int.MAX_VALUE else it }
+                }
+                val links = ordered.map { QualityLink(it.quality, "https://drive.google.com/uc?id=${it.file.id}") }
+                val best = ordered.first()
+                val qualities = links.joinToString("/") { it.quality }
+
+                episodeList.add(
+                    SEpisode.create().apply {
+                        name = if (preferences.trimEpisodeName) best.file.title.trimInfo() else best.file.title
+                        url = json.encodeToString(links)
+                        episode_number = episodeNumberOf(best.strippedTitle, index)
+                        date_upload = -1L
+                        scanlator = if (preferences.scanlatorOrder) {
+                            "/$pathName • $qualities"
+                        } else {
+                            "$qualities • /$pathName"
+                        }
+                    },
+                )
+            }
+
+            return untagged
+        }
+
         fun traverseFolder(folderUrl: String, path: String, recursionDepth: Int = 0) {
             if (recursionDepth == maxRecursionDepth) return
 
             val (files, folders) = listFolderOnce(folderUrl)
             val qualityFolders = folders.filter { f -> qualityOrder.any { it.equals(f.title.trim(), ignoreCase = true) } }
 
+            // Filename-based grouping applies to whatever files sit directly
+            // in this folder regardless of whether quality subfolders are
+            // also present alongside them; only genuinely untagged files fall
+            // through to plain, unmerged episodes.
+            val remainingFiles = mergeQualityFilenames(files, path)
+
             if (qualityFolders.isNotEmpty()) {
                 mergeQualityFolders(qualityFolders, path)
-                // Any stray files sitting alongside the quality folders (not
-                // inside one of them) still get added normally, unmerged.
-                addPlainEpisodes(files, path)
+                addPlainEpisodes(remainingFiles, path)
                 return
             }
 
-            addPlainEpisodes(files, path)
+            addPlainEpisodes(remainingFiles, path)
 
             folders.forEach { f ->
                 traverseFolder(
@@ -767,7 +836,7 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
     // ------------------------- Discovery-time cache ------------------------
     // A small locally-stored history of "first time this extension saw this
-    // drive id", used to power the Latest tab and the 🆕 badge. This is NOT
+    // drive id", used to power the Latest tab's sort order. This is NOT
     // Drive's real upload/modified date (nothing in this file exposes one) —
     // it's the extension's own memory of when it first noticed each item.
 
@@ -805,12 +874,6 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             discovery
         }
         saveDiscoveryTimes(trimmed)
-    }
-
-    private fun SAnime.markedIfNew(discoveredAt: Long): SAnime = apply {
-        if (discoveredAt > 0L && System.currentTimeMillis() - discoveredAt < NEW_BADGE_WINDOW_MILLIS) {
-            title = "🆕 $title"
-        }
     }
 
     // ---------------------------- List thumbnails ---------------------------
@@ -1126,7 +1189,6 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
         private const val DISCOVERY_TIMES_KEY = "discovery_times"
         private const val MAX_DISCOVERY_ENTRIES = 1000
-        private const val NEW_BADGE_WINDOW_MILLIS = 24L * 60 * 60 * 1000
 
         private const val MAX_CONSECUTIVE_FAILURES = 3
 
@@ -1245,12 +1307,13 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
         EditTextPreference(screen.context).apply {
             key = QUALITY_FOLDER_NAMES_KEY
-            title = "Quality subfolder names"
-            summary = "Comma-separated, best quality first. A subfolder with one of these exact " +
-                "names (case-insensitive) is treated as a quality variant of its sibling episodes " +
-                "instead of a separate folder, and merged into one episode with a quality picker."
+            title = "Quality labels"
+            summary = "Comma-separated, best quality first. Recognized both as a subfolder name " +
+                "(e.g. a folder named \"480p\") and as a tag inside a filename (e.g. \"Title 480p.mp4\"). " +
+                "For filenames, the tag alone can't identify an episode - make sure whatever's left after " +
+                "removing it (an episode number, \"Episode 5\", etc.) still matches between quality copies."
             setDefaultValue(QUALITY_FOLDER_NAMES_DEFAULT)
-            dialogTitle = "Quality folder names"
+            dialogTitle = "Quality labels"
             setOnPreferenceChangeListener { _, newValue ->
                 preferences.edit().putString(key, newValue as String).commit()
             }
