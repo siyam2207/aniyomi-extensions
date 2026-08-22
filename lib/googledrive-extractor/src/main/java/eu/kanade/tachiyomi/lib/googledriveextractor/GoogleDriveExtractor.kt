@@ -27,14 +27,24 @@ class GoogleDriveExtractor(private val client: OkHttpClient, private val headers
     private val cookieList = client.cookieJar.loadForRequest("https://drive.google.com".toHttpUrl())
 
     // Full quality picker for a single uploaded file: Drive's own auto-
-    // transcoded resolutions (unofficial, reverse-engineered API - failures
-    // here are swallowed so a broken/rate-limited call doesn't kill playback)
-    // plus the original uploaded file as a reliable fallback/best-quality
-    // option. Use this for a plain episode with no separately-known quality.
+    // transcoded resolutions (unofficial, reverse-engineered API) plus the
+    // original uploaded file as a reliable fallback/best-quality option.
+    // Use this for a plain episode with no separately-known quality.
+    //
+    // TEMPORARY: failures/empty results surface as a non-functional "(debug: ...)"
+    // entry instead of being silently swallowed, so we can see what Drive is
+    // actually returning instead of guessing again. Safe to remove the DEBUG
+    // catch blocks below once this is confirmed working or not.
     fun videosFromUrl(itemId: String, videoName: String = "Video"): List<Video> {
-        val transcoded = runCatching { transcodedVideos(itemId, videoName) }.getOrDefault(emptyList())
+        val transcoded = runCatching { transcodedVideos(itemId, videoName) }
+            .getOrElse { e -> listOf(debugVideo(videoName, "${e.javaClass.simpleName}: ${e.message}")) }
         val original = originalVideo(itemId, videoName)
         return transcoded + original
+    }
+
+    private fun debugVideo(videoName: String, info: String): Video {
+        val url = "https://drive.google.com"
+        return Video(url, "$videoName (debug: $info)", url, headers)
     }
 
     // Just the original uploaded file, no transcoded ladder - for callers
@@ -92,11 +102,19 @@ class GoogleDriveExtractor(private val client: OkHttpClient, private val headers
             add("Referer", "https://drive.google.com/")
         }.build()
 
-        val responseBody = client.newCall(GET(playbackUrl.toString(), playbackHeaders)).execute().body
-            ?.string() ?: return emptyList()
+        val response = client.newCall(GET(playbackUrl.toString(), playbackHeaders)).execute()
+        val responseBody = response.body?.string()
+            ?: return listOf(debugVideo(videoName, "empty response body, HTTP ${response.code}"))
 
-        val streaming = Json.parseToJsonElement(responseBody).jsonObject["mediaStreamingData"]
-            ?.jsonObject?.get("formatStreamingData")?.jsonObject ?: return emptyList()
+        if (!response.isSuccessful) {
+            return listOf(debugVideo(videoName, "HTTP ${response.code}: ${responseBody.take(120)}"))
+        }
+
+        val root = runCatching { Json.parseToJsonElement(responseBody).jsonObject }
+            .getOrElse { return listOf(debugVideo(videoName, "bad JSON (${responseBody.length} chars): ${responseBody.take(120)}")) }
+
+        val streaming = root["mediaStreamingData"]?.jsonObject?.get("formatStreamingData")?.jsonObject
+            ?: return listOf(debugVideo(videoName, "no formatStreamingData, top-level keys=${root.keys}"))
 
         val videos = mutableListOf<Video>()
         listOf("progressiveTranscodes", "adaptiveTranscodes").forEach { bucket ->
@@ -104,11 +122,15 @@ class GoogleDriveExtractor(private val client: OkHttpClient, private val headers
                 val obj = fmt.jsonObject
                 val streamUrl = obj["url"]?.jsonPrimitive?.contentOrNull ?: return@forEach
                 val height = obj["transcodeMetadata"]?.jsonObject?.get("height")?.jsonPrimitive?.intOrNull
-                val label = height?.let { "$videoName (${it}p)" } ?: "$videoName (Drive stream)"
+                val label = height?.let { "$videoName (${it}p${if (bucket == "adaptiveTranscodes") " · adaptive" else ""})" }
+                    ?: "$videoName (Drive stream · $bucket)"
                 videos.add(Video(streamUrl, label, streamUrl, playbackHeaders))
             }
         }
-        return videos
+
+        return videos.ifEmpty {
+            listOf(debugVideo(videoName, "formatStreamingData keys=${streaming.keys}, both transcode buckets empty/absent"))
+        }
     }
 
     private fun List<Cookie>.toStr(): String {
