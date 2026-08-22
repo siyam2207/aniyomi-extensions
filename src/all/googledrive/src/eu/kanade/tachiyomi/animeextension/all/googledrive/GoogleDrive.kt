@@ -348,9 +348,29 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
 
         val qualityOrder = getQualityFolderOrder()
 
+        // Used only by mergeQualityFolders, where the fallback needs to be a
+        // position *within one quality folder's own listing* so it lines up
+        // with the same position in a sibling quality folder - do not change.
         fun episodeNumberOf(title: String, fallbackIndex: Int): Float =
             ITEM_NUMBER_REGEX.find(title.trimInfo())?.groupValues?.get(1)?.toFloatOrNull()
                 ?: (fallbackIndex + 1).toFloat()
+
+        // Used by addPlainEpisodes and mergeQualityFilenames, where there's no
+        // cross-folder position to align by - tries the same strict pattern
+        // first, then a looser "just grab a number" pass (for names like
+        // "Episode 5" or folder names with no dash), then falls back to a
+        // running counter shared across the whole traversal so unnumbered
+        // episodes get distinct numbers instead of all colliding on 1.
+        var fallbackCounter = 0
+        fun nextEpisodeNumber(title: String): Float {
+            val trimmed = title.trimInfo()
+            val strict = ITEM_NUMBER_REGEX.find(trimmed)?.groupValues?.get(1)?.toFloatOrNull()
+            if (strict != null) return strict
+            val lenient = Regex("""(\d+)""").find(trimmed)?.groupValues?.get(1)?.toFloatOrNull()
+            if (lenient != null) return lenient
+            fallbackCounter++
+            return fallbackCounter.toFloat()
+        }
 
         // Drains every page of a single folder and splits its contents into
         // video files vs subfolders, without recursing. The caller decides
@@ -397,10 +417,10 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             var counter = 1
             val pathName = if (preferences.trimEpisodeInfo) path.trimInfo() else path
 
-            files.forEachIndexed { index, file ->
+            files.forEach { file ->
                 if (start != null && maxRecursionDepth == 1 && counter < start) {
                     counter++
-                    return@forEachIndexed
+                    return@forEach
                 }
                 if (stop != null && maxRecursionDepth == 1 && counter > stop) return
 
@@ -408,7 +428,7 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
                     SEpisode.create().apply {
                         name = if (preferences.trimEpisodeName) file.title.trimInfo() else file.title
                         url = "https://drive.google.com/uc?id=${file.id}"
-                        episode_number = episodeNumberOf(file.title, index)
+                        episode_number = nextEpisodeNumber(file.title)
                         date_upload = -1L
                         scanlator = if (preferences.scanlatorOrder) {
                             "/$pathName • ${file.size}"
@@ -505,8 +525,9 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             tagged.forEach { t -> groups.getOrPut(t.strippedTitle.lowercase()) { mutableListOf() }.add(t) }
 
             val pathName = if (preferences.trimEpisodeInfo) path.trimInfo() else path
+            val folderName = path.substringAfterLast("/")
 
-            groups.values.forEachIndexed { index, group ->
+            groups.values.forEach { group ->
                 val ordered = group.sortedBy { g ->
                     qualityOrder.indexOf(g.quality).let { if (it == -1) Int.MAX_VALUE else it }
                 }
@@ -514,11 +535,20 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
                 val best = ordered.first()
                 val qualities = links.joinToString("/") { it.quality }
 
+                // If stripping the quality tag leaves nothing usable (the file
+                // was just "720p.mp4"), the episode's real identity is likely
+                // the enclosing folder instead (one folder per episode).
+                val strippedIsTrivial = best.strippedTitle
+                    .replace(Regex("""\.\w+$"""), "")
+                    .none { it.isLetterOrDigit() }
+                val displayTitle = if (strippedIsTrivial && folderName.isNotEmpty()) folderName else best.file.title
+                val numberSource = if (strippedIsTrivial && folderName.isNotEmpty()) folderName else best.strippedTitle
+
                 episodeList.add(
                     SEpisode.create().apply {
-                        name = if (preferences.trimEpisodeName) best.file.title.trimInfo() else best.file.title
+                        name = if (preferences.trimEpisodeName) displayTitle.trimInfo() else displayTitle
                         url = json.encodeToString(links)
-                        episode_number = episodeNumberOf(best.strippedTitle, index)
+                        episode_number = nextEpisodeNumber(numberSource)
                         date_upload = -1L
                         scanlator = if (preferences.scanlatorOrder) {
                             "/$pathName • $qualities"
@@ -580,8 +610,12 @@ class GoogleDrive : ConfigurableAnimeSource, AnimeHttpSource() {
             val sorted = qualityLinks.sortedBy { link ->
                 order.indexOf(link.quality).let { if (it == -1) Int.MAX_VALUE else it }
             }
-            return sorted.flatMap { link ->
-                GoogleDriveExtractor(client, headers).videosFromUrl(link.url.substringAfter("?id="))
+            // Each of these files already has a known quality (from the
+            // folder/filename), so fetch exactly one clean stream per file -
+            // not the full auto-transcode ladder, which would turn one
+            // episode into a confusing pile of overlapping quality options.
+            return sorted.map { link ->
+                GoogleDriveExtractor(client, headers).originalVideoFromUrl(link.url.substringAfter("?id="), link.quality)
             }
         }
 
