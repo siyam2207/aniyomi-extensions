@@ -60,9 +60,23 @@ class TelegramBridge :
     private val preferences by getPreferencesLazy()
 
     // Seeking into a large file makes the bridge fetch from Telegram first, so be patient.
+    // The token is added to every request that goes to the bridge, so thumbnails (which Aniyomi
+    // loads through this client) are authorised too. Read live, so token changes apply at once.
     override val client = network.client.newBuilder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val bridge = preferences.bridgeUrl.toHttpUrlOrNull()
+            val token = preferences.token
+            if (bridge != null && token.isNotEmpty() && request.header("X-Token") == null &&
+                request.url.host == bridge.host && request.url.port == bridge.port
+            ) {
+                chain.proceed(request.newBuilder().header("X-Token", token).build())
+            } else {
+                chain.proceed(request)
+            }
+        }
         .build()
 
     private var popularOffset: Long = 0L
@@ -197,6 +211,7 @@ class TelegramBridge :
     private fun toAnime(video: BridgeVideo): SAnime = SAnime.create().apply {
         title = video.displayTitle()
         url = URL_VIDEO_PREFIX + video.id
+        thumbnail_url = "${baseUrl.trimEnd('/')}/thumb/${video.id}"
         status = SAnime.COMPLETED
         description = listOfNotNull(
             formatSize(video.size).ifEmpty { null },
